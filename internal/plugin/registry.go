@@ -13,6 +13,7 @@ import (
 	"go.privatebychoice.com/shellshawk/internal/auth"
 	"go.privatebychoice.com/shellshawk/internal/events"
 	"go.privatebychoice.com/shellshawk/internal/perm"
+	"go.privatebychoice.com/shellshawk/internal/sftpd"
 	"go.privatebychoice.com/shellshawk/internal/store"
 )
 
@@ -49,6 +50,7 @@ type Loaded struct {
 type Registry struct {
 	plugins []*Loaded
 	items   map[string]Item // "<id>:<key>" → item
+	mounts  []sftpd.Mount
 }
 
 // Item is a menu item with its owning plugin.
@@ -101,6 +103,14 @@ func Validate(m Manifest) error {
 		seen[it.Key] = true
 		if it.Label == "" || it.Run == nil {
 			return fmt.Errorf("plugin %s: menu item %q needs a label and Run", m.ID, it.Key)
+		}
+	}
+	for _, mt := range m.SFTP {
+		if mt.Name != m.ID && !strings.HasPrefix(mt.Name, m.ID+"-") {
+			return fmt.Errorf("plugin %s: SFTP mount %q must be %q or start with %q", m.ID, mt.Name, m.ID, m.ID+"-")
+		}
+		if mt.FS == nil {
+			return fmt.Errorf("plugin %s: SFTP mount %q has no file system", m.ID, mt.Name)
 		}
 	}
 	return nil
@@ -163,11 +173,15 @@ func Load(ctx context.Context, d Deps, plugins ...Plugin) (*Registry, error) {
 			t := m.ID + ":" + it.Key
 			r.items[t] = Item{Target: t, PluginID: m.ID, MenuItem: it}
 		}
+		r.mounts = append(r.mounts, m.SFTP...)
 		r.plugins = append(r.plugins, &Loaded{Manifest: m, Settings: st})
 		log.Info("plugin started", "version", m.Version, "menu_items", len(m.MenuItems), "permissions", len(m.Permissions))
 	}
 	return r, nil
 }
+
+// Mounts returns every plugin SFTP mount in load order.
+func (r *Registry) Mounts() []sftpd.Mount { return r.mounts }
 
 // Plugins returns the started plugins in load order.
 func (r *Registry) Plugins() []*Loaded { return r.plugins }

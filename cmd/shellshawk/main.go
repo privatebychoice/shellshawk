@@ -33,6 +33,7 @@ import (
 	"go.privatebychoice.com/shellshawk/internal/plugin"
 	"go.privatebychoice.com/shellshawk/internal/prefs"
 	"go.privatebychoice.com/shellshawk/internal/settings"
+	"go.privatebychoice.com/shellshawk/internal/sftpd"
 	"go.privatebychoice.com/shellshawk/internal/sshd"
 	"go.privatebychoice.com/shellshawk/internal/store"
 	"go.privatebychoice.com/shellshawk/internal/theme"
@@ -168,11 +169,17 @@ func (a *app) serve(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
+		sftpSrv, err := sftpd.New(a.auth, a.perms, cfg.SFTPMaxUpload, log,
+			append([]sftpd.Mount{sftpd.MeMount(a.auth, a.perms)}, a.plugins.Mounts()...)...)
+		if err != nil {
+			return err
+		}
 		sshSrv, err = sshd.New(sshd.Config{
 			Addr:     cfg.SSHAddr,
 			HostKey:  hostKey,
 			Auth:     auth.NewSSHAuthenticator(a.auth),
 			Handler:  handler,
+			SFTP:     sftpSrv,
 			MaxConns: cfg.SSHMaxConns,
 			Log:      log,
 		})

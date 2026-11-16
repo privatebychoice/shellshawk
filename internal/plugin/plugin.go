@@ -17,6 +17,7 @@ import (
 	"go.privatebychoice.com/shellshawk/internal/events"
 	"go.privatebychoice.com/shellshawk/internal/form"
 	"go.privatebychoice.com/shellshawk/internal/perm"
+	"go.privatebychoice.com/shellshawk/internal/sftpd"
 	"go.privatebychoice.com/shellshawk/internal/store"
 	"go.privatebychoice.com/shellshawk/internal/tui"
 )
@@ -53,6 +54,9 @@ type Manifest struct {
 	// the main menu automatically, once; administrators can then move,
 	// rename or remove them.
 	MenuItems []MenuItem
+	// SFTP mounts are top-level SFTP directories. Each name must be the
+	// plugin ID or start with "<id>-".
+	SFTP []sftpd.Mount
 }
 
 // Permission is a permission a plugin defines.

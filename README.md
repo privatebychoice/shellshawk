@@ -3,10 +3,10 @@
 A self-hosted, privacy-first BBS with an SSH TUI, SFTP, and an optional web
 interface. See [docs/DESIGN.md](docs/DESIGN.md) for the full design.
 
-> **Status:** stage 6: SSH server, accounts, the TUI (full-screen and
-> screen-reader interfaces), markdown with graded links, the plugin system,
-> the configurable member menu, and the full administration menu.
-> Conferences, messages, chat and the other core plugins come next.
+> **Status:** stage 7: SSH server, accounts, the TUI (full-screen and
+> screen-reader interfaces), markdown with graded links, plugins,
+> configurable menus, administration, and SFTP. Conferences, messages,
+> chat and the other core plugins come next.
 
 ## Build
 
@@ -32,6 +32,7 @@ no built-in defaults.
 | `SHELLSHAWK_SSH_MAX_CONNS` | no | `100` | Maximum concurrent SSH connections |
 | `SHELLSHAWK_INVITE_USER` | no | `new` | SSH login name for registering with an invite code |
 | `SHELLSHAWK_AUDIT_RETENTION_DAYS` | no | `365` | Audit log entries older than this are purged daily |
+| `SHELLSHAWK_SFTP_MAX_UPLOAD_BYTES` | no | `1048576` | Largest file accepted over SFTP (max 64 MiB; uploads are buffered in memory) |
 | `SHELLSHAWK_PBC_DATA_FILE` | no | built-in data only | Local pbc-classification JSON dataset, merged over the library's built-in data |
 | `SHELLSHAWK_FIRST_PARTY_DOMAINS` | no | — | Comma-separated list of your own domains, graded as first-party |
 | `SHELLSHAWK_HTTP_ADDR` | no | disabled | `host:port` for the web interface; unset = web disabled |
@@ -139,6 +140,24 @@ settings, its own `<id>_`-prefixed tables and its menu items in a manifest.
 A plugin error or panic in a menu item is logged and shown as a generic
 error; the session continues.
 
+## SFTP
+
+Members logging in with their key can use any SFTP client
+(`sftp -P <port> <user>@<host>`, example). The file system is virtual —
+nothing maps to the server's files:
+
+| Path | Contents |
+|------|----------|
+| `/me/profile.md` | Your account details (read-only) |
+| `/me/keys.pub` | Your public keys in `authorized_keys` format (read-only) |
+| `/<plugin>/…` | Plugin data, e.g. conference threads (later stages) |
+
+Directories you lack permission for do not appear. Uploads are accepted only
+where a plugin allows them, up to the configured size, and are stored only
+if the transfer completes. `mkdir`, `rm`, `rename` and links are refused.
+Password (add-key) logins cannot use SFTP. Permissions are re-checked on
+every request, so locking an account takes effect immediately.
+
 ## Endpoints
 
 | Path | Description |
@@ -154,7 +173,7 @@ error; the session continues.
 | Host key | Ed25519 |
 | User keys | Ed25519, ECDSA P-256, FIDO (`sk-*`), RSA ≥ 3072 bits with SHA-2 signatures |
 | Channels | `session` only — no port forwarding, X11, agent forwarding |
-| Session requests | `pty-req`, `window-change`, `shell`, `env` (`LANG`, `LC_ALL`, `LC_CTYPE`, `COLORTERM`). No `exec`; `sftp` arrives in stage 7 |
+| Session requests | `pty-req`, `window-change`, `shell`, `subsystem sftp` (key logins to active accounts only), `env` (`LANG`, `LC_ALL`, `LC_CTYPE`, `COLORTERM`). No `exec` |
 
 shellshawk never starts OS processes; a test fails the build if `os/exec`
 is imported anywhere.

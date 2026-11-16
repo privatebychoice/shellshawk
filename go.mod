@@ -3,6 +3,7 @@ module go.privatebychoice.com/shellshawk
 go 1.27
 
 require (
+	github.com/pkg/sftp v1.13.12
 	github.com/yuin/goldmark v1.8.7
 	go.privatebychoice.com/pbc-classification v0.0.0-20260730135944-80efcd7146bf
 	golang.org/x/crypto v0.59.0
@@ -12,6 +13,7 @@ require (
 require (
 	github.com/dustin/go-humanize v1.1.0 // indirect
 	github.com/google/uuid v1.6.0 // indirect
+	github.com/kr/fs v0.1.0 // indirect
 	github.com/mattn/go-isatty v0.0.24 // indirect
 	github.com/ncruces/go-strftime v1.1.0 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect

@@ -456,7 +456,7 @@ func TestSessionRequestPolicy(t *testing.T) {
 		wantOK  bool
 	}{
 		{"exec refused", "exec", ssh.Marshal(struct{ Cmd string }{"id"}), false},
-		{"sftp subsystem refused (stage 7)", "subsystem", ssh.Marshal(subsystemRequestMsg{"sftp"}), false},
+		{"sftp refused when no handler configured", "subsystem", ssh.Marshal(subsystemRequestMsg{"sftp"}), false},
 		{"other subsystem refused", "subsystem", ssh.Marshal(subsystemRequestMsg{"netconf"}), false},
 		{"x11 refused", "x11-req", nil, false},
 		{"agent forwarding refused", "auth-agent-req@openssh.com", nil, false},

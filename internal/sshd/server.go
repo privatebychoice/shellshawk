@@ -39,6 +39,7 @@ type Config struct {
 	HostKey          ssh.Signer
 	Auth             Authenticator
 	Handler          SessionHandler
+	SFTP             SFTPHandler   // nil = sftp subsystem refused
 	MaxConns         int           // 0 → DefaultMaxConns
 	HandshakeTimeout time.Duration // 0 → DefaultHandshakeTimeout
 	Log              *slog.Logger
@@ -50,6 +51,7 @@ type Server struct {
 	sshConfig        *ssh.ServerConfig
 	auth             Authenticator
 	handler          SessionHandler
+	sftp             SFTPHandler
 	handshakeTimeout time.Duration
 	slots            chan struct{} // connection semaphore
 	log              *slog.Logger
@@ -87,6 +89,7 @@ func New(cfg Config) (*Server, error) {
 		addr:             cfg.Addr,
 		auth:             cfg.Auth,
 		handler:          cfg.Handler,
+		sftp:             cfg.SFTP,
 		handshakeTimeout: cfg.HandshakeTimeout,
 		slots:            make(chan struct{}, cfg.MaxConns),
 		log:              cfg.Log.With("component", "sshd"),

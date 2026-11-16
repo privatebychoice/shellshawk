@@ -407,7 +407,14 @@ TOML/JSON files; admins can add more.
 
 - Routes are registered by plugins with a path pattern, a permission, and
   read/write mode. Unknown paths → `ENOENT`; no route lists another route's tree.
-- Upload size and per-user quota are set in config.
+- Upload size is set in config (`SHELLSHAWK_SFTP_MAX_UPLOAD_BYTES`, default
+  1 MiB, max 64 MiB). Uploads are buffered in memory and committed only after
+  a complete transfer. Per-user quotas are left to the plugins that store
+  uploads.
+- Implemented (stage 7): mounts are `sftpd.Mount{Name, AnyOf, FS}`; plugins
+  declare them in `Manifest.SFTP` (name = plugin ID or `<id>-…`). Hidden
+  mounts report "no such file". Only key logins to active accounts get the
+  `sftp` subsystem. `/me/export/` arrives with the privacy work (stage 9).
 - **SFTP library:** `github.com/pkg/sftp`, `RequestServer` API only (virtual
   handlers; the OS-backed `Server` type is never used — enforced by a test).
 

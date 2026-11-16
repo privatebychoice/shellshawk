@@ -18,6 +18,8 @@ import (
 // Defaults for optional settings.
 const (
 	DefaultSSHMaxConns        = 100
+	DefaultSFTPMaxUpload      = 1 << 20  // 1 MiB
+	MaxSFTPMaxUpload          = 64 << 20 // uploads are buffered in memory
 	DefaultInviteUser         = "new"
 	DefaultAuditRetentionDays = 365
 )
@@ -36,9 +38,10 @@ const (
 	EnvLogFormat = "SHELLSHAWK_LOG_FORMAT"
 	EnvHTTPAddr  = "SHELLSHAWK_HTTP_ADDR"
 
-	EnvSSHAddr     = "SHELLSHAWK_SSH_ADDR"
-	EnvSSHHostKey  = "SHELLSHAWK_SSH_HOST_KEY"
-	EnvSSHMaxConns = "SHELLSHAWK_SSH_MAX_CONNS"
+	EnvSSHAddr       = "SHELLSHAWK_SSH_ADDR"
+	EnvSSHHostKey    = "SHELLSHAWK_SSH_HOST_KEY"
+	EnvSSHMaxConns   = "SHELLSHAWK_SSH_MAX_CONNS"
+	EnvSFTPMaxUpload = "SHELLSHAWK_SFTP_MAX_UPLOAD_BYTES"
 
 	EnvInviteUser         = "SHELLSHAWK_INVITE_USER"
 	EnvAuditRetentionDays = "SHELLSHAWK_AUDIT_RETENTION_DAYS"
@@ -71,6 +74,8 @@ type Config struct {
 	SSHHostKeyPath string
 	// SSHMaxConns caps concurrent SSH connections. Default: 100.
 	SSHMaxConns int
+	// SFTPMaxUpload is the largest file accepted over SFTP, in bytes.
+	SFTPMaxUpload int64
 	// InviteUser is the SSH login name for invite-code registration.
 	// Default: "new".
 	InviteUser string
@@ -103,6 +108,7 @@ func Load(getenv func(string) string) (Config, error) {
 		SSHAddr:        strings.TrimSpace(getenv(EnvSSHAddr)),
 		SSHHostKeyPath: strings.TrimSpace(getenv(EnvSSHHostKey)),
 		SSHMaxConns:    DefaultSSHMaxConns,
+		SFTPMaxUpload:  DefaultSFTPMaxUpload,
 
 		InviteUser:         DefaultInviteUser,
 		AuditRetentionDays: DefaultAuditRetentionDays,
@@ -163,6 +169,15 @@ func Load(getenv func(string) string) (Config, error) {
 			errs = append(errs, fmt.Errorf("%s: invalid value %q (want a positive number of days)", EnvAuditRetentionDays, v))
 		} else {
 			cfg.AuditRetentionDays = n
+		}
+	}
+
+	if v := strings.TrimSpace(getenv(EnvSFTPMaxUpload)); v != "" {
+		n, err := strconv.ParseInt(v, 10, 64)
+		if err != nil || n < 1 || n > MaxSFTPMaxUpload {
+			errs = append(errs, fmt.Errorf("%s: invalid value %q (want 1 to %d)", EnvSFTPMaxUpload, v, MaxSFTPMaxUpload))
+		} else {
+			cfg.SFTPMaxUpload = n
 		}
 	}
 

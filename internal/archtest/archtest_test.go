@@ -2,6 +2,7 @@
 package archtest
 
 import (
+	"go/ast"
 	"go/parser"
 	"go/token"
 	"io/fs"
@@ -37,6 +38,12 @@ func moduleRoot(t *testing.T) string {
 	}
 }
 
+// forbiddenCalls are package functions that must never be called. The
+// pkg/sftp OS-backed server would expose the host file system.
+var forbiddenCalls = map[string]map[string]string{
+	"github.com/pkg/sftp": {"NewServer": "use sftp.NewRequestServer with the virtual file system"},
+}
+
 func TestForbiddenImports(t *testing.T) {
 	root := moduleRoot(t)
 	fset := token.NewFileSet()
@@ -56,18 +63,38 @@ func TestForbiddenImports(t *testing.T) {
 		if !strings.HasSuffix(path, ".go") {
 			return nil
 		}
-		f, err := parser.ParseFile(fset, path, nil, parser.ImportsOnly)
+		f, err := parser.ParseFile(fset, path, nil, 0)
 		if err != nil {
 			return err
 		}
 		checked++
+		rel, _ := filepath.Rel(root, path)
+		names := map[string]string{} // local package name → import path
 		for _, imp := range f.Imports {
 			p, _ := strconv.Unquote(imp.Path.Value)
 			if why, bad := forbiddenImports[p]; bad {
-				rel, _ := filepath.Rel(root, path)
 				t.Errorf("%s imports %q: %s", rel, p, why)
 			}
+			local := p[strings.LastIndex(p, "/")+1:]
+			if imp.Name != nil {
+				local = imp.Name.Name
+			}
+			names[local] = p
 		}
+		ast.Inspect(f, func(n ast.Node) bool {
+			sel, ok := n.(*ast.SelectorExpr)
+			if !ok {
+				return true
+			}
+			pkg, ok := sel.X.(*ast.Ident)
+			if !ok {
+				return true
+			}
+			if why, bad := forbiddenCalls[names[pkg.Name]][sel.Sel.Name]; bad {
+				t.Errorf("%s uses %s.%s: %s", rel, names[pkg.Name], sel.Sel.Name, why)
+			}
+			return true
+		})
 		return nil
 	})
 	if err != nil {

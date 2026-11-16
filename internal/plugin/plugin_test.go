@@ -8,11 +8,13 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"go.privatebychoice.com/shellshawk/internal/auth"
 	"go.privatebychoice.com/shellshawk/internal/events"
 	"go.privatebychoice.com/shellshawk/internal/form"
 	"go.privatebychoice.com/shellshawk/internal/perm"
+	"go.privatebychoice.com/shellshawk/internal/sftpd"
 	"go.privatebychoice.com/shellshawk/internal/store"
 )
 
@@ -109,6 +111,9 @@ func TestValidate(t *testing.T) {
 		{"trigger on core table", mod(func(m *Manifest) {
 			m.Migrations[0].SQL = "CREATE TRIGGER notes_t AFTER DELETE ON users BEGIN SELECT 1; END"
 		}), `attaches to "users"`},
+		{"sftp mount outside namespace", mod(func(m *Manifest) { m.SFTP = []sftpd.Mount{{Name: "me", FS: nullFS{}}} }), `SFTP mount "me"`},
+		{"sftp mount without fs", mod(func(m *Manifest) { m.SFTP = []sftpd.Mount{{Name: "notes"}} }), "no file system"},
+		{"sftp mount with id prefix ok", mod(func(m *Manifest) { m.SFTP = []sftpd.Mount{{Name: "notes-archive", FS: nullFS{}}} }), ""},
 		{"quoted name checked", mod(func(m *Manifest) { m.Migrations[0].SQL = `CREATE TABLE "users2" (id INTEGER)` }), `touches "users2"`},
 	}
 	for _, tt := range tests {
@@ -244,4 +249,11 @@ func TestSettings(t *testing.T) {
 	if audits != 1 {
 		t.Errorf("audit entries = %d", audits)
 	}
+}
+
+type nullFS struct{}
+
+func (nullFS) List(context.Context, sftpd.User, []string) ([]sftpd.Entry, error) { return nil, nil }
+func (nullFS) Read(context.Context, sftpd.User, []string) ([]byte, time.Time, error) {
+	return nil, time.Time{}, sftpd.ErrNotExist
 }

@@ -40,6 +40,12 @@ type PTY struct {
 	WindowSize
 }
 
+// SFTPHandler serves the "sftp" subsystem. It is only offered to
+// ModeMember logins (public key, active account).
+type SFTPHandler interface {
+	HandleSFTP(ctx context.Context, s *Session)
+}
+
 // SessionHandler runs the interactive BBS for one shell session. It returns
 // when the user is done or ctx is cancelled (disconnect or shutdown).
 type SessionHandler interface {
@@ -68,6 +74,9 @@ func (s *Session) Read(p []byte) (int, error) { return s.ch.Read(p) }
 
 // Write writes output to the user's terminal.
 func (s *Session) Write(p []byte) (int, error) { return s.ch.Write(p) }
+
+// Close closes the session's channel, unblocking any pending Read.
+func (s *Session) Close() error { return s.ch.Close() }
 
 // SSH request payloads (RFC 4254 §6).
 type ptyRequestMsg struct {
@@ -257,7 +266,23 @@ func (s *Server) serveSession(ctx context.Context, id Identity, connID string, c
 		case "subsystem":
 			var m subsystemRequestMsg
 			_ = ssh.Unmarshal(r.Payload, &m)
-			refuse(r, "subsystem not available: "+sanitizeForLog(m.Name))
+			switch {
+			case started:
+				refuse(r, "subsystem after shell")
+			case m.Name != "sftp" || s.sftp == nil:
+				refuse(r, "subsystem not available: "+sanitizeForLog(m.Name))
+			case id.Mode != ModeMember:
+				refuse(r, "sftp requires a key login to an active account")
+			default:
+				started = true
+				reply(r, true)
+				sess := &Session{Identity: id, ConnID: connID, Env: env, Resize: resize, ch: ch}
+				log.Info("sftp started")
+				wg.Go(func() {
+					defer close(done)
+					s.sftp.HandleSFTP(ctx, sess)
+				})
+			}
 
 		default:
 			// exec, x11-req, auth-agent-req@openssh.com, signal, break, …

@@ -33,6 +33,7 @@ var (
 type Key struct {
 	ID          int64
 	Fingerprint string
+	PublicKey   string // authorized_keys format, without comment
 	Type        string
 	Label       string
 	CreatedAt   time.Time
@@ -147,13 +148,13 @@ func (s *Service) RemoveKey(ctx context.Context, userID, keyID int64) error {
 	})
 }
 
-const keyColumns = `id, fingerprint, key_type, label, created_at, last_used_at`
+const keyColumns = `id, fingerprint, public_key, key_type, label, created_at, last_used_at`
 
 func scanKey(row interface{ Scan(...any) error }) (Key, error) {
 	var k Key
 	var created string
 	var used sql.NullString
-	if err := row.Scan(&k.ID, &k.Fingerprint, &k.Type, &k.Label, &created, &used); err != nil {
+	if err := row.Scan(&k.ID, &k.Fingerprint, &k.PublicKey, &k.Type, &k.Label, &created, &used); err != nil {
 		return Key{}, err
 	}
 	var err error
