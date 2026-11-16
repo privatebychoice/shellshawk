@@ -35,6 +35,7 @@ type coreItem struct {
 func coreItems() []coreItem {
 	return []coreItem{
 		{key: "settings", label: "Display settings", help: "Terminal type, colour theme and accessibility", run: (*session).settings},
+		{key: "privacy", label: "Privacy and profile", help: "Your profile, who can see it, your data, erasing your account", run: (*session).privacyMenu},
 		{key: "keys", label: "SSH keys", help: "Add or remove the keys you log in with", run: (*session).keys},
 		{key: "termtest", label: "Terminal test", help: "Check which text styles your terminal can show", run: (*session).termTest},
 		{key: "markdown", label: "Markdown guide", help: "How to format posts and messages, with a preview", run: (*session).markdownGuide},

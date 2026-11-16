@@ -26,10 +26,11 @@ const (
 
 // Errors returned by Service.
 var (
-	ErrNotFound      = errors.New("not found")
-	ErrUsernameTaken = errors.New("username is already taken")
-	ErrNotPending    = errors.New("account is not pending approval")
-	ErrSelf          = errors.New("cannot perform this action on your own account")
+	ErrNotFound       = errors.New("not found")
+	ErrUsernameTaken  = errors.New("username is already taken")
+	ErrNotPending     = errors.New("account is not pending approval")
+	ErrSelf           = errors.New("cannot perform this action on your own account")
+	ErrErasurePending = errors.New("this account is waiting to be erased; cancel the erasure request instead")
 )
 
 // User is an account. The password hash is never exposed.
@@ -220,6 +221,15 @@ func (s *Service) SetLocked(ctx context.Context, actor, userID int64, locked boo
 	err := store.WithTx(ctx, s.db, func(tx *sql.Tx) error {
 		if err := perm.RequireOutranks(ctx, tx, actor, userID, perm.UsersManage); err != nil {
 			return err
+		}
+		if !locked {
+			var erasing bool
+			if err := tx.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM erasure_requests WHERE user_id = ?)`, userID).Scan(&erasing); err != nil {
+				return err
+			}
+			if erasing {
+				return ErrErasurePending
+			}
 		}
 		checkAdmins, err := perm.AdminGuard(ctx, tx)
 		if err != nil {

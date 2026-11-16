@@ -3,11 +3,9 @@
 A self-hosted, privacy-first BBS with an SSH TUI, SFTP, and an optional web
 interface. See [docs/DESIGN.md](docs/DESIGN.md) for the full design.
 
-> **Status:** stage 8 complete: SSH server, accounts, the TUI (full-screen
-> and screen-reader interfaces), markdown with graded links, plugins,
-> configurable menus, administration, SFTP, and the core plugins —
-> Conferences, Messages, Contacts, Members, Polls and Chat. Privacy settings
-> and erasure (stage 9) and the web interface (stage 10) come next.
+> **Status:** stage 9: everything through the core plugins, plus privacy
+> settings, the member data export and account erasure. The web interface
+> (stage 10) comes next.
 
 ## Build
 
@@ -36,6 +34,7 @@ no built-in defaults.
 | `SHELLSHAWK_SFTP_MAX_UPLOAD_BYTES` | no | `1048576` | Largest file accepted over SFTP (max 64 MiB; uploads are buffered in memory) |
 | `SHELLSHAWK_PBC_DATA_FILE` | no | built-in data only | Local pbc-classification JSON dataset, merged over the library's built-in data |
 | `SHELLSHAWK_FIRST_PARTY_DOMAINS` | no | — | Comma-separated list of your own domains, graded as first-party |
+| `SHELLSHAWK_ERASURE_GRACE_DAYS` | no | `14` | Days between an erasure request and the erasure (0 to 365) |
 | `SHELLSHAWK_HTTP_ADDR` | no | disabled | `host:port` for the web interface; unset = web disabled |
 | `SHELLSHAWK_LOG_LEVEL` | no | `INFO` | `DEBUG`, `INFO`, `WARN`, `ERROR` |
 | `SHELLSHAWK_LOG_FORMAT` | no | `text` | `text` or `json` |
@@ -224,6 +223,33 @@ every request, so locking an account takes effect immediately.
 
 shellshawk never starts OS processes; a test fails the build if `os/exec`
 is imported anywhere.
+
+## Privacy settings, data export and erasure
+
+*Privacy and profile* in the main menu:
+
+- **Profile**: full name, email, phone (E.164) and a status message, all
+  optional.
+- **Who can see what**: for each of full name, email, phone, status, last
+  login time and online status — *Everyone*, *Friends only* (members who
+  have each other as contacts) or *No one* — plus who may send you private
+  messages. Defaults: *No one*, except status, online status and messages,
+  which are *Friends only*. Administrators can view an email address for
+  account recovery; each view is recorded in the audit log.
+- **Download my data**: over SFTP, `/me/export/account.json` and one folder
+  per feature (`messages`, `conferences`, `contacts`, `polls`, `chat`),
+  generated when you download them.
+- **Erase my account**: needs a key login from the last 15 minutes and your
+  username typed to confirm; you choose whether your posts and chat messages
+  are deleted or kept anonymously. The account is locked at once and erased
+  after the grace period (an administrator can cancel until then). Erasure
+  removes keys, password, email, profile, preferences, groups, contacts
+  (both ways) and received messages, and unlinks poll votes (totals are
+  kept). The account becomes an anonymous `former-xxxxxxxx` name, so
+  messages you sent and content you chose to keep are credited to it. Text
+  others wrote that mentions you (for example quotes) is not changed.
+  Erased data may remain in server backups until they are rotated; operators
+  should state their backup retention in their privacy policy.
 
 ## Privacy
 

@@ -22,6 +22,8 @@ const (
 	MaxSFTPMaxUpload          = 64 << 20 // uploads are buffered in memory
 	DefaultInviteUser         = "new"
 	DefaultAuditRetentionDays = 365
+	DefaultErasureGraceDays   = 14
+	MaxErasureGraceDays       = 365
 )
 
 // domainPattern is a deliberately simple hostname check for first-party
@@ -45,6 +47,7 @@ const (
 
 	EnvInviteUser         = "SHELLSHAWK_INVITE_USER"
 	EnvAuditRetentionDays = "SHELLSHAWK_AUDIT_RETENTION_DAYS"
+	EnvErasureGraceDays   = "SHELLSHAWK_ERASURE_GRACE_DAYS"
 
 	EnvPBCDataFile       = "SHELLSHAWK_PBC_DATA_FILE"
 	EnvFirstPartyDomains = "SHELLSHAWK_FIRST_PARTY_DOMAINS"
@@ -81,6 +84,9 @@ type Config struct {
 	InviteUser string
 	// AuditRetentionDays is how long audit log entries are kept. Default: 365.
 	AuditRetentionDays int
+	// ErasureGraceDays is how long an erasure request waits before the
+	// account is erased (0 = at the next run). Default: 14.
+	ErasureGraceDays int
 	// PBCDataFile is an optional local pbc-classification dataset merged
 	// over the library's built-in data.
 	PBCDataFile string
@@ -112,6 +118,7 @@ func Load(getenv func(string) string) (Config, error) {
 
 		InviteUser:         DefaultInviteUser,
 		AuditRetentionDays: DefaultAuditRetentionDays,
+		ErasureGraceDays:   DefaultErasureGraceDays,
 	}
 
 	if cfg.DBPath == "" {
@@ -169,6 +176,15 @@ func Load(getenv func(string) string) (Config, error) {
 			errs = append(errs, fmt.Errorf("%s: invalid value %q (want a positive number of days)", EnvAuditRetentionDays, v))
 		} else {
 			cfg.AuditRetentionDays = n
+		}
+	}
+
+	if v := strings.TrimSpace(getenv(EnvErasureGraceDays)); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil || n < 0 || n > MaxErasureGraceDays {
+			errs = append(errs, fmt.Errorf("%s: invalid value %q (want 0 to %d days)", EnvErasureGraceDays, v, MaxErasureGraceDays))
+		} else {
+			cfg.ErasureGraceDays = n
 		}
 	}
 

@@ -8,6 +8,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"go.privatebychoice.com/shellshawk/internal/events"
 	"regexp"
 	"slices"
 	"strings"
@@ -105,12 +106,16 @@ func (p *Plugin) Manifest() plugin.Manifest {
 			) STRICT;
 			CREATE INDEX polls_votes_poll_user ON polls_votes (poll_id, user_id);`}},
 		MenuItems: []plugin.MenuItem{{Key: "main", Label: "Polls", Help: "Vote and see results", Run: p.run}},
+		Export:    p.export,
 	}
 }
 
 // Init implements plugin.Plugin.
 func (p *Plugin) Init(_ context.Context, h *plugin.Host) error {
 	p.h = h
+	if h.Events != nil {
+		h.Events.Subscribe(events.UserErased, "polls", p.erase)
+	}
 	return nil
 }
 

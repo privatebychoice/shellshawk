@@ -193,6 +193,14 @@ One-sided adds never grant Friends Only visibility.
 its visibility setting; every such view is audit-logged. All other No One
 fields are hidden from admins too.
 
+### 5.1.1 Implementation notes (stage 9)
+
+Visibility is stored per member and field (only changed fields have rows);
+"Online now" uses the same rules (default Friends only). Messages honour the
+recipient's "who can send you private messages" setting and name who
+refused. The admin email view requires `core.users.manage` and writes an
+`admin.viewed.email` audit entry.
+
 ### 5.2 Right to forget
 
 Two user-facing actions, both in Profile → Privacy, both available in TUI and Web:
@@ -229,6 +237,19 @@ before erasing.
 
 Tombstone IDs are random per erased user (not derived from the username), so
 erased users cannot be re-identified across the system.
+
+Implementation notes (stage 9): rather than deleting the user row and
+rewriting every reference, erasure turns the row into the tombstone — a
+random `former-xxxxxxxx` username (a reserved prefix), no password, keys,
+email, profile, preferences or groups — so everything kept stays attributed
+to the same anonymous name, including audit entries. Plugins handle
+`user.erased` first; if any fails, the erasure is retried on the next hourly
+run. While a request is pending only "Cancel the erasure request" (admin)
+reactivates the account; a plain unlock is refused. The only active
+administrator cannot request erasure. "Fresh login" is implemented as a key
+login less than 15 minutes old. With *delete content*, conference posts are
+blanked to "[removed by author]" (and thread titles replaced) rather than
+removed, so others' replies keep their place; chat lines are deleted.
 
 ---
 

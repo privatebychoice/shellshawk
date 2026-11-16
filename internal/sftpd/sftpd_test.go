@@ -6,6 +6,7 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"errors"
+	"fmt"
 	"io"
 	"io/fs"
 	"log/slog"
@@ -22,6 +23,7 @@ import (
 	"golang.org/x/crypto/ssh"
 
 	"go.privatebychoice.com/shellshawk/internal/auth"
+	"go.privatebychoice.com/shellshawk/internal/export"
 	"go.privatebychoice.com/shellshawk/internal/perm"
 	"go.privatebychoice.com/shellshawk/internal/sshd"
 	"go.privatebychoice.com/shellshawk/internal/store"
@@ -138,7 +140,14 @@ func start(t *testing.T, maxUpload int64) *env {
 	e.memberID = m.ID
 
 	srv, err := New(as, ps, maxUpload, log,
-		MeMount(as, ps),
+		MeMount(as, ps,
+			export.Source{Export: func(_ context.Context, uid int64) ([]export.File, error) {
+				return []export.File{{Name: "account.json", Data: []byte(fmt.Sprintf(`{"id":%d}`, uid))}}, nil
+			}},
+			export.Source{Name: "notes", Export: func(context.Context, int64) ([]export.File, error) {
+				return []export.File{{Name: "notes.json", Data: []byte("[]")}, {Name: "../evil", Data: []byte("x")}}, nil
+			}},
+		),
 		Mount{Name: "files", FS: e.mem},
 		Mount{Name: "vault", AnyOf: []string{"vault.read"}, FS: readOnlyFS{}},
 	)
@@ -234,7 +243,7 @@ func TestBrowseAndRead(t *testing.T) {
 	if got := names(t, member, "/files"); !slices.Equal(got, []string{"hello.txt"}) {
 		t.Errorf("/files = %v (invalid names must be filtered)", got)
 	}
-	if got := names(t, member, "/me"); !slices.Equal(got, []string{"keys.pub", "profile.md"}) {
+	if got := names(t, member, "/me"); !slices.Equal(got, []string{"export", "keys.pub", "profile.md"}) {
 		t.Errorf("/me = %v", got)
 	}
 	prof, err := readFile(member, "/me/profile.md")
@@ -443,5 +452,23 @@ func TestInterruptedUploadNotStored(t *testing.T) {
 func TestZeroModTimeReplaced(t *testing.T) {
 	if fi := (fileInfo{Entry: Entry{Name: "d", Dir: true}}); fi.ModTime().IsZero() {
 		t.Error("zero mod time reported")
+	}
+}
+
+func TestExport(t *testing.T) {
+	e := start(t, DefaultMaxUpload)
+	member, _ := e.client(t, "member1", ssh.PublicKeys(e.member))
+	if got := names(t, member, "/me/export"); !slices.Equal(got, []string{"account.json", "notes"}) {
+		t.Errorf("/me/export = %v", got)
+	}
+	if got := names(t, member, "/me/export/notes"); !slices.Equal(got, []string{"notes.json"}) {
+		t.Errorf("/me/export/notes = %v (invalid names must be dropped)", got)
+	}
+	acct, err := readFile(member, "/me/export/account.json")
+	if err != nil || acct != fmt.Sprintf(`{"id":%d}`, e.memberID) {
+		t.Errorf("account.json = %q, %v (must be the requesting member's own data)", acct, err)
+	}
+	if _, err := readFile(member, "/me/export/nope/x.json"); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("unknown export dir err = %v", err)
 	}
 }

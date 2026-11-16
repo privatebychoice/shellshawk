@@ -10,6 +10,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"go.privatebychoice.com/shellshawk/internal/events"
 	"slices"
 	"strings"
 	"time"
@@ -88,12 +89,16 @@ func (p *Plugin) Manifest() plugin.Manifest {
 		MenuItems: []plugin.MenuItem{{
 			Key: "main", Label: "Contacts", Help: "Your contact list and contact groups", Run: p.run,
 		}},
+		Export: p.export,
 	}
 }
 
 // Init implements plugin.Plugin.
 func (p *Plugin) Init(_ context.Context, h *plugin.Host) error {
 	p.h = h
+	if h.Events != nil {
+		h.Events.Subscribe(events.UserErased, "contacts", p.erase)
+	}
 	return nil
 }
 

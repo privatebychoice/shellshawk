@@ -71,13 +71,29 @@ func (s *session) adminUsers(ctx context.Context) error {
 		}
 		intro := fmt.Sprintf("%s: status %s, groups %s, registered %s, last login %s.",
 			u.Username, u.Status, gs, fmtTime(&u.CreatedAt), fmtTime(u.LastLoginAt))
+		erasure, erasing, err := s.h.Privacy.Erasure(ctx, u.ID)
+		if err != nil {
+			return err
+		}
+		switch {
+		case erasing && erasure.CompletedAt != nil:
+			intro += " This account was erased on " + fmtTime(erasure.CompletedAt) + "."
+		case erasing:
+			intro += " The member asked for this account to be erased; it will be erased on " + fmtTime(&erasure.EraseAfter) + "."
+		}
 		var items []tui.MenuItem
 		if set.Has(perm.UsersManage) && u.ID != s.userID {
-			switch u.Status {
-			case auth.StatusActive:
+			switch {
+			case erasing && erasure.CompletedAt == nil:
+				items = append(items, tui.MenuItem{Value: "cancelerase", Label: "Cancel the erasure request", Help: "Reactivates the account"})
+			case erasing:
+			case u.Status == auth.StatusActive:
 				items = append(items, tui.MenuItem{Value: "lock", Label: "Lock account", Help: "The member cannot log in until unlocked"})
-			case auth.StatusLocked:
+			case u.Status == auth.StatusLocked:
 				items = append(items, tui.MenuItem{Value: "unlock", Label: "Unlock account"})
+			}
+			if !erasing || erasure.CompletedAt == nil {
+				items = append(items, tui.MenuItem{Value: "email", Label: "Show email address", Help: "For account recovery. This is recorded in the audit log."})
 			}
 		}
 		if set.Has(perm.GroupsManage) {
@@ -102,6 +118,21 @@ func (s *session) adminUsers(ctx context.Context) error {
 				break
 			}
 			err = s.h.Auth.SetLocked(ctx, s.userID, u.ID, choice == "lock")
+		case "cancelerase":
+			ok, cerr := tui.Confirm(ctx, s.ui, s.Title("User "+u.Username), "Cancel the erasure and reactivate this account?")
+			if cerr != nil || !ok {
+				err = cerr
+				break
+			}
+			err = s.h.Privacy.CancelErasure(ctx, s.userID, u.ID)
+		case "email":
+			var email string
+			if email, err = s.h.Privacy.AdminEmail(ctx, s.userID, u.ID); err == nil {
+				if email == "" {
+					email = "none given"
+				}
+				err = tui.Message(ctx, s.ui, s.Title("User "+u.Username), "Email address: "+email, "This access has been recorded in the audit log.")
+			}
 		case "addgroup":
 			err = s.pickGroup(ctx, "Add "+u.Username+" to", func(g perm.Group) bool { return !slices.Contains(groups, g.Name) },
 				func(g perm.Group) error { return s.h.Perms.AddMember(ctx, s.userID, g.ID, u.ID) })

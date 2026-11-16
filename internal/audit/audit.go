@@ -34,6 +34,10 @@ const (
 	GroupMemberRemoved = "group.member.removed"
 	SettingChanged     = "setting.changed"
 	MenuChanged        = "menu.changed"
+	AdminViewedEmail   = "admin.viewed.email"
+	ErasureRequested   = "user.erasure.requested"
+	ErasureCancelled   = "user.erasure.cancelled"
+	UserErased         = "user.erased"
 	PluginSettingSet   = "plugin.setting.changed"
 )
 

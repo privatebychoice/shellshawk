@@ -10,6 +10,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"go.privatebychoice.com/shellshawk/internal/events"
 	"regexp"
 	"strings"
 	"time"
@@ -115,6 +116,7 @@ func (p *Plugin) Manifest() plugin.Manifest {
 				VALUES ('lobby', 'persistent', 'General chat', strftime('%Y-%m-%dT%H:%M:%SZ', 'now'));`}},
 		MenuItems: []plugin.MenuItem{{Key: "main", Label: "Chat", Help: "Live chat channels", AnyOf: []string{PermUse}, Run: p.run}},
 		SFTP:      []sftpd.Mount{{Name: "chat", AnyOf: []string{PermUse}, FS: &logFS{p: p}}},
+		Export:    p.export,
 	}
 }
 
@@ -122,6 +124,9 @@ func (p *Plugin) Manifest() plugin.Manifest {
 // until ctx ends.
 func (p *Plugin) Init(ctx context.Context, h *plugin.Host) error {
 	p.h = h
+	if h.Events != nil {
+		h.Events.Subscribe(events.UserErased, "chat", p.erase)
+	}
 	go func() {
 		t := time.NewTicker(24 * time.Hour)
 		defer t.Stop()

@@ -9,6 +9,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"go.privatebychoice.com/shellshawk/internal/events"
 	"regexp"
 	"strconv"
 	"strings"
@@ -137,12 +138,16 @@ func (p *Plugin) Manifest() plugin.Manifest {
 				FROM conferences_areas WHERE slug = 'general';`}},
 		MenuItems: []plugin.MenuItem{{Key: "main", Label: "Conferences", Help: "Discussion areas and threads", AnyOf: []string{PermRead}, Run: p.run}},
 		SFTP:      []sftpd.Mount{{Name: "conferences", AnyOf: []string{PermRead}, FS: &threadFS{p: p}}},
+		Export:    p.export,
 	}
 }
 
 // Init implements plugin.Plugin.
 func (p *Plugin) Init(_ context.Context, h *plugin.Host) error {
 	p.h = h
+	if h.Events != nil {
+		h.Events.Subscribe(events.UserErased, "conferences", p.erase)
+	}
 	return nil
 }
 

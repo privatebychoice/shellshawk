@@ -18,6 +18,13 @@ const (
 	UserRejected   = "user.rejected" // account deleted before approval
 	UserLocked     = "user.locked"
 	UserUnlocked   = "user.unlocked"
+	// UserErased is published when an account's grace period ends, before
+	// the account becomes an anonymous tombstone. Plugins must remove or
+	// detach the member's data; DeleteContent says whether the member
+	// asked for their posts and chat lines to be deleted (true) or kept,
+	// credited to the tombstone (false). A failing handler postpones the
+	// erasure to the next run.
+	UserErased = "user.erased"
 )
 
 // Event is one published event.
@@ -25,6 +32,8 @@ type Event struct {
 	Topic  string
 	UserID int64 // the account the event is about, if any
 	Actor  int64 // who caused it (0 = system)
+	// DeleteContent is set for UserErased only.
+	DeleteContent bool
 }
 
 // Handler handles an event. Errors are collected and logged; they do not

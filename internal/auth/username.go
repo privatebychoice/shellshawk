@@ -19,6 +19,10 @@ var reservedUsernames = map[string]bool{
 	"invite": true, "register": true, "everyone": true, "all": true,
 }
 
+// TombstonePrefix starts the username an erased account is given, so it
+// cannot be registered.
+const TombstonePrefix = "former-"
+
 // ErrUsernameInvalid and ErrUsernameReserved describe a rejected username.
 var (
 	ErrUsernameInvalid  = errors.New("username must be 3-32 characters: lowercase letters, digits, '_' or '-', starting with a letter")
@@ -34,7 +38,7 @@ func ValidateUsername(u, inviteUser string) error {
 	if !usernamePattern.MatchString(u) {
 		return ErrUsernameInvalid
 	}
-	if reservedUsernames[u] || u == NormalizeUsername(inviteUser) {
+	if reservedUsernames[u] || u == NormalizeUsername(inviteUser) || strings.HasPrefix(u, TombstonePrefix) {
 		return ErrUsernameReserved
 	}
 	return nil

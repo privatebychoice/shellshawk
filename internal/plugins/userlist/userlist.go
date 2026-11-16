@@ -2,9 +2,8 @@
 // and search members, see which friends are online, list your contacts and
 // contact groups, and open a member's profile.
 //
-// Until the privacy settings exist (stage 9) it shows only what is public by
-// design — usernames and join dates — and shows online status only for
-// friends (mutual contacts).
+// Profile fields and online status are shown only as each member's privacy
+// settings allow (docs/DESIGN.md §5.1).
 package userlist
 
 import (
@@ -20,6 +19,7 @@ import (
 	"go.privatebychoice.com/shellshawk/internal/plugin"
 	"go.privatebychoice.com/shellshawk/internal/plugins/contacts"
 	"go.privatebychoice.com/shellshawk/internal/plugins/messages"
+	"go.privatebychoice.com/shellshawk/internal/privacy"
 	"go.privatebychoice.com/shellshawk/internal/tui"
 )
 
@@ -68,29 +68,43 @@ func (p *Plugin) relate(ctx context.Context, viewer, other int64) (relation, err
 	if r.friend, err = p.contacts.IsFriend(ctx, viewer, other); err != nil {
 		return r, err
 	}
-	// Online status is shown only between friends until members can choose
-	// who sees it.
-	r.online = r.friend && p.h.Presence != nil && p.h.Presence.IsOnline(other)
-	return r, nil
+	if p.h.Presence != nil && p.h.Presence.IsOnline(other) {
+		r.online, err = p.maySeeOnline(ctx, viewer, other)
+	}
+	return r, err
+}
+
+// maySeeOnline applies other's "who can see that I am online" setting. With
+// no privacy service, only friends see it.
+func (p *Plugin) maySeeOnline(ctx context.Context, viewer, other int64) (bool, error) {
+	if p.h.Privacy != nil {
+		return p.h.Privacy.Allows(ctx, viewer, other, privacy.Online)
+	}
+	return p.contacts.IsFriend(ctx, viewer, other)
 }
 
 func (r relation) tag() string {
+	var parts []string
 	switch {
 	case r.self:
 		return " (you)"
-	case r.friend && r.online:
-		return " (friend, online)"
 	case r.friend:
-		return " (friend)"
+		parts = append(parts, "friend")
 	case r.contact:
-		return " (contact)"
+		parts = append(parts, "contact")
 	}
-	return ""
+	if r.online {
+		parts = append(parts, "online")
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return " (" + strings.Join(parts, ", ") + ")"
 }
 
 func (p *Plugin) run(ctx context.Context, s plugin.Session) error {
 	for {
-		online, err := p.onlineFriends(ctx, s.UserID())
+		online, err := p.online(ctx, s.UserID())
 		if err != nil {
 			return err
 		}
@@ -100,7 +114,7 @@ func (p *Plugin) run(ctx context.Context, s plugin.Session) error {
 		}
 		choice, err := s.UI().Choose(ctx, tui.Menu{Title: s.Title("Members"), Items: []tui.MenuItem{
 			{Value: "all", Label: fmt.Sprintf("All members (%d)", total), Help: "Browse or search by username"},
-			{Value: "online", Label: fmt.Sprintf("Friends online now (%d)", len(online)), Help: "Friends are members who have you as a contact too"},
+			{Value: "online", Label: fmt.Sprintf("Online now (%d)", len(online)), Help: "Members who let you see that they are online"},
 			{Value: "contacts", Label: "My contacts"},
 			{Value: "group", Label: "A contact group"},
 			{Value: "back", Label: "Back"},
@@ -115,7 +129,7 @@ func (p *Plugin) run(ctx context.Context, s plugin.Session) error {
 		case "all":
 			err = p.browse(ctx, s)
 		case "online":
-			err = p.pickFrom(ctx, s, "Friends online now", online, "None of your friends are online.")
+			err = p.pickFrom(ctx, s, "Online now", online, "Nobody you can see is online.")
 		case "contacts":
 			var list []contacts.Contact
 			if list, err = p.contacts.List(ctx, s.UserID()); err == nil {
@@ -130,16 +144,37 @@ func (p *Plugin) run(ctx context.Context, s plugin.Session) error {
 	}
 }
 
-// onlineFriends returns the viewer's friends who have a session open.
-func (p *Plugin) onlineFriends(ctx context.Context, viewer int64) ([]contacts.Contact, error) {
+// online returns the members with a session open whose settings let the
+// viewer see that, sorted by username.
+func (p *Plugin) online(ctx context.Context, viewer int64) ([]contacts.Contact, error) {
 	if p.h.Presence == nil {
 		return nil, nil
 	}
-	list, err := p.contacts.List(ctx, viewer)
+	var ids []int64
+	for id := range p.h.Presence.Online() {
+		if id == viewer {
+			continue
+		}
+		ok, err := p.maySeeOnline(ctx, viewer, id)
+		if err != nil {
+			return nil, err
+		}
+		if ok {
+			ids = append(ids, id)
+		}
+	}
+	names, err := p.h.Auth.Usernames(ctx, ids)
 	if err != nil {
 		return nil, err
 	}
-	return slices.DeleteFunc(list, func(c contacts.Contact) bool { return !c.Mutual || !p.h.Presence.IsOnline(c.UserID) }), nil
+	var out []contacts.Contact
+	for _, id := range ids {
+		if n, ok := names[id]; ok {
+			out = append(out, contacts.Contact{UserID: id, Username: n})
+		}
+	}
+	slices.SortFunc(out, func(a, b contacts.Contact) int { return strings.Compare(a.Username, b.Username) })
+	return out, nil
 }
 
 func (p *Plugin) pickFrom(ctx context.Context, s plugin.Session, title string, list []contacts.Contact, empty string) error {
@@ -256,11 +291,27 @@ func (p *Plugin) profile(ctx context.Context, s plugin.Session, id int64) error 
 			facts = append(facts, "This is you.")
 		case r.friend:
 			facts = append(facts, "Friend: you are in each other's contacts.")
-			if r.online {
-				facts = append(facts, "Online now.")
-			}
 		case r.contact:
 			facts = append(facts, "In your contacts. They have not added you.")
+		}
+		if r.online && !r.self {
+			facts = append(facts, "Online now.")
+		}
+		if p.h.Privacy != nil {
+			v, err := p.h.Privacy.View(ctx, s.UserID(), id)
+			if err != nil {
+				return err
+			}
+			for _, f := range []struct{ label, value string }{
+				{"Name", v.FullName}, {"Status", v.Status}, {"Email", v.Email}, {"Phone", v.Phone},
+			} {
+				if f.value != "" {
+					facts = append(facts, f.label+": "+f.value+".")
+				}
+			}
+			if v.LastLogin != nil {
+				facts = append(facts, "Last login "+v.LastLogin.UTC().Format("2006-01-02 15:04 UTC")+".")
+			}
 		}
 		var items []tui.MenuItem
 		if !r.self && !r.contact {

@@ -8,6 +8,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"go.privatebychoice.com/shellshawk/internal/events"
 	"slices"
 	"strconv"
 	"strings"
@@ -19,6 +20,7 @@ import (
 	"go.privatebychoice.com/shellshawk/internal/perm"
 	"go.privatebychoice.com/shellshawk/internal/plugin"
 	"go.privatebychoice.com/shellshawk/internal/plugins/contacts"
+	"go.privatebychoice.com/shellshawk/internal/privacy"
 	"go.privatebychoice.com/shellshawk/internal/sftpd"
 	"go.privatebychoice.com/shellshawk/internal/store"
 	"go.privatebychoice.com/shellshawk/internal/tui/term"
@@ -48,13 +50,22 @@ var (
 	ErrNoneToSend = errors.New("add at least one recipient")
 )
 
-// RecipientError lists recipients that could not be resolved.
+// RecipientError lists recipients that could not be resolved, or that do
+// not accept private messages from the sender.
 type RecipientError struct {
 	Unknown []string
+	Refused []string
 }
 
 func (e *RecipientError) Error() string {
-	return "unknown recipient(s): " + strings.Join(e.Unknown, ", ")
+	var parts []string
+	if len(e.Unknown) > 0 {
+		parts = append(parts, "unknown recipient(s): "+strings.Join(e.Unknown, ", "))
+	}
+	if len(e.Refused) > 0 {
+		parts = append(parts, "not accepting messages from you: "+strings.Join(e.Refused, ", "))
+	}
+	return strings.Join(parts, "; ")
 }
 
 // Plugin implements plugin.Plugin.
@@ -107,12 +118,16 @@ func (p *Plugin) Manifest() plugin.Manifest {
 			CREATE INDEX messages_recipients_user ON messages_recipients (user_id, deleted_at, read_at);`}},
 		MenuItems: []plugin.MenuItem{{Key: "main", Label: "Messages", Help: "Your private messages", Run: p.run}},
 		SFTP:      []sftpd.Mount{{Name: "messages", FS: &mailFS{p: p}}},
+		Export:    p.export,
 	}
 }
 
 // Init implements plugin.Plugin.
 func (p *Plugin) Init(_ context.Context, h *plugin.Host) error {
 	p.h = h
+	if h.Events != nil {
+		h.Events.Subscribe(events.UserErased, "messages", p.erase)
+	}
 	return nil
 }
 
@@ -214,8 +229,8 @@ func (p *Plugin) Send(ctx context.Context, from int64, d Draft) (int64, error) {
 }
 
 // resolve turns usernames and contact group names into active account IDs,
-// excluding the sender. Direct-message privacy settings arrive with the
-// privacy work (docs/DESIGN.md §5).
+// excluding the sender, and checks each recipient's "who can send you
+// private messages" setting (docs/DESIGN.md §5.1).
 func (p *Plugin) resolve(ctx context.Context, from int64, d Draft) ([]int64, error) {
 	var ids []int64
 	var unknown []string
@@ -247,6 +262,26 @@ func (p *Plugin) resolve(ctx context.Context, from int64, d Draft) ([]int64, err
 	ids = slices.DeleteFunc(ids, func(id int64) bool { return id == from })
 	if len(ids) == 0 {
 		return nil, ErrNoneToSend
+	}
+	if p.h.Privacy != nil {
+		names, err := p.h.Auth.Usernames(ctx, ids)
+		if err != nil {
+			return nil, err
+		}
+		var refused []string
+		for _, id := range ids {
+			ok, err := p.h.Privacy.Allows(ctx, from, id, privacy.Messages)
+			if err != nil {
+				return nil, err
+			}
+			if !ok {
+				refused = append(refused, names[id])
+			}
+		}
+		if len(refused) > 0 {
+			slices.Sort(refused)
+			return nil, &RecipientError{Refused: refused}
+		}
 	}
 	return ids, nil
 }

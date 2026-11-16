@@ -26,6 +26,7 @@ import (
 	"go.privatebychoice.com/shellshawk/internal/bbs"
 	"go.privatebychoice.com/shellshawk/internal/config"
 	"go.privatebychoice.com/shellshawk/internal/events"
+	"go.privatebychoice.com/shellshawk/internal/export"
 	"go.privatebychoice.com/shellshawk/internal/linkgrade"
 	"go.privatebychoice.com/shellshawk/internal/logging"
 	"go.privatebychoice.com/shellshawk/internal/menu"
@@ -39,6 +40,7 @@ import (
 	"go.privatebychoice.com/shellshawk/internal/plugins/userlist"
 	"go.privatebychoice.com/shellshawk/internal/prefs"
 	"go.privatebychoice.com/shellshawk/internal/presence"
+	"go.privatebychoice.com/shellshawk/internal/privacy"
 	"go.privatebychoice.com/shellshawk/internal/settings"
 	"go.privatebychoice.com/shellshawk/internal/sftpd"
 	"go.privatebychoice.com/shellshawk/internal/sshd"
@@ -51,6 +53,7 @@ import (
 const (
 	shutdownTimeout    = 10 * time.Second
 	auditPurgeInterval = 24 * time.Hour
+	erasureInterval    = time.Hour
 )
 
 func main() {
@@ -72,6 +75,8 @@ type app struct {
 
 	plugins  *plugin.Registry
 	presence *presence.Tracker
+	privacy  *privacy.Service
+	bus      *events.Bus
 }
 
 // installedPlugins are compiled into this build (docs/DESIGN.md §12).
@@ -120,9 +125,17 @@ func run(args []string) error {
 		grade: grader,
 	}
 	bus := events.New(log)
+	a.bus = bus
 	a.auth.SetPublisher(bus)
 	a.presence = presence.New(nil)
-	plugins, err := plugin.Load(ctx, plugin.Deps{DB: db, Perms: perms, Auth: a.auth, Events: bus, Presence: a.presence, Log: log}, installedPlugins()...)
+	a.privacy = privacy.NewService(db, a.auth, perms, time.Duration(cfg.ErasureGraceDays)*24*time.Hour, nil, log)
+	installed := installedPlugins()
+	for _, p := range installed {
+		if fc, ok := p.(privacy.FriendChecker); ok {
+			a.privacy.SetFriends(fc)
+		}
+	}
+	plugins, err := plugin.Load(ctx, plugin.Deps{DB: db, Perms: perms, Auth: a.auth, Events: bus, Presence: a.presence, Privacy: a.privacy, Log: log}, installed...)
 	if err != nil {
 		return err
 	}
@@ -167,13 +180,14 @@ func (a *app) serve(ctx context.Context) error {
 
 	handler := &bbs.Handler{
 		Auth: a.auth, Settings: settings.NewService(a.db, nil, log), Grader: a.grade, Perms: a.perms, Prefs: a.prefs,
-		Menu: menu.NewService(a.db, a.perms, nil, log), Plugins: a.plugins, Presence: a.presence, Log: log,
+		Menu: menu.NewService(a.db, a.perms, nil, log), Plugins: a.plugins, Presence: a.presence, Privacy: a.privacy, Log: log,
 	}
 	if err := handler.Menu.Seed(ctx, handler.MenuDefaults()); err != nil {
 		return err
 	}
 
 	go a.purgeAuditLog(ctx)
+	go a.runErasures(ctx)
 
 	errc := make(chan error, 2)
 
@@ -184,7 +198,8 @@ func (a *app) serve(ctx context.Context) error {
 			return err
 		}
 		sftpSrv, err := sftpd.New(a.auth, a.perms, cfg.SFTPMaxUpload, log,
-			append([]sftpd.Mount{sftpd.MeMount(a.auth, a.perms)}, a.plugins.Mounts()...)...)
+			append([]sftpd.Mount{sftpd.MeMount(a.auth, a.perms, append([]export.Source{a.privacy.ExportSource()}, a.plugins.ExportSources()...)...)},
+				a.plugins.Mounts()...)...)
 		if err != nil {
 			return err
 		}
@@ -244,6 +259,27 @@ func (a *app) serve(ctx context.Context) error {
 	}
 	log.Info("stopped")
 	return runErr
+}
+
+// runErasures erases accounts whose grace period has ended, at startup and
+// then hourly.
+func (a *app) runErasures(ctx context.Context) {
+	t := time.NewTicker(erasureInterval)
+	defer t.Stop()
+	for {
+		n, err := a.privacy.RunDue(ctx, a.bus)
+		switch {
+		case err != nil && ctx.Err() == nil:
+			a.log.Error("erasure run failed", "err", err)
+		case n > 0:
+			a.log.Info("accounts erased", "count", n)
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+		}
+	}
 }
 
 // purgeAuditLog deletes expired audit entries at startup and then daily.

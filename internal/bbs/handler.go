@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"strconv"
 	"strings"
+	"time"
 
 	"go.privatebychoice.com/shellshawk/internal/auth"
 	"go.privatebychoice.com/shellshawk/internal/form"
@@ -19,6 +20,7 @@ import (
 	"go.privatebychoice.com/shellshawk/internal/plugin"
 	"go.privatebychoice.com/shellshawk/internal/prefs"
 	"go.privatebychoice.com/shellshawk/internal/presence"
+	"go.privatebychoice.com/shellshawk/internal/privacy"
 	"go.privatebychoice.com/shellshawk/internal/settings"
 	"go.privatebychoice.com/shellshawk/internal/sshd"
 	"go.privatebychoice.com/shellshawk/internal/tui"
@@ -33,6 +35,7 @@ type Handler struct {
 	Menu     *menu.Service
 	Plugins  *plugin.Registry  // may be nil when no plugins are installed
 	Presence *presence.Tracker // may be nil
+	Privacy  *privacy.Service
 	Perms    *perm.Service
 	Prefs    *prefs.Service
 	Log      *slog.Logger
@@ -57,12 +60,13 @@ func (h *Handler) HandleShell(ctx context.Context, s *sshd.Session) {
 
 // session is one user's connection.
 type session struct {
-	h      *Handler
-	conn   Conn
-	t      *term.Terminal
-	ui     tui.UI
-	userID int64 // 0 before registration
-	name   string
+	h       *Handler
+	conn    Conn
+	t       *term.Terminal
+	ui      tui.UI
+	userID  int64 // 0 before registration
+	name    string
+	started time.Time // when the session began (erasure needs a fresh login)
 	// unicode reports whether the current profile allows Unicode symbols.
 	unicode bool
 	log     *slog.Logger
@@ -91,7 +95,7 @@ func (h *Handler) Run(ctx context.Context, c Conn) {
 		}
 	}()
 
-	s := &session{h: h, conn: c, t: term.New(c.RW, c.RW, c.PTY != nil, size, resize), log: log, name: h.Settings.BBSName(ctx)}
+	s := &session{h: h, conn: c, t: term.New(c.RW, c.RW, c.PTY != nil, size, resize), log: log, name: h.Settings.BBSName(ctx), started: time.Now()}
 	if c.Identity.UserID != "" {
 		id, err := strconv.ParseInt(c.Identity.UserID, 10, 64)
 		if err != nil {

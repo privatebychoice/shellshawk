@@ -45,7 +45,7 @@ func TestRelationsAndOnlineVisibility(t *testing.T) {
 		})
 	}
 
-	online, err := u.onlineFriends(e.Ctx, alice)
+	online, err := u.online(e.Ctx, alice)
 	if err != nil || len(online) != 1 || online[0].Username != "bob" {
 		t.Errorf("online friends = %+v, %v (carol is online but not a friend)", online, err)
 	}

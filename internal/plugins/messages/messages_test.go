@@ -11,6 +11,7 @@ import (
 	"go.privatebychoice.com/shellshawk/internal/perm"
 	"go.privatebychoice.com/shellshawk/internal/plugins/contacts"
 	"go.privatebychoice.com/shellshawk/internal/plugins/plugintest"
+	"go.privatebychoice.com/shellshawk/internal/privacy"
 	"go.privatebychoice.com/shellshawk/internal/sftpd"
 )
 
@@ -26,7 +27,13 @@ func setup(t *testing.T) *fixture {
 	c := contacts.New()
 	p := New(c)
 	e := plugintest.New(t, c, p)
-	return &fixture{Env: e, c: c, p: p, alice: e.User("alice"), bob: e.User("bob"), carol: e.User("carol")}
+	f := &fixture{Env: e, c: c, p: p, alice: e.User("alice"), bob: e.User("bob"), carol: e.User("carol")}
+	// The default lets only friends send messages; these tests are about
+	// messaging itself, so everyone accepts messages from anyone.
+	for _, u := range []int64{f.alice, f.bob, f.carol} {
+		e.Visibility(u, privacy.Messages, privacy.Public)
+	}
+	return f
 }
 
 func TestSend(t *testing.T) {
@@ -213,5 +220,54 @@ func TestSFTP(t *testing.T) {
 	}
 	if got, ok := idFromName(inbox[0].Name); !ok || got != id {
 		t.Errorf("idFromName = %d, %v", got, ok)
+	}
+}
+
+func TestMessagePrivacy(t *testing.T) {
+	f := setup(t)
+	dave := f.User("dave") // default: friends only
+	if _, err := f.p.Send(f.Ctx, f.alice, Draft{To: "dave", Subject: "Hi", Body: "x"}); err == nil {
+		t.Fatal("stranger messaged a friends-only member")
+	} else {
+		var re *RecipientError
+		if !errors.As(err, &re) || len(re.Refused) != 1 || re.Refused[0] != "dave" {
+			t.Errorf("err = %v, want dave refused", err)
+		}
+	}
+	f.c.Add(f.Ctx, f.alice, "dave", "")
+	f.c.Add(f.Ctx, dave, "alice", "")
+	if _, err := f.p.Send(f.Ctx, f.alice, Draft{To: "dave", Subject: "Hi", Body: "x"}); err != nil {
+		t.Errorf("friend refused: %v", err)
+	}
+	f.Visibility(dave, privacy.Messages, privacy.NoOne)
+	if _, err := f.p.Send(f.Ctx, f.alice, Draft{To: "dave", Subject: "Hi", Body: "x"}); err == nil {
+		t.Error("No one setting ignored")
+	}
+}
+
+func TestEraseAndExport(t *testing.T) {
+	f := setup(t)
+	f.p.Send(f.Ctx, f.alice, Draft{To: "bob", Subject: "From alice", Body: "kept for bob"})
+	f.p.Send(f.Ctx, f.bob, Draft{To: "alice", Subject: "To alice", Body: "gone with alice"})
+
+	files, err := f.p.export(f.Ctx, f.alice)
+	if err != nil || len(files) != 1 || !strings.Contains(string(files[0].Data), "gone with alice") || !strings.Contains(string(files[0].Data), "kept for bob") {
+		t.Fatalf("export = %v, %v", files, err)
+	}
+	now := privacy.NewService(f.DB, f.Auth, f.Perms, 0, nil, f.Log) // no grace period: erase at once
+	if _, err := now.RequestErasure(f.Ctx, f.alice, false); err != nil {
+		t.Fatal(err)
+	}
+	if n, err := now.RunDue(f.Ctx, f.Events); err != nil || n != 1 {
+		t.Fatalf("RunDue = %d, %v", n, err)
+	}
+	inbox, _ := f.p.List(f.Ctx, f.bob, Inbox)
+	if len(inbox) != 1 || !strings.HasPrefix(inbox[0].From, "former-") {
+		t.Errorf("bob's inbox after erasure = %+v (body kept, sender anonymised)", inbox)
+	}
+	var left int
+	f.DB.QueryRow(`SELECT count(*) FROM messages_recipients WHERE user_id = ?`, f.alice).Scan(&left)
+	if left != 0 {
+		t.Error("erased member's received messages kept")
 	}
 }

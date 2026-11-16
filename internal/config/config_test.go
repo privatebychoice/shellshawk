@@ -21,28 +21,28 @@ func TestLoad(t *testing.T) {
 		{
 			name: "minimal",
 			env:  map[string]string{EnvDBPath: "bbs.db"},
-			want: Config{DBPath: "bbs.db", LogLevel: slog.LevelInfo, LogFormat: LogFormatText, SSHMaxConns: DefaultSSHMaxConns, SFTPMaxUpload: DefaultSFTPMaxUpload, InviteUser: DefaultInviteUser, AuditRetentionDays: DefaultAuditRetentionDays},
+			want: Config{DBPath: "bbs.db", LogLevel: slog.LevelInfo, LogFormat: LogFormatText, SSHMaxConns: DefaultSSHMaxConns, SFTPMaxUpload: DefaultSFTPMaxUpload, InviteUser: DefaultInviteUser, AuditRetentionDays: DefaultAuditRetentionDays, ErasureGraceDays: DefaultErasureGraceDays},
 		},
 		{
 			name: "all set",
 			env: map[string]string{
 				EnvDBPath: " bbs.db ", EnvLogLevel: "debug", EnvLogFormat: "JSON", EnvHTTPAddr: "127.0.0.1:8080",
 				EnvSSHAddr: ":2222", EnvSSHHostKey: "host_key", EnvSSHMaxConns: "25",
-				EnvInviteUser: "SignUp", EnvAuditRetentionDays: "90",
+				EnvInviteUser: "SignUp", EnvAuditRetentionDays: "90", EnvErasureGraceDays: "30",
 				EnvSFTPMaxUpload: "2048",
 				EnvPBCDataFile:   " /data/pbc.json ", EnvFirstPartyDomains: "Example.org, bbs.example.net,",
 			},
 			want: Config{
 				DBPath: "bbs.db", LogLevel: slog.LevelDebug, LogFormat: LogFormatJSON, HTTPAddr: "127.0.0.1:8080",
 				SSHAddr: ":2222", SSHHostKeyPath: "host_key", SSHMaxConns: 25, SFTPMaxUpload: 2048,
-				InviteUser: "signup", AuditRetentionDays: 90,
+				InviteUser: "signup", AuditRetentionDays: 90, ErasureGraceDays: 30,
 				PBCDataFile: "/data/pbc.json", FirstPartyDomains: []string{"example.org", "bbs.example.net"},
 			},
 		},
 		{
 			name: "listen on all interfaces",
 			env:  map[string]string{EnvDBPath: "bbs.db", EnvHTTPAddr: ":8080"},
-			want: Config{DBPath: "bbs.db", LogLevel: slog.LevelInfo, LogFormat: LogFormatText, HTTPAddr: ":8080", SSHMaxConns: DefaultSSHMaxConns, SFTPMaxUpload: DefaultSFTPMaxUpload, InviteUser: DefaultInviteUser, AuditRetentionDays: DefaultAuditRetentionDays},
+			want: Config{DBPath: "bbs.db", LogLevel: slog.LevelInfo, LogFormat: LogFormatText, HTTPAddr: ":8080", SSHMaxConns: DefaultSSHMaxConns, SFTPMaxUpload: DefaultSFTPMaxUpload, InviteUser: DefaultInviteUser, AuditRetentionDays: DefaultAuditRetentionDays, ErasureGraceDays: DefaultErasureGraceDays},
 		},
 		{
 			name:    "missing db path",
@@ -108,6 +108,11 @@ func TestLoad(t *testing.T) {
 			name:    "upload limit too large",
 			env:     map[string]string{EnvDBPath: "x", EnvSFTPMaxUpload: "999999999999"},
 			wantErr: []string{EnvSFTPMaxUpload},
+		},
+		{
+			name:    "grace too long",
+			env:     map[string]string{EnvDBPath: "x", EnvErasureGraceDays: "400"},
+			wantErr: []string{EnvErasureGraceDays},
 		},
 		{
 			name:    "errors are reported together",

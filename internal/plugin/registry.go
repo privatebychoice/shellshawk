@@ -12,8 +12,10 @@ import (
 
 	"go.privatebychoice.com/shellshawk/internal/auth"
 	"go.privatebychoice.com/shellshawk/internal/events"
+	"go.privatebychoice.com/shellshawk/internal/export"
 	"go.privatebychoice.com/shellshawk/internal/perm"
 	"go.privatebychoice.com/shellshawk/internal/presence"
+	"go.privatebychoice.com/shellshawk/internal/privacy"
 	"go.privatebychoice.com/shellshawk/internal/sftpd"
 	"go.privatebychoice.com/shellshawk/internal/store"
 )
@@ -38,6 +40,7 @@ type Deps struct {
 	Auth     *auth.Service
 	Events   *events.Bus
 	Presence *presence.Tracker
+	Privacy  *privacy.Service
 	Log      *slog.Logger
 	Now      func() time.Time // nil = time.Now
 }
@@ -53,6 +56,7 @@ type Registry struct {
 	plugins []*Loaded
 	items   map[string]Item // "<id>:<key>" → item
 	mounts  []sftpd.Mount
+	exports []export.Source
 }
 
 // Item is a menu item with its owning plugin.
@@ -167,7 +171,7 @@ func Load(ctx context.Context, d Deps, plugins ...Plugin) (*Registry, error) {
 			return nil, err
 		}
 		st := &Settings{id: m.ID, defs: m.Settings, db: d.DB, now: d.Now, log: log}
-		h := &Host{ID: m.ID, DB: d.DB, Perms: d.Perms, Auth: d.Auth, Events: d.Events, Presence: d.Presence, Settings: st, Log: log}
+		h := &Host{ID: m.ID, DB: d.DB, Perms: d.Perms, Auth: d.Auth, Events: d.Events, Presence: d.Presence, Privacy: d.Privacy, Settings: st, Log: log}
 		if err := p.Init(ctx, h); err != nil {
 			return nil, fmt.Errorf("plugin %s: init: %w", m.ID, err)
 		}
@@ -176,11 +180,17 @@ func Load(ctx context.Context, d Deps, plugins ...Plugin) (*Registry, error) {
 			r.items[t] = Item{Target: t, PluginID: m.ID, MenuItem: it}
 		}
 		r.mounts = append(r.mounts, m.SFTP...)
+		if m.Export != nil {
+			r.exports = append(r.exports, export.Source{Name: m.ID, Export: m.Export})
+		}
 		r.plugins = append(r.plugins, &Loaded{Manifest: m, Settings: st})
 		log.Info("plugin started", "version", m.Version, "menu_items", len(m.MenuItems), "permissions", len(m.Permissions))
 	}
 	return r, nil
 }
+
+// ExportSources returns the plugins' data-export functions in load order.
+func (r *Registry) ExportSources() []export.Source { return r.exports }
 
 // Mounts returns every plugin SFTP mount in load order.
 func (r *Registry) Mounts() []sftpd.Mount { return r.mounts }

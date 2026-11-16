@@ -15,9 +15,11 @@ import (
 
 	"go.privatebychoice.com/shellshawk/internal/auth"
 	"go.privatebychoice.com/shellshawk/internal/events"
+	"go.privatebychoice.com/shellshawk/internal/export"
 	"go.privatebychoice.com/shellshawk/internal/form"
 	"go.privatebychoice.com/shellshawk/internal/perm"
 	"go.privatebychoice.com/shellshawk/internal/presence"
+	"go.privatebychoice.com/shellshawk/internal/privacy"
 	"go.privatebychoice.com/shellshawk/internal/sftpd"
 	"go.privatebychoice.com/shellshawk/internal/store"
 	"go.privatebychoice.com/shellshawk/internal/tui"
@@ -58,6 +60,10 @@ type Manifest struct {
 	// SFTP mounts are top-level SFTP directories. Each name must be the
 	// plugin ID or start with "<id>-".
 	SFTP []sftpd.Mount
+	// Export returns everything the plugin stores about a member, for the
+	// data export at /me/export/<id>/ (right of access). Plugins that store
+	// member data must provide it, and must also handle events.UserErased.
+	Export func(ctx context.Context, userID int64) ([]export.File, error)
 }
 
 // Permission is a permission a plugin defines.
@@ -136,6 +142,7 @@ type Host struct {
 	Auth     *auth.Service
 	Events   *events.Bus
 	Presence *presence.Tracker // who has a BBS session open; may be nil in tests
+	Privacy  *privacy.Service  // visibility rules; may be nil in tests
 	Settings *Settings         // this plugin's settings only
 	Log      *slog.Logger
 }

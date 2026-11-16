@@ -28,6 +28,7 @@ import (
 	"go.privatebychoice.com/shellshawk/internal/plugins/messages"
 	"go.privatebychoice.com/shellshawk/internal/plugins/polls"
 	"go.privatebychoice.com/shellshawk/internal/prefs"
+	"go.privatebychoice.com/shellshawk/internal/privacy"
 	"go.privatebychoice.com/shellshawk/internal/settings"
 	"go.privatebychoice.com/shellshawk/internal/sshd"
 	"go.privatebychoice.com/shellshawk/internal/store"
@@ -43,6 +44,7 @@ type env struct {
 	auth    *auth.Service
 	perms   *perm.Service
 	prefs   *prefs.Service
+	privacy *privacy.Service
 }
 
 // startBBS runs a BBS with the given plugins (the hello test plugin if none).
@@ -68,11 +70,17 @@ func startBBS(t *testing.T, plugins ...plugin.Plugin) *env {
 	if len(plugins) == 0 {
 		plugins = []plugin.Plugin{&helloPlugin{}}
 	}
-	reg, err := plugin.Load(ctx, plugin.Deps{DB: db, Perms: ps, Auth: as, Events: bus, Log: log}, plugins...)
+	priv := privacy.NewService(db, as, ps, 14*24*time.Hour, nil, log)
+	for _, p := range plugins {
+		if fc, ok := p.(privacy.FriendChecker); ok {
+			priv.SetFriends(fc)
+		}
+	}
+	reg, err := plugin.Load(ctx, plugin.Deps{DB: db, Perms: ps, Auth: as, Events: bus, Privacy: priv, Log: log}, plugins...)
 	if err != nil {
 		t.Fatal(err)
 	}
-	h := &Handler{Auth: as, Settings: st, Perms: ps, Prefs: pr, Menu: menu.NewService(db, ps, nil, log), Plugins: reg, Log: log}
+	h := &Handler{Auth: as, Settings: st, Perms: ps, Prefs: pr, Menu: menu.NewService(db, ps, nil, log), Plugins: reg, Privacy: priv, Log: log}
 	if err := h.Menu.Seed(ctx, h.MenuDefaults()); err != nil {
 		t.Fatal(err)
 	}
@@ -96,7 +104,7 @@ func startBBS(t *testing.T, plugins ...plugin.Plugin) *env {
 		defer cancel()
 		srv.Shutdown(ctx)
 	})
-	return &env{addr: l.Addr().String(), hostKey: host.PublicKey(), auth: as, perms: ps, prefs: pr}
+	return &env{addr: l.Addr().String(), hostKey: host.PublicKey(), auth: as, perms: ps, prefs: pr, privacy: priv}
 }
 
 func newUserKey(t *testing.T) (ssh.Signer, string) {
@@ -207,10 +215,10 @@ func TestRegisterLineModeThenLogin(t *testing.T) {
 		t.Errorf("screen reader choice not saved: %+v", p)
 	}
 
-	// Log in with the key: line mode main menu, then log out (item 8:
+	// Log in with the key: line mode main menu, then log out (item 9:
 	// the test plugin's two items come before Log out).
-	out = e.session(t, "alice", ssh.PublicKeys(signer), "8\r")
-	for _, want := range []string{"Screen: shellshawk - Main menu", "Welcome, alice.", "5. Administration"} {
+	out = e.session(t, "alice", ssh.PublicKeys(signer), "9\r")
+	for _, want := range []string{"Screen: shellshawk - Main menu", "Welcome, alice.", "2. Privacy and profile", "6. Administration"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("member output missing %q\n---\n%s", want, out)
 		}
@@ -292,8 +300,8 @@ func TestSettingsSwitchesToLineMode(t *testing.T) {
 	// field (terminal type) has the cursor on option 1; move down to option
 	// 4 (screen reader) and select it with Space, then Ctrl-S. The
 	// confirmation is then shown in line mode; Enter dismisses it, and in
-	// the line-mode main menu, 8 logs out.
-	input := "1" + "\x1b[B\x1b[B\x1b[B " + "\x13" + "\r" + "8\r"
+	// the line-mode main menu, 9 logs out.
+	input := "1" + "\x1b[B\x1b[B\x1b[B " + "\x13" + "\r" + "9\r"
 	out := e.session(t, "carol", ssh.PublicKeys(signer), input)
 	p, _ := e.prefs.Get(ctx, u.ID)
 	if p.Profile != theme.ProfileAccessible {
@@ -318,9 +326,9 @@ func TestMarkdownGuideLineMode(t *testing.T) {
 	if err := e.prefs.Set(ctx, u.ID, p); err != nil {
 		t.Fatal(err)
 	}
-	// Main menu 4 = Markdown, 1 = guide, Enter to finish reading,
-	// 2 = Try it: type markdown, end with ".", then "no" to stop, 3 = back, 8 = log out.
-	input := strings.Join([]string{"4", "1", "", "2", "# Hi", "[x](javascript:alert(1))", ".", "", "1", "3", "8"}, "\r") + "\r"
+	// Main menu 5 = Markdown, 1 = guide, Enter to finish reading,
+	// 2 = Try it: type markdown, end with ".", then "no" to stop, 3 = back, 9 = log out.
+	input := strings.Join([]string{"5", "1", "", "2", "# Hi", "[x](javascript:alert(1))", ".", "", "1", "3", "9"}, "\r") + "\r"
 	out := e.session(t, "dave", ssh.PublicKeys(signer), input)
 	for _, want := range []string{
 		"Heading level 1: Markdown guide",
@@ -388,9 +396,9 @@ func (e *env) accessibleAdmin(t *testing.T, name string) ssh.Signer {
 func TestPluginItemsAndRecovery(t *testing.T) {
 	e := startBBS(t)
 	signer := e.accessibleAdmin(t, "erin")
-	// Main menu: 6 = Broken item, 7 = Say hello, 8 = Log out.
-	out := e.session(t, "erin", ssh.PublicKeys(signer), "6\r\r7\r\r8\r")
-	for _, want := range []string{"6. Broken item", "7. Say hello", "8. Log out",
+	// Main menu: 7 = Broken item, 8 = Say hello, 9 = Log out.
+	out := e.session(t, "erin", ssh.PublicKeys(signer), "7\r\r8\r\r9\r")
+	for _, want := range []string{"7. Broken item", "8. Say hello", "9. Log out",
 		"Sorry, something went wrong", "Hello from a plugin."} {
 		if !strings.Contains(out, want) {
 			t.Errorf("output missing %q", want)
@@ -407,11 +415,11 @@ func TestPluginItemsAndRecovery(t *testing.T) {
 func TestPluginSettingsAndMenuEditor(t *testing.T) {
 	e := startBBS(t)
 	signer := e.accessibleAdmin(t, "frank")
-	// 5 Administration; 7 Plugin settings; 1 Hello; greeting "Howdy";
-	// Enter to dismiss "Settings saved."; q back to main; 7 Say hello; Enter;
-	// 5 Administration; 8 Menu editor; 8 Log out entry; 4 Delete; 2 Yes ->
-	// protected message, Enter; q, q, then 8 Log out.
-	input := strings.Join([]string{"5", "7", "1", "Howdy", "", "q", "7", "", "5", "8", "8", "4", "2", "", "q", "q", "8"}, "\r") + "\r"
+	// 6 Administration; 7 Plugin settings; 1 Hello; greeting "Howdy";
+	// Enter to dismiss "Settings saved."; q back to main; 8 Say hello; Enter;
+	// 6 Administration; 8 Menu editor; 9 Log out entry; 4 Delete; 2 Yes ->
+	// protected message, Enter; q, q, then 9 Log out.
+	input := strings.Join([]string{"6", "7", "1", "Howdy", "", "q", "8", "", "6", "8", "9", "4", "2", "", "q", "q", "9"}, "\r") + "\r"
 	out := e.session(t, "frank", ssh.PublicKeys(signer), input)
 	for _, want := range []string{"Settings saved.", "Howdy from a plugin.", "cannot be deleted"} {
 		if !strings.Contains(out, want) {
@@ -444,7 +452,7 @@ func TestMemberDoesNotSeeAdministration(t *testing.T) {
 	if strings.Contains(out, "Administration") {
 		t.Errorf("member sees Administration:\n%s", out)
 	}
-	if !strings.Contains(out, "7. Log out") {
+	if !strings.Contains(out, "8. Log out") {
 		t.Errorf("menu numbering unexpected:\n%s", out)
 	}
 }
@@ -465,19 +473,25 @@ func TestMessagesEndToEnd(t *testing.T) {
 	p.Profile, p.PageSize = theme.ProfileAccessible, 200
 	e.prefs.Set(ctx, jack.ID, p)
 
-	// ivy (admin menu: 6 Contacts, 7 Messages, 8 Log out): Messages, Write
+	// jack accepts messages from anyone (the default is friends only).
+	jp, _ := e.privacy.Get(ctx, jack.ID)
+	jp.Visibility[privacy.Messages] = privacy.Public
+	if err := e.privacy.Update(ctx, jack.ID, jp); err != nil {
+		t.Fatal(err)
+	}
+	// ivy (admin menu: 7 Contacts, 8 Messages, 9 Log out): Messages, Write
 	// (4), To jack, Subject, body in the line editor, finish with ".",
 	// dismiss "Message sent.", Back (5), Log out.
 	out := e.session(t, "ivy", ssh.PublicKeys(ivyKey),
-		strings.Join([]string{"7", "4", "jack", "Hello Jack", "**Welcome** aboard", ".", "", "5", "8"}, "\r")+"\r")
+		strings.Join([]string{"8", "4", "jack", "Hello Jack", "**Welcome** aboard", ".", "", "5", "9"}, "\r")+"\r")
 	if !strings.Contains(out, "Message sent.") {
 		t.Fatalf("send failed:\n%s", out)
 	}
 
-	// jack (member menu: 5 Contacts, 6 Messages, 7 Log out): Messages,
+	// jack (member menu: 6 Contacts, 7 Messages, 8 Log out): Messages,
 	// Inbox, first message, dismiss it, Back (3), q, Back (5), Log out.
 	out = e.session(t, "jack", ssh.PublicKeys(jackKey),
-		strings.Join([]string{"6", "1", "1", "", "3", "q", "5", "7"}, "\r")+"\r")
+		strings.Join([]string{"7", "1", "1", "", "3", "q", "5", "8"}, "\r")+"\r")
 	for _, want := range []string{"Inbox: 1 unread, 0 read.", "1. New: Hello Jack", "From: ivy", "Welcome aboard", "1. Reply"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("output missing %q", want)
@@ -491,14 +505,14 @@ func TestMessagesEndToEnd(t *testing.T) {
 func TestPollEndToEnd(t *testing.T) {
 	e := startBBS(t, polls.New())
 	key := e.accessibleAdmin(t, "kim")
-	// Main menu: 6 Polls, 7 Log out. Polls (no polls yet): 2 Create.
+	// Main menu: 7 Polls, 8 Log out. Polls (no polls yet): 2 Create.
 	// Form: question; options typed one per line then "."; multi no;
 	// named no; days 7; pinned no. Dismiss "Poll created.". Polls menu now:
 	// 1 the poll. Poll menu: 1 Vote; choose option 2; results page, dismiss;
 	// 6 Back; 4 Back; 7 Log out.
 	input := strings.Join([]string{
-		"6", "2", "Lunch?", "Pizza", "Soup", ".", "no", "no", "7", "no", "",
-		"1", "1", "2", "", "6", "4", "7",
+		"7", "2", "Lunch?", "Pizza", "Soup", ".", "no", "no", "7", "no", "",
+		"1", "1", "2", "", "6", "4", "8",
 	}, "\r") + "\r"
 	out := e.session(t, "kim", ssh.PublicKeys(key), input)
 	for _, want := range []string{"Poll created.", "Votes are anonymous.", "Option 2, Soup: 1 vote(s), 100 percent (your vote).", "1 vote(s) from 1 member(s)."} {
@@ -577,18 +591,18 @@ func TestChatBetweenTwoSessions(t *testing.T) {
 	p.Profile = theme.ProfileAccessible
 	e.prefs.Set(ctx, mia.ID, p)
 
-	// lee: main menu 6 = Chat, then 1 = #lobby.
+	// lee: main menu 7 = Chat, then 1 = #lobby.
 	a := e.interactive(t, "lee", ssh.PublicKeys(leeKey))
-	a.waitFor("6. Chat")
-	a.send("6\r")
+	a.waitFor("7. Chat")
+	a.send("7\r")
 	a.waitFor("#lobby [P]")
 	a.send("1\r")
 	a.waitFor("This chat is logged")
 
-	// mia: main menu 5 = Chat (no Administration), then the lobby.
+	// mia: main menu 6 = Chat (no Administration), then the lobby.
 	b := e.interactive(t, "mia", ssh.PublicKeys(miaKey))
-	b.waitFor("5. Chat")
-	b.send("5\r")
+	b.waitFor("6. Chat")
+	b.send("6\r")
 	b.waitFor("#lobby [P] (1 here)")
 	b.send("1\r")
 	a.waitFor("* mia joined")
@@ -612,16 +626,16 @@ func TestConferenceEndToEnd(t *testing.T) {
 	pl, ch := polls.New(), chat.New()
 	e := startBBS(t, pl, ch, conferences.New(pl, ch))
 	key := e.accessibleAdmin(t, "nora")
-	// Main menu: 6 Chat, 7 Conferences, 8 Polls, 9 Log out.
+	// Main menu: 7 Chat, 8 Conferences, 9 Polls, 10 Log out.
 	// Conferences: area 1 (General), conference 1 (General discussion),
 	// 1 Start a thread: title, body in the line editor, "." to post,
 	// 1 = no poll, read the thread (Enter), 2 Reply: body, ".", no poll,
 	// read again (Enter), then q back out of thread, conference, area and
 	// areas, and 9 log out.
 	input := strings.Join([]string{
-		"7", "1", "1", "1", "Hello all", "Welcome **everyone**", ".", "1", "",
+		"8", "1", "1", "1", "Hello all", "Welcome **everyone**", ".", "1", "",
 		"2", "A reply", ".", "1", "",
-		"q", "q", "q", "q", "9",
+		"q", "q", "q", "q", "10",
 	}, "\r") + "\r"
 	out := e.session(t, "nora", ssh.PublicKeys(key), input)
 	for _, want := range []string{
@@ -637,5 +651,43 @@ func TestConferenceEndToEnd(t *testing.T) {
 	}
 	if t.Failed() {
 		t.Logf("output:\n%s", out)
+	}
+}
+
+func TestEraseAccountEndToEnd(t *testing.T) {
+	e := startBBS(t)
+	ctx := context.Background()
+	_ = e.accessibleAdmin(t, "pat")
+	admin, _ := e.auth.UserByUsername(ctx, "pat")
+	code, _, _ := e.auth.CreateInvite(ctx, admin.ID, auth.InviteOptions{})
+	key, line := newUserKey(t)
+	olga, err := e.auth.Register(ctx, code, auth.Registration{Username: "olga", Password: testPassword, PublicKey: line})
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := prefs.Default()
+	p.Profile = theme.ProfileAccessible
+	e.prefs.Set(ctx, olga.ID, p)
+
+	// Main menu 2 = Privacy and profile; 4 = Erase my account; dismiss the
+	// explanation; content 1 = delete; type a wrong name, then the right
+	// one; confirm 2 = Yes; dismiss the final notice (session ends).
+	input := strings.Join([]string{"2", "4", "", "1", "olgaa", "olga", "2", ""}, "\r") + "\r"
+	out := e.session(t, "olga", ssh.PublicKeys(key), input)
+	for _, want := range []string{"erased after 14 days", "does not match your username", "Your account is locked and will be erased on"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q", want)
+		}
+	}
+	if t.Failed() {
+		t.Logf("output:\n%s", out)
+	}
+	if _, err := ssh.Dial("tcp", e.addr, &ssh.ClientConfig{
+		User: "olga", Auth: []ssh.AuthMethod{ssh.PublicKeys(key)}, HostKeyCallback: ssh.FixedHostKey(e.hostKey), Timeout: 5 * time.Second,
+	}); err == nil {
+		t.Error("locked account can still log in")
+	}
+	if er, ok, _ := e.privacy.Erasure(ctx, olga.ID); !ok || !er.DeleteContent {
+		t.Errorf("erasure request = %+v, %v", er, ok)
 	}
 }

@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"golang.org/x/crypto/ssh"
 
@@ -18,6 +19,7 @@ import (
 	"go.privatebychoice.com/shellshawk/internal/events"
 	"go.privatebychoice.com/shellshawk/internal/perm"
 	"go.privatebychoice.com/shellshawk/internal/plugin"
+	"go.privatebychoice.com/shellshawk/internal/privacy"
 	"go.privatebychoice.com/shellshawk/internal/store"
 )
 
@@ -33,6 +35,7 @@ type Env struct {
 	Perms    *perm.Service
 	Events   *events.Bus
 	Registry *plugin.Registry
+	Privacy  *privacy.Service
 	Admin    int64 // bootstrap administrator "admin1"
 	Log      *slog.Logger
 }
@@ -51,9 +54,15 @@ func New(t *testing.T, plugins ...plugin.Plugin) *Env {
 	as := auth.NewService(db, ps, "new", nil, log)
 	bus := events.New(log)
 	as.SetPublisher(bus)
-	e := &Env{t: t, Ctx: ctx, DB: db, Auth: as, Perms: ps, Events: bus, Log: log}
+	priv := privacy.NewService(db, as, ps, 14*24*time.Hour, nil, log)
+	for _, p := range plugins {
+		if fc, ok := p.(privacy.FriendChecker); ok {
+			priv.SetFriends(fc)
+		}
+	}
+	e := &Env{t: t, Ctx: ctx, DB: db, Auth: as, Perms: ps, Events: bus, Privacy: priv, Log: log}
 
-	reg, err := plugin.Load(ctx, plugin.Deps{DB: db, Perms: ps, Auth: as, Events: bus, Log: log}, plugins...)
+	reg, err := plugin.Load(ctx, plugin.Deps{DB: db, Perms: ps, Auth: as, Events: bus, Privacy: priv, Log: log}, plugins...)
 	if err != nil {
 		t.Fatalf("load plugins: %v", err)
 	}
@@ -81,6 +90,19 @@ func (e *Env) register(code, name string) int64 {
 		e.t.Fatalf("register %s: %v", name, err)
 	}
 	return u.ID
+}
+
+// Visibility sets one of a member's privacy levels.
+func (e *Env) Visibility(user int64, f privacy.Field, l privacy.Level) {
+	e.t.Helper()
+	p, err := e.Privacy.Get(e.Ctx, user)
+	if err != nil {
+		e.t.Fatal(err)
+	}
+	p.Visibility[f] = l
+	if err := e.Privacy.Update(e.Ctx, user, p); err != nil {
+		e.t.Fatal(err)
+	}
 }
 
 // User creates an active member in the given groups ("member" if none).
