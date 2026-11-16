@@ -20,23 +20,25 @@ func TestLoad(t *testing.T) {
 		{
 			name: "minimal",
 			env:  map[string]string{EnvDBPath: "bbs.db"},
-			want: Config{DBPath: "bbs.db", LogLevel: slog.LevelInfo, LogFormat: LogFormatText, SSHMaxConns: DefaultSSHMaxConns},
+			want: Config{DBPath: "bbs.db", LogLevel: slog.LevelInfo, LogFormat: LogFormatText, SSHMaxConns: DefaultSSHMaxConns, InviteUser: DefaultInviteUser, AuditRetentionDays: DefaultAuditRetentionDays},
 		},
 		{
 			name: "all set",
 			env: map[string]string{
 				EnvDBPath: " bbs.db ", EnvLogLevel: "debug", EnvLogFormat: "JSON", EnvHTTPAddr: "127.0.0.1:8080",
 				EnvSSHAddr: ":2222", EnvSSHHostKey: "host_key", EnvSSHMaxConns: "25",
+				EnvInviteUser: "SignUp", EnvAuditRetentionDays: "90",
 			},
 			want: Config{
 				DBPath: "bbs.db", LogLevel: slog.LevelDebug, LogFormat: LogFormatJSON, HTTPAddr: "127.0.0.1:8080",
 				SSHAddr: ":2222", SSHHostKeyPath: "host_key", SSHMaxConns: 25,
+				InviteUser: "signup", AuditRetentionDays: 90,
 			},
 		},
 		{
 			name: "listen on all interfaces",
 			env:  map[string]string{EnvDBPath: "bbs.db", EnvHTTPAddr: ":8080"},
-			want: Config{DBPath: "bbs.db", LogLevel: slog.LevelInfo, LogFormat: LogFormatText, HTTPAddr: ":8080", SSHMaxConns: DefaultSSHMaxConns},
+			want: Config{DBPath: "bbs.db", LogLevel: slog.LevelInfo, LogFormat: LogFormatText, HTTPAddr: ":8080", SSHMaxConns: DefaultSSHMaxConns, InviteUser: DefaultInviteUser, AuditRetentionDays: DefaultAuditRetentionDays},
 		},
 		{
 			name:    "missing db path",
@@ -82,6 +84,16 @@ func TestLoad(t *testing.T) {
 			name:    "non-numeric max conns",
 			env:     map[string]string{EnvDBPath: "x", EnvSSHMaxConns: "lots"},
 			wantErr: []string{EnvSSHMaxConns},
+		},
+		{
+			name:    "bad invite user",
+			env:     map[string]string{EnvDBPath: "x", EnvInviteUser: "a b"},
+			wantErr: []string{EnvInviteUser},
+		},
+		{
+			name:    "bad retention",
+			env:     map[string]string{EnvDBPath: "x", EnvAuditRetentionDays: "-1"},
+			wantErr: []string{EnvAuditRetentionDays},
 		},
 		{
 			name:    "errors are reported together",

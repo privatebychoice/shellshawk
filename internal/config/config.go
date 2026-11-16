@@ -10,12 +10,20 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"regexp"
 	"strconv"
 	"strings"
 )
 
-// DefaultSSHMaxConns is used when SHELLSHAWK_SSH_MAX_CONNS is unset.
-const DefaultSSHMaxConns = 100
+// Defaults for optional settings.
+const (
+	DefaultSSHMaxConns        = 100
+	DefaultInviteUser         = "new"
+	DefaultAuditRetentionDays = 365
+)
+
+// inviteUserPattern matches the username rules in internal/auth.
+var inviteUserPattern = regexp.MustCompile(`^[a-z][a-z0-9_-]{2,31}$`)
 
 // Environment variable names.
 const (
@@ -27,6 +35,9 @@ const (
 	EnvSSHAddr     = "SHELLSHAWK_SSH_ADDR"
 	EnvSSHHostKey  = "SHELLSHAWK_SSH_HOST_KEY"
 	EnvSSHMaxConns = "SHELLSHAWK_SSH_MAX_CONNS"
+
+	EnvInviteUser         = "SHELLSHAWK_INVITE_USER"
+	EnvAuditRetentionDays = "SHELLSHAWK_AUDIT_RETENTION_DAYS"
 )
 
 // Log output formats.
@@ -53,6 +64,11 @@ type Config struct {
 	SSHHostKeyPath string
 	// SSHMaxConns caps concurrent SSH connections. Default: 100.
 	SSHMaxConns int
+	// InviteUser is the SSH login name for invite-code registration.
+	// Default: "new".
+	InviteUser string
+	// AuditRetentionDays is how long audit log entries are kept. Default: 365.
+	AuditRetentionDays int
 }
 
 // SSHEnabled reports whether the SSH server should be started.
@@ -75,6 +91,9 @@ func Load(getenv func(string) string) (Config, error) {
 		SSHAddr:        strings.TrimSpace(getenv(EnvSSHAddr)),
 		SSHHostKeyPath: strings.TrimSpace(getenv(EnvSSHHostKey)),
 		SSHMaxConns:    DefaultSSHMaxConns,
+
+		InviteUser:         DefaultInviteUser,
+		AuditRetentionDays: DefaultAuditRetentionDays,
 	}
 
 	if cfg.DBPath == "" {
@@ -115,6 +134,23 @@ func Load(getenv func(string) string) (Config, error) {
 			errs = append(errs, fmt.Errorf("%s: invalid value %q (want a positive integer)", EnvSSHMaxConns, v))
 		} else {
 			cfg.SSHMaxConns = n
+		}
+	}
+
+	if v := strings.ToLower(strings.TrimSpace(getenv(EnvInviteUser))); v != "" {
+		if inviteUserPattern.MatchString(v) {
+			cfg.InviteUser = v
+		} else {
+			errs = append(errs, fmt.Errorf("%s: invalid name %q (3-32 lowercase letters, digits, '_' or '-', starting with a letter)", EnvInviteUser, v))
+		}
+	}
+
+	if v := strings.TrimSpace(getenv(EnvAuditRetentionDays)); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil || n < 1 {
+			errs = append(errs, fmt.Errorf("%s: invalid value %q (want a positive number of days)", EnvAuditRetentionDays, v))
+		} else {
+			cfg.AuditRetentionDays = n
 		}
 	}
 

@@ -12,11 +12,15 @@ import (
 
 // Limits on client-supplied session values.
 const (
-	maxTermLen    = 64
-	maxDimension  = 1000 // columns or rows
-	maxEnvVars    = 16
-	maxEnvLen     = 256 // name + value
-	resizeBacklog = 1   // only the latest size matters
+	maxTermLen   = 64
+	maxDimension = 1000 // columns or rows
+	// Used when the client sends zero dimensions, which RFC 4254 §6.2 says
+	// must be ignored (OpenSSH sends 0x0 when it cannot read its own size).
+	defaultColumns = 80
+	defaultRows    = 24
+	maxEnvVars     = 16
+	maxEnvLen      = 256 // name + value
+	resizeBacklog  = 1   // only the latest size matters
 )
 
 // allowedEnv is the allowlist for "env" requests. Everything else (PATH,
@@ -96,7 +100,18 @@ type exitStatusMsg struct {
 }
 
 func validSize(cols, rows uint32) bool {
-	return cols >= 1 && cols <= maxDimension && rows >= 1 && rows <= maxDimension
+	return cols <= maxDimension && rows <= maxDimension
+}
+
+// applySize returns cur with any non-zero dimension from cols/rows applied.
+func applySize(cur WindowSize, cols, rows uint32) WindowSize {
+	if cols > 0 {
+		cur.Columns = int(cols)
+	}
+	if rows > 0 {
+		cur.Rows = int(rows)
+	}
+	return cur
 }
 
 func validTerm(t string) bool {
@@ -176,7 +191,7 @@ func (s *Server) serveSession(ctx context.Context, id Identity, connID string, c
 			case !validTerm(m.Term) || !validSize(m.Columns, m.Rows):
 				refuse(r, "invalid terminal parameters")
 			default:
-				pty = &PTY{Term: m.Term, WindowSize: WindowSize{Columns: int(m.Columns), Rows: int(m.Rows)}}
+				pty = &PTY{Term: m.Term, WindowSize: applySize(WindowSize{Columns: defaultColumns, Rows: defaultRows}, m.Columns, m.Rows)}
 				log.Debug("pty allocated", "term", m.Term, "cols", m.Columns, "rows", m.Rows)
 				reply(r, true)
 			}
@@ -187,9 +202,16 @@ func (s *Server) serveSession(ctx context.Context, id Identity, connID string, c
 				refuse(r, "invalid window-change")
 				continue
 			}
-			ws := WindowSize{Columns: int(m.Columns), Rows: int(m.Rows)}
-			if pty != nil && !started {
-				pty.WindowSize = ws
+			if m.Columns == 0 && m.Rows == 0 {
+				reply(r, true) // nothing to apply
+				continue
+			}
+			ws := applySize(WindowSize{Columns: defaultColumns, Rows: defaultRows}, m.Columns, m.Rows)
+			if pty != nil {
+				ws = applySize(pty.WindowSize, m.Columns, m.Rows)
+				if !started {
+					pty.WindowSize = ws
+				}
 			}
 			// Latest size wins: drop a stale pending value, then send.
 			select {

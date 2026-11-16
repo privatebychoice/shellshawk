@@ -113,7 +113,7 @@ func start(t *testing.T, mod func(*Config, *testAuth)) *harness {
 	user := newSigner(t, "ed25519")
 	auth := &testAuth{
 		keys:      map[string]string{ssh.FingerprintSHA256(user.PublicKey()): "u1"},
-		passwords: map[string]Identity{"invite-code": {Mode: ModeRegister}},
+		passwords: map[string]Identity{"invite-code": {Mode: ModeRegister, InviteCode: "invite-code"}},
 	}
 	cfg := Config{HostKey: host, Handler: interactiveHandler{}, Log: quietLog()}
 	if mod != nil {
@@ -354,6 +354,10 @@ func TestAuthentication(t *testing.T) {
 			auth: func(*harness) []ssh.AuthMethod { return []ssh.AuthMethod{ssh.Password("no-user")} },
 		},
 		{
+			name: "register mode requires the invite code",
+			auth: func(*harness) []ssh.AuthMethod { return []ssh.AuthMethod{ssh.Password("no-code")} },
+		},
+		{
 			name: "wrong password",
 			auth: func(*harness) []ssh.AuthMethod { return []ssh.AuthMethod{ssh.Password("nope")} },
 		},
@@ -368,6 +372,7 @@ func TestAuthentication(t *testing.T) {
 			h := start(t, func(c *Config, a *testAuth) {
 				a.passwords["bad-impl"] = Identity{UserID: "u1", Mode: ModeMember}
 				a.passwords["no-user"] = Identity{Mode: ModeAddKey}
+				a.passwords["no-code"] = Identity{Mode: ModeRegister}
 				if tt.denyAll {
 					c.Auth = DenyAll{}
 				}
@@ -462,7 +467,7 @@ func TestSessionRequestPolicy(t *testing.T) {
 		{"env oversized refused", "env", env("LANG", strings.Repeat("x", maxEnvLen)), false},
 		{"pty ok", "pty-req", pty("xterm-256color", 80, 24), true},
 		{"pty bad term", "pty-req", pty("xterm\x1b[31m", 80, 24), false},
-		{"pty zero size", "pty-req", pty("xterm", 0, 24), false},
+		{"pty zero size uses defaults (RFC 4254 §6.2)", "pty-req", pty("xterm", 0, 0), true},
 		{"pty huge size", "pty-req", pty("xterm", 5000, 24), false},
 		{"pty malformed", "pty-req", []byte{1, 2, 3}, false},
 	}
@@ -650,5 +655,105 @@ func TestNewValidation(t *testing.T) {
 	}
 	if _, err := New(full); err != nil {
 		t.Errorf("New(valid) = %v", err)
+	}
+}
+
+// recordingAuth wraps testAuth, marks one key as pending, and records logins.
+type recordingAuth struct {
+	testAuth
+	pendingFP string
+	logins    chan Identity
+}
+
+func (a *recordingAuth) PublicKey(c ConnInfo, key ssh.PublicKey) (Identity, error) {
+	if ssh.FingerprintSHA256(key) == a.pendingFP {
+		return Identity{UserID: "p1", Mode: ModePending}, nil
+	}
+	return a.testAuth.PublicKey(c, key)
+}
+
+func (a *recordingAuth) RecordLogin(_ context.Context, id Identity) { a.logins <- id }
+
+func TestPendingModeAndLoginRecording(t *testing.T) {
+	pendingKey := newSigner(t, "ed25519")
+	var rec *recordingAuth
+	h := start(t, func(c *Config, a *testAuth) {
+		rec = &recordingAuth{testAuth: *a, pendingFP: ssh.FingerprintSHA256(pendingKey.PublicKey()), logins: make(chan Identity, 4)}
+		c.Auth = rec
+	})
+
+	tests := []struct {
+		name     string
+		signer   ssh.Signer
+		wantMode Mode
+		wantUser string
+	}{
+		{"member key", h.userKey, ModeMember, "u1"},
+		{"pending key", pendingKey, ModePending, "p1"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := h.dial(t, h.clientConfig(ssh.PublicKeys(tt.signer)))
+			sess, err := c.NewSession()
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer sess.Close()
+			lr := newLineReader(must(sess.StdoutPipe()))
+			if err := sess.Shell(); err != nil {
+				t.Fatal(err)
+			}
+			want := fmt.Sprintf("hello mode=%s user=%s", tt.wantMode, tt.wantUser)
+			if got := lr.next(t); !strings.HasPrefix(got, want) {
+				t.Errorf("greeting = %q, want prefix %q", got, want)
+			}
+			select {
+			case id := <-rec.logins:
+				if id.Mode != tt.wantMode || id.UserID != tt.wantUser || id.KeyFingerprint != ssh.FingerprintSHA256(tt.signer.PublicKey()) {
+					t.Errorf("RecordLogin got %+v", id)
+				}
+			case <-time.After(5 * time.Second):
+				t.Fatal("RecordLogin not called")
+			}
+		})
+	}
+
+	// A client offering an unknown key first and the real key second must
+	// produce exactly one recorded login, for the key that was proven.
+	stranger := newSigner(t, "ed25519")
+	c := h.dial(t, h.clientConfig(ssh.PublicKeys(stranger, h.userKey)))
+	defer c.Close()
+	select {
+	case id := <-rec.logins:
+		if id.KeyFingerprint != ssh.FingerprintSHA256(h.userKey.PublicKey()) {
+			t.Errorf("recorded fingerprint %s, want the proven key", id.KeyFingerprint)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("RecordLogin not called")
+	}
+	select {
+	case id := <-rec.logins:
+		t.Errorf("unexpected extra RecordLogin: %+v", id)
+	case <-time.After(100 * time.Millisecond):
+	}
+}
+
+func TestZeroSizePTYUsesDefaults(t *testing.T) {
+	h := start(t, nil)
+	c := h.dial(t, h.clientConfig())
+	sess, err := c.NewSession()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer sess.Close()
+	lr := newLineReader(must(sess.StdoutPipe()))
+	if err := sess.RequestPty("xterm", 0, 0, ssh.TerminalModes{}); err != nil {
+		t.Fatalf("RequestPty 0x0: %v", err)
+	}
+	if err := sess.Shell(); err != nil {
+		t.Fatal(err)
+	}
+	if got := lr.next(t); !strings.Contains(got, `term="xterm 80x24"`) {
+		t.Errorf("greeting = %q, want default 80x24", got)
 	}
 }

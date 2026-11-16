@@ -134,11 +134,19 @@ to use.
 - **Permissions** are strings namespaced by owner: `core.admin`,
   `core.invite.create`, `conferences.post`, `chat.channel.create`, …
 - **Groups** hold permissions; users hold groups. Effective permissions = union.
-- Built-in groups: `admin`, `moderator`, `member`, `pending` (awaiting approval).
+- Built-in groups: `admin`, `moderator`, `member`. Accounts awaiting approval
+  have status `pending` (rather than a `pending` group) and hold no
+  permissions until approved; status `locked` blocks all logins.
+- Escalation rules: an actor can only grant permissions, assign groups, or
+  attach groups to invites if they hold every permission involved, and can
+  only approve/reject/lock accounts whose permissions they fully hold. The
+  last active administrator cannot be removed or locked.
+- First administrator: `shellshawk bootstrap-invite` (operator CLI) prints a
+  single-use admin invite, only while no active administrator exists.
 - Resource-level checks (e.g. "conference X requires group Y") are stored on the
   resource and checked through `perm.CanAccess(user, resource)`.
-- **Invites**: codes are random (≥128-bit, shown as a readable word/grouped
-  string), hashed in the DB, with optional expiry, max uses, the inviting user,
+- **Invites**: codes are random 128-bit Crockford base32 in dash-separated
+  groups, stored as SHA-256 hashes, with optional expiry, max uses, the inviting user,
   and default groups to assign.
 - **Approval**: configurable per invite or globally — new accounts land in
   `pending` until an admin/moderator approves.
@@ -217,8 +225,9 @@ ssh bbs.example            (example host)
  ├─ public key matches a user → BBS main menu
  └─ no matching key
      ├─ username "new" (configurable) + password = invite code
-     │     → registration wizard: username, password, email (optional), first public key
+     │     → registration wizard: username, password (15+ chars), email (optional), first public key
      │     → account enters `pending` if approval is on
+     (later key logins to a pending account get a status screen only)
      └─ username + password (existing user)
            → "Add key" screen ONLY (paste a public key, max 3) → disconnect
 ```

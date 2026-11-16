@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"net/netip"
 	"sync"
 	"time"
 
@@ -47,6 +48,7 @@ type Config struct {
 type Server struct {
 	addr             string
 	sshConfig        *ssh.ServerConfig
+	auth             Authenticator
 	handler          SessionHandler
 	handshakeTimeout time.Duration
 	slots            chan struct{} // connection semaphore
@@ -83,6 +85,7 @@ func New(cfg Config) (*Server, error) {
 
 	s := &Server{
 		addr:             cfg.Addr,
+		auth:             cfg.Auth,
 		handler:          cfg.Handler,
 		handshakeTimeout: cfg.HandshakeTimeout,
 		slots:            make(chan struct{}, cfg.MaxConns),
@@ -117,10 +120,12 @@ func (s *Server) newSSHConfig(auth Authenticator) *ssh.ServerConfig {
 		if err != nil {
 			return nil, err
 		}
-		if id.Mode != ModeMember || id.UserID == "" {
+		if (id.Mode != ModeMember && id.Mode != ModePending) || id.UserID == "" {
 			s.log.Error("authenticator returned invalid identity for public key", "conn_id", info.ConnID, "mode", id.Mode)
 			return nil, ErrDenied
 		}
+		id.InviteCode = ""
+		id.KeyFingerprint = ssh.FingerprintSHA256(key)
 		return identityToPermissions(id), nil
 	}
 
@@ -131,11 +136,13 @@ func (s *Server) newSSHConfig(auth Authenticator) *ssh.ServerConfig {
 			return nil, err
 		}
 		// Invariant: a password never grants full access.
-		valid := (id.Mode == ModeRegister) || (id.Mode == ModeAddKey && id.UserID != "")
+		valid := (id.Mode == ModeRegister && id.UserID == "" && id.InviteCode != "") ||
+			(id.Mode == ModeAddKey && id.UserID != "")
 		if !valid {
 			s.log.Error("authenticator returned invalid identity for password", "conn_id", info.ConnID, "mode", id.Mode)
 			return nil, ErrDenied
 		}
+		id.KeyFingerprint = ""
 		return identityToPermissions(id), nil
 	}
 
@@ -159,7 +166,11 @@ func connID(meta ssh.ConnMetadata) string {
 }
 
 func connInfo(meta ssh.ConnMetadata) ConnInfo {
-	return ConnInfo{User: meta.User(), ConnID: connID(meta)}
+	info := ConnInfo{User: meta.User(), ConnID: connID(meta)}
+	if ap, err := netip.ParseAddrPort(meta.RemoteAddr().String()); err == nil {
+		info.RemoteIP = ap.Addr().Unmap()
+	}
+	return info
 }
 
 // ListenAndServe listens on the configured address and serves until Shutdown.
@@ -259,6 +270,9 @@ func (s *Server) serveConn(c net.Conn) {
 		return
 	}
 	log.Info("connection authenticated", "mode", id.Mode, "client", sanitizeForLog(string(sconn.ClientVersion())))
+	if rec, ok := s.auth.(LoginRecorder); ok {
+		rec.RecordLogin(s.ctx, id)
+	}
 
 	ctx, cancel := context.WithCancel(s.ctx)
 	defer cancel()

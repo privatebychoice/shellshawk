@@ -3,10 +3,11 @@
 A self-hosted, privacy-first BBS with an SSH TUI, SFTP, and an optional web
 interface. See [docs/DESIGN.md](docs/DESIGN.md) for the full design.
 
-> **Status:** stage 2: configuration, SQLite with migrations, structured
-> logging, `/version`, and the locked-down SSH server. **SSH logins are
-> refused for everyone until accounts land in stage 3.** The TUI and the rest
-> follow the build order in the design doc.
+> **Status:** stage 3: configuration, SQLite with migrations, logging,
+> `/version`, the locked-down SSH server, and accounts (users, keys, groups,
+> permissions, invites, approvals). Logins work, but **there is no TUI yet**:
+> after logging in you see a one-line notice and are disconnected. The
+> registration and add-key screens arrive with the TUI in stage 4.
 
 ## Build
 
@@ -30,6 +31,8 @@ no built-in defaults.
 | `SHELLSHAWK_SSH_ADDR` | no | disabled | `host:port` for the SSH server; unset = SSH disabled |
 | `SHELLSHAWK_SSH_HOST_KEY` | with SSH | — | Ed25519 host key file; generated (mode `0600`) if missing. Refused if group/world accessible |
 | `SHELLSHAWK_SSH_MAX_CONNS` | no | `100` | Maximum concurrent SSH connections |
+| `SHELLSHAWK_INVITE_USER` | no | `new` | SSH login name for registering with an invite code |
+| `SHELLSHAWK_AUDIT_RETENTION_DAYS` | no | `365` | Audit log entries older than this are purged daily |
 | `SHELLSHAWK_HTTP_ADDR` | no | disabled | `host:port` for the web interface; unset = web disabled |
 | `SHELLSHAWK_LOG_LEVEL` | no | `INFO` | `DEBUG`, `INFO`, `WARN`, `ERROR` |
 | `SHELLSHAWK_LOG_FORMAT` | no | `text` | `text` or `json` |
@@ -43,6 +46,37 @@ SHELLSHAWK_SSH_HOST_KEY="$HOME/shellshawk/ssh_host_ed25519_key" \
 SHELLSHAWK_HTTP_ADDR="127.0.0.1:8080" \
 ./bin/shellshawk
 ```
+
+## First administrator
+
+With the same environment variables set, run:
+
+```bash
+./bin/shellshawk bootstrap-invite
+```
+
+It prints a single-use invite code (valid 24 hours) that registers an
+administrator without approval. It only works while no active administrator
+exists, and running it again revokes the previous unused code.
+
+## Accounts and logins
+
+| Login | How | Result |
+|-------|-----|--------|
+| Public key | Any of the account's keys (max 3) | Full BBS (active) or a status screen (pending approval) |
+| Invite | User `new` (configurable), invite code as password | Registration wizard only |
+| Password | Username + account password | Add-a-key screen only — a password never grants BBS access |
+
+Passwords must be 15–256 characters (NIST SP 800-63B-4, single-factor),
+hashed with argon2id. Password attempts are rate-limited: 5 failures per
+account and 10 per IP address in 15 minutes. Invite codes are 128-bit,
+stored only as SHA-256 hashes, and shown once.
+
+Built-in groups: `admin` (`core.admin`, implies everything), `moderator`
+(approve accounts, create invites) and `member` (default). Nobody can grant a
+permission, assign a group, or attach a group to an invite unless they hold
+every permission involved, and the last active administrator cannot be
+removed or locked.
 
 ## Endpoints
 
@@ -67,5 +101,6 @@ is imported anywhere.
 ## Privacy
 
 Logs never contain client IP addresses, user agents, cookies, query strings,
-or attempted SSH user names.
+or attempted SSH user names. Client IP addresses are held in memory only, for
+rate limiting.
 shellshawk makes no outbound network requests.

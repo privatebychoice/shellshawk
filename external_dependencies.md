@@ -11,7 +11,7 @@ To list exactly what is linked into a build: `go version -m bin/shellshawk`.
 | Name | Version | Project URL | Purpose | Security / privacy notes |
 |------|---------|-------------|---------|--------------------------|
 | `modernc.org/sqlite` | v1.62.0 | https://gitlab.com/cznic/sqlite | SQLite driver for `database/sql` (bundles SQLite 3.54.1) | Pure Go: SQLite's C code is machine-translated to Go, so no cgo and fully static, cross-compiled binaries. Embedded, file-based database; no network access. Actively maintained. A known trade-off is that the transitive tree is larger than the cgo driver's (listed below). `govulncheck` reported nothing (2026-11-16). |
-| `golang.org/x/crypto` | v0.59.0 | https://pkg.go.dev/golang.org/x/crypto/ssh | SSH server (`ssh` package): key exchange incl. ML-KEM hybrid, ciphers, auth | Maintained by the Go team. Algorithm lists are pinned explicitly in `internal/sshd/policy.go` so a library upgrade cannot widen them. Watch Go security announcements for `x/crypto/ssh` advisories. `govulncheck` reported nothing (2026-11-16). |
+| `golang.org/x/crypto` | v0.59.0 | https://pkg.go.dev/golang.org/x/crypto | SSH server (`ssh`: key exchange incl. ML-KEM hybrid, ciphers, auth) and password hashing (`argon2`, argon2id) | Maintained by the Go team. Algorithm lists are pinned explicitly in `internal/sshd/policy.go` so a library upgrade cannot widen them. Watch Go security announcements for `x/crypto/ssh` advisories. `govulncheck` reported nothing (2026-11-16). |
 
 ## Transitive dependencies linked into the binary
 
