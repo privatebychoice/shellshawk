@@ -1,0 +1,40 @@
+{{define "layout"}}<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>{{.Title}} · {{.Site}}</title>
+<link rel="stylesheet" href="{{.Assets.Theme}}">
+<link rel="stylesheet" href="{{.Assets.CSS}}">
+<script src="{{.Assets.GPC}}" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header>
+<nav aria-label="Main">
+<a href="/" class="brand">{{.Site}}</a>
+{{- if .User}}
+<a href="/home">Home</a>
+{{- range .Nav}}
+<a href="{{.Href}}">{{.Label}}</a>
+{{- end}}
+<form method="post" action="/logout" class="inline"><input type="hidden" name="csrf" value="{{.CSRF}}"><button type="submit">Log out {{.User}}</button></form>
+{{- else}}
+<a href="/login">Log in</a>
+{{- end}}
+</nav>
+</header>
+<main id="main">
+<h1>{{.Title}}</h1>
+{{.Body}}
+</main>
+<footer>
+<p>
+{{- if .GPC}}<span class="gpc">Your browser sent a Global Privacy Control signal. It is honoured: this site never sells or shares personal information.</span> {{end -}}
+<span id="gpc-js" class="gpc" hidden>Your browser has Global Privacy Control turned on. It is honoured.</span>
+<a href="/privacy">Privacy</a> · Powered by shellshawk <span class="version">{{.Version}}</span>
+</p>
+</footer>
+</body>
+</html>{{end}}

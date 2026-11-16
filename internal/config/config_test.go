@@ -29,12 +29,14 @@ func TestLoad(t *testing.T) {
 				EnvDBPath: " bbs.db ", EnvLogLevel: "debug", EnvLogFormat: "JSON", EnvHTTPAddr: "127.0.0.1:8080",
 				EnvSSHAddr: ":2222", EnvSSHHostKey: "host_key", EnvSSHMaxConns: "25",
 				EnvInviteUser: "SignUp", EnvAuditRetentionDays: "90", EnvErasureGraceDays: "30",
-				EnvSFTPMaxUpload: "2048",
-				EnvPBCDataFile:   " /data/pbc.json ", EnvFirstPartyDomains: "Example.org, bbs.example.net,",
+				EnvSFTPMaxUpload:    "2048",
+				EnvPublicSSHAddress: "bbs.example.net:22", EnvHTTPInsecureCookies: "true", EnvPrivacyPolicyFile: "/etc/policy.md",
+				EnvPBCDataFile: " /data/pbc.json ", EnvFirstPartyDomains: "Example.org, bbs.example.net,",
 			},
 			want: Config{
 				DBPath: "bbs.db", LogLevel: slog.LevelDebug, LogFormat: LogFormatJSON, HTTPAddr: "127.0.0.1:8080",
 				SSHAddr: ":2222", SSHHostKeyPath: "host_key", SSHMaxConns: 25, SFTPMaxUpload: 2048,
+				PublicSSHAddress: "bbs.example.net:22", HTTPInsecureCookies: true, PrivacyPolicyFile: "/etc/policy.md",
 				InviteUser: "signup", AuditRetentionDays: 90, ErasureGraceDays: 30,
 				PBCDataFile: "/data/pbc.json", FirstPartyDomains: []string{"example.org", "bbs.example.net"},
 			},
@@ -113,6 +115,16 @@ func TestLoad(t *testing.T) {
 			name:    "grace too long",
 			env:     map[string]string{EnvDBPath: "x", EnvErasureGraceDays: "400"},
 			wantErr: []string{EnvErasureGraceDays},
+		},
+		{
+			name:    "bad public ssh address",
+			env:     map[string]string{EnvDBPath: "x", EnvPublicSSHAddress: "bbs.example.net"},
+			wantErr: []string{EnvPublicSSHAddress},
+		},
+		{
+			name:    "bad cookie flag",
+			env:     map[string]string{EnvDBPath: "x", EnvHTTPInsecureCookies: "maybe"},
+			wantErr: []string{EnvHTTPInsecureCookies},
 		},
 		{
 			name:    "errors are reported together",

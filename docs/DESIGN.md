@@ -459,6 +459,16 @@ TOML/JSON files; admins can add more.
 
 ---
 
+Implementation notes (stage 10): read-only in this version — conferences
+(areas, conferences, threads) and messages (inbox, read) via plugin web
+routes (`Manifest.Web`, served under `/p/<id>/`, GET only, built with
+html/template). Login codes are 8 Crockford characters (40 bits), single
+use, 5 minutes, replaced by any newer code, rate-limited; sessions are
+stored hashed with a per-session CSRF token. Login rate limits key on the
+connecting IP: behind a reverse proxy that is the proxy's address, so the
+per-username limit is the effective one. Chat over the web (SSE) and posting
+are left for a later version.
+
 ## 12. Core plugins — notable design points
 
 | Plugin | Notes |

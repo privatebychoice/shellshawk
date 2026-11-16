@@ -139,6 +139,7 @@ func (p *Plugin) Manifest() plugin.Manifest {
 		MenuItems: []plugin.MenuItem{{Key: "main", Label: "Conferences", Help: "Discussion areas and threads", AnyOf: []string{PermRead}, Run: p.run}},
 		SFTP:      []sftpd.Mount{{Name: "conferences", AnyOf: []string{PermRead}, FS: &threadFS{p: p}}},
 		Export:    p.export,
+		Web:       p.webRoutes(),
 	}
 }
 

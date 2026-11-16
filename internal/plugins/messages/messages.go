@@ -119,6 +119,7 @@ func (p *Plugin) Manifest() plugin.Manifest {
 		MenuItems: []plugin.MenuItem{{Key: "main", Label: "Messages", Help: "Your private messages", Run: p.run}},
 		SFTP:      []sftpd.Mount{{Name: "messages", FS: &mailFS{p: p}}},
 		Export:    p.export,
+		Web:       p.webRoutes(),
 	}
 }
 

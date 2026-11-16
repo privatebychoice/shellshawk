@@ -111,6 +111,11 @@ func Validate(m Manifest) error {
 			return fmt.Errorf("plugin %s: menu item %q needs a label and Run", m.ID, it.Key)
 		}
 	}
+	for _, wr := range m.Web {
+		if !strings.HasPrefix(wr.Path, "/") || wr.Handle == nil || strings.ContainsAny(wr.Path, " ?#") {
+			return fmt.Errorf("plugin %s: invalid web route %q", m.ID, wr.Path)
+		}
+	}
 	for _, mt := range m.SFTP {
 		if mt.Name != m.ID && !strings.HasPrefix(mt.Name, m.ID+"-") {
 			return fmt.Errorf("plugin %s: SFTP mount %q must be %q or start with %q", m.ID, mt.Name, m.ID, m.ID+"-")

@@ -1,0 +1,13 @@
+{{define "home"}}
+<p>{{.Site}} is a bulletin board system you use from a terminal over SSH. This website shows part of it once you are logged in.</p>
+<h2>Connect</h2>
+{{if .SSHAddress}}<p>Connect with any SSH client:</p>
+<pre><code>ssh -p {{.SSHPort}} YOUR-USERNAME@{{.SSHHost}}</code></pre>{{else}}<p>Connect with any SSH client to this server's SSH port. Ask the operator for the address.</p>{{end}}
+{{if .HostKey}}<p>The first time you connect, check that the server's key fingerprint is exactly:</p>
+<pre><code>{{.HostKey}}</code></pre>{{end}}
+<h2>Join</h2>
+<p>Membership is by invitation. Ask a member for an invite code, then connect as user <code>{{.InviteUser}}</code> and enter the code as the password. You will create your account and add your SSH key.</p>
+<h2>Use the website</h2>
+<p>Log in to the BBS over SSH, open <strong>Web login code</strong> from the main menu, and enter the code on the <a href="/login">login page</a>. Codes work once and expire after five minutes.</p>
+<p>The BBS works with screen readers: when you connect, type <code>s</code> to use screen reader mode.</p>
+{{end}}

@@ -5,10 +5,12 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
+	"database/sql"
 	"io"
 	"log/slog"
 	"net"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"testing"
@@ -34,6 +36,7 @@ import (
 	"go.privatebychoice.com/shellshawk/internal/store"
 	"go.privatebychoice.com/shellshawk/internal/theme"
 	"go.privatebychoice.com/shellshawk/internal/tui"
+	"go.privatebychoice.com/shellshawk/internal/websess"
 )
 
 const testPassword = "a long enough test passphrase"
@@ -45,6 +48,8 @@ type env struct {
 	perms   *perm.Service
 	prefs   *prefs.Service
 	privacy *privacy.Service
+	handler *Handler
+	db      *sql.DB
 }
 
 // startBBS runs a BBS with the given plugins (the hello test plugin if none).
@@ -104,7 +109,7 @@ func startBBS(t *testing.T, plugins ...plugin.Plugin) *env {
 		defer cancel()
 		srv.Shutdown(ctx)
 	})
-	return &env{addr: l.Addr().String(), hostKey: host.PublicKey(), auth: as, perms: ps, prefs: pr, privacy: priv}
+	return &env{addr: l.Addr().String(), hostKey: host.PublicKey(), auth: as, perms: ps, prefs: pr, privacy: priv, handler: h, db: db}
 }
 
 func newUserKey(t *testing.T) (ssh.Signer, string) {
@@ -417,9 +422,10 @@ func TestPluginSettingsAndMenuEditor(t *testing.T) {
 	signer := e.accessibleAdmin(t, "frank")
 	// 6 Administration; 7 Plugin settings; 1 Hello; greeting "Howdy";
 	// Enter to dismiss "Settings saved."; q back to main; 8 Say hello; Enter;
-	// 6 Administration; 8 Menu editor; 9 Log out entry; 4 Delete; 2 Yes ->
+	// 6 Administration; 8 Menu editor; 10 Log out entry (the editor also
+	// lists the hidden web login item); 4 Delete; 2 Yes ->
 	// protected message, Enter; q, q, then 9 Log out.
-	input := strings.Join([]string{"6", "7", "1", "Howdy", "", "q", "8", "", "6", "8", "9", "4", "2", "", "q", "q", "9"}, "\r") + "\r"
+	input := strings.Join([]string{"6", "7", "1", "Howdy", "", "q", "8", "", "6", "8", "10", "4", "2", "", "q", "q", "9"}, "\r") + "\r"
 	out := e.session(t, "frank", ssh.PublicKeys(signer), input)
 	for _, want := range []string{"Settings saved.", "Howdy from a plugin.", "cannot be deleted"} {
 		if !strings.Contains(out, want) {
@@ -689,5 +695,23 @@ func TestEraseAccountEndToEnd(t *testing.T) {
 	}
 	if er, ok, _ := e.privacy.Erasure(ctx, olga.ID); !ok || !er.DeleteContent {
 		t.Errorf("erasure request = %+v, %v", er, ok)
+	}
+}
+
+func TestWebLoginCodeItem(t *testing.T) {
+	e := startBBS(t)
+	key := e.accessibleAdmin(t, "quinn")
+	if out := e.session(t, "quinn", ssh.PublicKeys(key), "q\r"); strings.Contains(out, "Web login code") {
+		t.Error("web login item shown with the web interface disabled")
+	}
+	e.handler.WebLogin = websess.NewService(e.db, e.auth, nil, slog.New(slog.DiscardHandler))
+	// Main menu: 6 = Web login code (before Administration); dismiss; q.
+	out := e.session(t, "quinn", ssh.PublicKeys(key), "6\r\rq\r")
+	code := regexp.MustCompile(`\b[0-9A-Z]{4}-[0-9A-Z]{4}\b`).FindString(out)
+	if code == "" {
+		t.Fatalf("no code shown:\n%s", out)
+	}
+	if uid, err := e.handler.WebLogin.Redeem(context.Background(), "quinn", code); err != nil || uid == 0 {
+		t.Errorf("shown code does not work: %v", err)
 	}
 }

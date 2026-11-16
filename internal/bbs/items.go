@@ -28,6 +28,9 @@ type coreItem struct {
 	key, label, help string
 	anyOf            []string
 	run              func(s *session, ctx context.Context) error
+	// enabled, if set, hides the item when it returns false (e.g. the web
+	// login code when the web interface is off).
+	enabled func(h *Handler) bool
 }
 
 // coreItems returns the core items in default menu order. It is a function,
@@ -39,6 +42,8 @@ func coreItems() []coreItem {
 		{key: "keys", label: "SSH keys", help: "Add or remove the keys you log in with", run: (*session).keys},
 		{key: "termtest", label: "Terminal test", help: "Check which text styles your terminal can show", run: (*session).termTest},
 		{key: "markdown", label: "Markdown guide", help: "How to format posts and messages, with a preview", run: (*session).markdownGuide},
+		{key: "weblogin", label: "Web login code", help: "A one-time code to log in to the website", run: (*session).webLoginCode,
+			enabled: func(h *Handler) bool { return h.WebLogin != nil }},
 		{key: "admin", label: "Administration", help: "Users, groups, approvals, invites and system settings", anyOf: adminPermissions, run: (*session).admin},
 		{key: "logout", label: "Log out", run: func(*session, context.Context) error { return errLogout }},
 	}
@@ -78,7 +83,11 @@ type itemInfo struct {
 func (h *Handler) item(target string) (itemInfo, bool) {
 	if c, ok := coreItemFor(target); ok {
 		mi := plugin.MenuItem{AnyOf: c.anyOf}
-		return itemInfo{label: c.label, help: c.help, allowed: mi.Allowed}, true
+		allowed := mi.Allowed
+		if c.enabled != nil && !c.enabled(h) {
+			allowed = func(perm.Set) bool { return false }
+		}
+		return itemInfo{label: c.label, help: c.help, allowed: allowed}, true
 	}
 	if h.Plugins != nil {
 		if it, ok := h.Plugins.Item(target); ok {

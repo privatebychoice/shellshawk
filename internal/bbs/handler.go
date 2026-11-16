@@ -25,6 +25,7 @@ import (
 	"go.privatebychoice.com/shellshawk/internal/sshd"
 	"go.privatebychoice.com/shellshawk/internal/tui"
 	"go.privatebychoice.com/shellshawk/internal/tui/term"
+	"go.privatebychoice.com/shellshawk/internal/websess"
 )
 
 // Handler runs BBS sessions. It implements sshd.SessionHandler.
@@ -36,6 +37,7 @@ type Handler struct {
 	Plugins  *plugin.Registry  // may be nil when no plugins are installed
 	Presence *presence.Tracker // may be nil
 	Privacy  *privacy.Service
+	WebLogin *websess.Service // nil when the web interface is disabled
 	Perms    *perm.Service
 	Prefs    *prefs.Service
 	Log      *slog.Logger

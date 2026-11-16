@@ -1,0 +1,11 @@
+{{define "login"}}
+<p>Get a code from <strong>Web login code</strong> in the BBS main menu over SSH.</p>
+{{if .Error}}<p class="error" role="alert" id="login-error">{{.Error}}</p>{{end}}
+<form method="post" action="/login" class="form">
+<p><label for="username">Username</label>
+<input id="username" name="username" type="text" autocomplete="username" autocapitalize="none" spellcheck="false" required maxlength="32" value="{{.Username}}"{{if .Error}} aria-describedby="login-error"{{end}}></p>
+<p><label for="code">Login code</label>
+<input id="code" name="code" type="text" autocomplete="one-time-code" autocapitalize="characters" spellcheck="false" required maxlength="20"></p>
+<p><button type="submit">Log in</button></p>
+</form>
+{{end}}

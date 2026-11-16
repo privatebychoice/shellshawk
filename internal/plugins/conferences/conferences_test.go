@@ -2,10 +2,12 @@ package conferences
 
 import (
 	"errors"
+	"strconv"
 	"strings"
 	"testing"
 
 	"go.privatebychoice.com/shellshawk/internal/perm"
+	"go.privatebychoice.com/shellshawk/internal/plugin"
 	"go.privatebychoice.com/shellshawk/internal/plugins/chat"
 	"go.privatebychoice.com/shellshawk/internal/plugins/plugintest"
 	"go.privatebychoice.com/shellshawk/internal/plugins/polls"
@@ -203,5 +205,27 @@ func TestSFTP(t *testing.T) {
 	mod := sftpd.User{ID: f.mod, Name: "mod1"}
 	if _, _, err := fs.Read(f.Ctx, mod, []string{"general", "staff", files[0].Name}); !errors.Is(err, sftpd.ErrNotExist) {
 		t.Errorf("thread read via another conference err = %v", err)
+	}
+}
+
+func TestWebPages(t *testing.T) {
+	f := setup(t)
+	tid, _, _ := f.p.StartThread(f.Ctx, f.alice, f.general, "Hello <web>", "**bold** <script>alert(1)</script>")
+	staffThread, _, _ := f.p.StartThread(f.Ctx, f.mod, f.staffCnf, "Staff", "x")
+	id := func(n int64) map[string]string { return map[string]string{"id": strconv.FormatInt(n, 10)} }
+
+	areas, err := f.WebGet(f.p, "/", nil, f.alice)
+	if err != nil || !strings.Contains(string(areas.Body), "General discussion") || strings.Contains(string(areas.Body), "Staff room") {
+		t.Errorf("areas page = %s, %v", areas.Body, err)
+	}
+	page, err := f.WebGet(f.p, "/t/{id}", id(tid), f.alice)
+	if err != nil || page.Title != "Hello <web>" || !strings.Contains(string(page.Body), "<strong>bold</strong>") || strings.Contains(string(page.Body), "<script>") {
+		t.Errorf("thread page = %q / %s, %v", page.Title, page.Body, err)
+	}
+	if _, err := f.WebGet(f.p, "/t/{id}", id(staffThread), f.alice); !errors.Is(err, plugin.ErrWebNotFound) {
+		t.Errorf("restricted thread err = %v", err)
+	}
+	if _, err := f.WebGet(f.p, "/c/{id}", map[string]string{"id": "x"}, f.alice); !errors.Is(err, plugin.ErrWebNotFound) {
+		t.Errorf("bad id err = %v", err)
 	}
 }

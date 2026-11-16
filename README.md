@@ -3,9 +3,10 @@
 A self-hosted, privacy-first BBS with an SSH TUI, SFTP, and an optional web
 interface. See [docs/DESIGN.md](docs/DESIGN.md) for the full design.
 
-> **Status:** stage 9: everything through the core plugins, plus privacy
-> settings, the member data export and account erasure. The web interface
-> (stage 10) comes next.
+> **Status:** all ten stages of the design are implemented: SSH server,
+> accounts, TUI (full-screen and screen-reader), markdown with graded links,
+> plugins and menus, administration, SFTP, the core plugins, privacy and
+> erasure, and a read-only web interface.
 
 ## Build
 
@@ -36,6 +37,9 @@ no built-in defaults.
 | `SHELLSHAWK_FIRST_PARTY_DOMAINS` | no | — | Comma-separated list of your own domains, graded as first-party |
 | `SHELLSHAWK_ERASURE_GRACE_DAYS` | no | `14` | Days between an erasure request and the erasure (0 to 365) |
 | `SHELLSHAWK_HTTP_ADDR` | no | disabled | `host:port` for the web interface; unset = web disabled |
+| `SHELLSHAWK_PUBLIC_SSH_ADDRESS` | no | — | `host:port` members connect to, shown on the web start page |
+| `SHELLSHAWK_PRIVACY_POLICY_FILE` | no | built-in | Markdown file replacing the built-in privacy policy |
+| `SHELLSHAWK_HTTP_INSECURE_COOKIES` | no | `false` | Drop the `Secure` cookie flag and HSTS — **local testing over plain HTTP only** |
 | `SHELLSHAWK_LOG_LEVEL` | no | `INFO` | `DEBUG`, `INFO`, `WARN`, `ERROR` |
 | `SHELLSHAWK_LOG_FORMAT` | no | `text` | `text` or `json` |
 
@@ -204,11 +208,45 @@ every request, so locking an account takes effect immediately.
   In screen reader mode, type lines and finish with `.` on its own line
   (`.preview`, `.clear`, `.cancel`, `.keep` are also available).
 
-## Endpoints
+## Web interface
+
+Optional (`SHELLSHAWK_HTTP_ADDR`); serve it behind a TLS-terminating
+reverse proxy. Read-only in this version: posting, chat and settings stay in
+the SSH interface.
 
 | Path | Description |
 |------|-------------|
-| `GET /version` | `{"version","commit","buildDate"}`. Use it to confirm a deploy is running the expected build |
+| `/` | Start page: how to connect, the SSH host key fingerprint, how to join |
+| `/login` | Log in with your username and a one-time code from **Web login code** in the BBS main menu (single use, 5 minutes) |
+| `/home` | Your start page once logged in |
+| `/p/conferences/` | Areas, conferences and threads you may read |
+| `/p/messages/` | Your inbox; opening a message marks it read |
+| `/privacy` | Privacy policy (built in, or `SHELLSHAWK_PRIVACY_POLICY_FILE`) |
+| `/.well-known/gpc.json` | Global Privacy Control declaration |
+| `/version` | `{"version","commit","buildDate"}` to confirm a deploy |
+
+- **No third parties**: every script, stylesheet and font is served by
+  shellshawk; the only script is a few lines that show a notice when the
+  browser has GPC turned on. Assets have content-hashed names and are cached
+  as immutable; pages are `no-store`.
+- **Global Privacy Control**: detected from the `Sec-GPC` header and
+  `navigator.globalPrivacyControl`, acknowledged on every page, declared at
+  `/.well-known/gpc.json`, and explained in the privacy policy. Nothing is
+  ever sold or shared, so honouring it changes nothing else.
+- **Headers**: `Content-Security-Policy: default-src 'none'; script-src
+  'self'; style-src 'self'; img-src 'self' data:; form-action 'self';
+  frame-ancestors 'none'; base-uri 'none'`, `Referrer-Policy: no-referrer`,
+  `X-Frame-Options: DENY`, nosniff, a restrictive `Permissions-Policy`, and
+  HSTS. The CSP avoids blanket bans such as `style-src 'none'` so
+  Privacy Badger keeps working.
+- **Sessions**: one `__Host-session` cookie (HttpOnly, Secure,
+  SameSite=Strict, 12 hours), CSRF tokens on forms, Origin checks on every
+  POST, login rate limits per IP and per username. Locking or erasing an
+  account ends its web sessions at once.
+- **Themes**: the web uses the member's colour theme; visitors get Classic
+  or Light depending on their system preference.
+- The footer shows the build number (`1.0.x`; run `make bump` before each
+  deploy) next to "Powered by shellshawk".
 
 ## SSH security policy
 

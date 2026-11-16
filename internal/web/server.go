@@ -1,66 +1,189 @@
-// Package web serves the optional HTTP interface.
-//
-// Stage 1 provides only the /version endpoint and the shared middleware
-// (request IDs, access logging). Pages, GPC, CSP and login arrive in later
-// stages (docs/DESIGN.md §11).
+// Package web serves the optional web interface (docs/DESIGN.md §11): a
+// public start page with connection instructions, the privacy policy, GPC
+// declaration, login with one-time codes from the TUI, and read-only pages
+// contributed by plugins. Everything is self-hosted; pages make no
+// third-party requests.
 package web
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
+	"fmt"
+	"html/template"
 	"log/slog"
+	"net"
 	"net/http"
+	"net/url"
+	"os"
+	"strings"
+	ttemplate "text/template"
 	"time"
 
+	"go.privatebychoice.com/shellshawk/internal/auth"
+	"go.privatebychoice.com/shellshawk/internal/markdown"
+	"go.privatebychoice.com/shellshawk/internal/perm"
+	"go.privatebychoice.com/shellshawk/internal/plugin"
+	"go.privatebychoice.com/shellshawk/internal/prefs"
+	"go.privatebychoice.com/shellshawk/internal/theme"
 	"go.privatebychoice.com/shellshawk/internal/version"
+	"go.privatebychoice.com/shellshawk/internal/websess"
 )
 
-// Server-side timeouts. They bound slow or idle clients so they can't hold
-// connections open indefinitely.
+// Server-side timeouts bound slow or idle clients.
 const (
 	readHeaderTimeout = 5 * time.Second
 	readTimeout       = 15 * time.Second
 	writeTimeout      = 30 * time.Second
 	idleTimeout       = 60 * time.Second
+	maxFormBytes      = 4 << 10
 )
 
-// NewServer returns an http.Server for addr with all routes and middleware.
-func NewServer(addr string, log *slog.Logger) *http.Server {
-	log = log.With("component", "web")
+// GPCLastUpdate is the lastUpdate date in /.well-known/gpc.json. Change it
+// whenever the GPC declaration or its interpretation changes.
+const GPCLastUpdate = "2026-11-16"
+
+// Config configures the web interface.
+type Config struct {
+	Log      *slog.Logger
+	SiteName func(ctx context.Context) string
+	Auth     *auth.Service
+	Perms    *perm.Service
+	Sessions *websess.Service
+	Prefs    *prefs.Service
+	Themes   *theme.Catalog
+	Plugins  *plugin.Registry // may be nil
+	Grader   markdown.Grader  // may be nil
+
+	// SSHAddress is the public host:port members connect to, shown on the
+	// start page (optional).
+	SSHAddress string
+	// HostKeyFingerprint is the SSH host key fingerprint shown on the start
+	// page so members can verify it (optional).
+	HostKeyFingerprint string
+	InviteUser         string
+	// InsecureCookies drops the Secure cookie attribute and HSTS, for local
+	// testing over plain HTTP. Never set it in production.
+	InsecureCookies bool
+	// PrivacyPolicyFile replaces the built-in privacy policy with a
+	// markdown file (optional).
+	PrivacyPolicyFile string
+	// Retention figures quoted in the built-in privacy policy.
+	ChatDays, AuditDays, GraceDays int
+}
+
+// Server is the web interface.
+type Server struct {
+	cfg     Config
+	log     *slog.Logger
+	tmpl    *template.Template
+	assets  *assetStore
+	policy  string // privacy policy markdown, possibly a template
+	custom  bool   // policy came from PrivacyPolicyFile
+	ipLim   *auth.Limiter
+	userLim *auth.Limiter
+	handler http.Handler
+}
+
+// Login rate limits.
+const (
+	loginIPFailures   = 10
+	loginUserFailures = 5
+	loginWindow       = 15 * time.Minute
+)
+
+// New builds the web interface.
+func New(cfg Config) (*Server, error) {
+	if cfg.Log == nil || cfg.SiteName == nil || cfg.Auth == nil || cfg.Perms == nil || cfg.Sessions == nil || cfg.Prefs == nil || cfg.Themes == nil {
+		return nil, errors.New("web: incomplete configuration")
+	}
+	tmpl, err := loadTemplates()
+	if err != nil {
+		return nil, fmt.Errorf("web: templates: %w", err)
+	}
+	assets, err := loadAssets(cfg.Themes)
+	if err != nil {
+		return nil, err
+	}
+	s := &Server{
+		cfg: cfg, log: cfg.Log.With("component", "web"), tmpl: tmpl, assets: assets,
+		ipLim:   auth.NewLimiter(loginIPFailures, loginWindow, nil),
+		userLim: auth.NewLimiter(loginUserFailures, loginWindow, nil),
+	}
+	if cfg.PrivacyPolicyFile != "" {
+		b, err := os.ReadFile(cfg.PrivacyPolicyFile)
+		if err != nil {
+			return nil, fmt.Errorf("web: privacy policy: %w", err)
+		}
+		s.policy, s.custom = string(b), true
+	} else {
+		b, err := files.ReadFile("templates/privacy.md")
+		if err != nil {
+			return nil, err
+		}
+		s.policy = string(b)
+	}
+	s.handler = s.routes()
+	return s, nil
+}
+
+// Handler returns the root handler.
+func (s *Server) Handler() http.Handler { return s.handler }
+
+// NewHTTPServer wraps a handler with the server-side timeouts.
+func NewHTTPServer(addr string, h http.Handler, log *slog.Logger) *http.Server {
 	return &http.Server{
-		Addr:              addr,
-		Handler:           NewHandler(log),
-		ReadHeaderTimeout: readHeaderTimeout,
-		ReadTimeout:       readTimeout,
-		WriteTimeout:      writeTimeout,
-		IdleTimeout:       idleTimeout,
-		ErrorLog:          slog.NewLogLogger(log.Handler(), slog.LevelWarn),
+		Addr: addr, Handler: h,
+		ReadHeaderTimeout: readHeaderTimeout, ReadTimeout: readTimeout, WriteTimeout: writeTimeout, IdleTimeout: idleTimeout,
+		ErrorLog: slog.NewLogLogger(log.Handler(), slog.LevelWarn),
 	}
 }
 
-// NewHandler returns the root handler with middleware applied.
-func NewHandler(log *slog.Logger) http.Handler {
+func (s *Server) routes() http.Handler {
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /version", handleVersion) // GET also matches HEAD
-	return withRequestLog(log, mux)
-}
-
-func handleVersion(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("Cache-Control", "no-store")
-	if err := json.NewEncoder(w).Encode(version.Get()); err != nil {
-		LoggerFrom(r.Context()).Warn("write /version response", "err", err)
+	mux.HandleFunc("GET /version", handleVersion)
+	mux.HandleFunc("GET /.well-known/gpc.json", handleGPC)
+	mux.HandleFunc("GET /static/{file}", s.handleStatic)
+	mux.HandleFunc("GET /{$}", s.handleHome)
+	mux.HandleFunc("GET /privacy", s.handlePrivacy)
+	mux.HandleFunc("GET /login", s.handleLoginForm)
+	mux.HandleFunc("POST /login", s.handleLogin)
+	mux.HandleFunc("POST /logout", s.handleLogout)
+	mux.HandleFunc("GET /home", s.handleDashboard)
+	if s.cfg.Plugins != nil {
+		for _, p := range s.cfg.Plugins.Plugins() {
+			for _, r := range p.Manifest.Web {
+				pattern := "GET /p/" + p.Manifest.ID + r.Path
+				if r.Path == "/" {
+					pattern += "{$}"
+				}
+				mux.Handle(pattern, s.pluginPage(p.Manifest.ID, r))
+			}
+		}
 	}
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		s.renderError(w, r, http.StatusNotFound, "Page not found.")
+	})
+	return withRequestLog(s.log, securityHeaders(!s.cfg.InsecureCookies, gpcSignal(sameOrigin(s.withSession(mux)))))
 }
 
-type ctxKey struct{}
+// ---- middleware --------------------------------------------------------------
+
+type ctxKey int
+
+const (
+	keyLogger ctxKey = iota
+	keyGPC
+	keySession
+)
 
 // LoggerFrom returns the request-scoped logger (carrying request_id), or the
 // default logger outside a request.
 func LoggerFrom(ctx context.Context) *slog.Logger {
-	if l, ok := ctx.Value(ctxKey{}).(*slog.Logger); ok {
+	if l, ok := ctx.Value(keyLogger).(*slog.Logger); ok {
 		return l
 	}
 	return slog.Default()
@@ -90,22 +213,393 @@ func withRequestLog(log *slog.Logger, next http.Handler) http.Handler {
 		id := newRequestID()
 		rl := log.With("request_id", id)
 		w.Header().Set("X-Request-ID", id)
-
 		rec := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
-		next.ServeHTTP(rec, r.WithContext(context.WithValue(r.Context(), ctxKey{}, rl)))
-
+		next.ServeHTTP(rec, r.WithContext(context.WithValue(r.Context(), keyLogger, rl)))
 		level := slog.LevelInfo
 		if rec.status >= 500 {
 			level = slog.LevelError
 		}
 		rl.Log(r.Context(), level, "http request",
-			"method", r.Method, "path", r.URL.Path, "status", rec.status,
-			"duration_ms", time.Since(start).Milliseconds())
+			"method", r.Method, "path", r.URL.Path, "status", rec.status, "duration_ms", time.Since(start).Milliseconds())
 	})
 }
 
 func newRequestID() string {
 	var b [8]byte
-	_, _ = rand.Read(b[:]) // crypto/rand.Read never returns an error
+	_, _ = rand.Read(b[:])
 	return hex.EncodeToString(b[:])
+}
+
+// ContentSecurityPolicy allows only this server's own scripts, styles and
+// images, with no inline code. It is strict without blanket bans such as
+// style-src 'none' that would break extension-injected placeholders
+// (Privacy Badger).
+const ContentSecurityPolicy = "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; " +
+	"form-action 'self'; frame-ancestors 'none'; base-uri 'none'"
+
+func securityHeaders(secure bool, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		h := w.Header()
+		h.Set("Content-Security-Policy", ContentSecurityPolicy)
+		h.Set("Referrer-Policy", "no-referrer")
+		h.Set("X-Content-Type-Options", "nosniff")
+		h.Set("X-Frame-Options", "DENY")
+		h.Set("Cross-Origin-Opener-Policy", "same-origin")
+		h.Set("Cross-Origin-Resource-Policy", "same-origin")
+		h.Set("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=(), usb=(), interest-cohort=(), browsing-topics=()")
+		if secure {
+			h.Set("Strict-Transport-Security", "max-age=31536000")
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// gpcSignal records the Sec-GPC request header. Nothing is sold or shared,
+// so there is nothing to switch off; the signal is acknowledged on the page.
+func gpcSignal(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Add("Vary", "Sec-GPC")
+		gpc := strings.TrimSpace(r.Header.Get("Sec-GPC")) == "1"
+		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), keyGPC, gpc)))
+	})
+}
+
+// sameOrigin rejects state-changing requests whose Origin (or, failing
+// that, Referer) is not this site, as defence in depth with SameSite
+// cookies and CSRF tokens.
+func sameOrigin(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet || r.Method == http.MethodHead {
+			next.ServeHTTP(w, r)
+			return
+		}
+		src := r.Header.Get("Origin")
+		if src == "" || src == "null" {
+			src = r.Header.Get("Referer")
+		}
+		u, err := url.Parse(src)
+		if src == "" || err != nil || !strings.EqualFold(u.Host, r.Host) {
+			LoggerFrom(r.Context()).Info("cross-origin request refused", "method", r.Method, "path", r.URL.Path)
+			http.Error(w, "Forbidden", http.StatusForbidden)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+func (s *Server) cookieName() string {
+	if s.cfg.InsecureCookies {
+		return "session"
+	}
+	return "__Host-session" // requires Secure, Path=/ and no Domain
+}
+
+func (s *Server) withSession(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if c, err := r.Cookie(s.cookieName()); err == nil {
+			if sess, err := s.cfg.Sessions.Lookup(r.Context(), c.Value); err == nil {
+				r = r.WithContext(context.WithValue(r.Context(), keySession, &sess))
+			}
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+func sessionFrom(r *http.Request) *websess.Session {
+	sess, _ := r.Context().Value(keySession).(*websess.Session)
+	return sess
+}
+
+// ---- rendering -----------------------------------------------------------------
+
+type navItem struct{ Label, Href string }
+
+type layoutData struct {
+	Site, Title, Version, User, CSRF string
+	Body                             template.HTML
+	Nav                              []navItem
+	GPC                              bool
+	Assets                           Assets
+}
+
+func (s *Server) layout(r *http.Request, title string, body template.HTML) layoutData {
+	d := layoutData{Site: s.cfg.SiteName(r.Context()), Title: title, Version: version.Get().Version, Body: body, Assets: s.assets.Default}
+	d.GPC, _ = r.Context().Value(keyGPC).(bool)
+	if sess := sessionFrom(r); sess != nil {
+		d.CSRF = sess.CSRF
+		if u, err := s.cfg.Auth.UserByID(r.Context(), sess.UserID); err == nil {
+			d.User = u.Username
+		}
+		if p, err := s.cfg.Prefs.Get(r.Context(), sess.UserID); err == nil {
+			d.Assets = s.assets.forTheme(p.Theme)
+		}
+		d.Nav = s.nav(r.Context(), sess.UserID)
+	}
+	return d
+}
+
+// nav lists the plugin pages the member may open.
+func (s *Server) nav(ctx context.Context, user int64) []navItem {
+	if s.cfg.Plugins == nil {
+		return nil
+	}
+	set, err := s.cfg.Perms.Permissions(ctx, user)
+	if err != nil {
+		return nil
+	}
+	var out []navItem
+	for _, p := range s.cfg.Plugins.Plugins() {
+		for _, r := range p.Manifest.Web {
+			if r.Nav != "" && allowed(set, r.AnyOf) {
+				out = append(out, navItem{Label: r.Nav, Href: "/p/" + p.Manifest.ID + r.Path})
+			}
+		}
+	}
+	return out
+}
+
+func allowed(set perm.Set, anyOf []string) bool {
+	if len(anyOf) == 0 {
+		return true
+	}
+	for _, p := range anyOf {
+		if set.Has(p) {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *Server) execute(name string, data any) (template.HTML, error) {
+	var b bytes.Buffer
+	if err := s.tmpl.ExecuteTemplate(&b, name, data); err != nil {
+		return "", err
+	}
+	return template.HTML(b.String()), nil //nolint:gosec // output of html/template, already escaped
+}
+
+func (s *Server) render(w http.ResponseWriter, r *http.Request, status int, title, page string, data any) {
+	body, err := s.execute(page, data)
+	if err != nil {
+		LoggerFrom(r.Context()).Error("render page", "page", page, "err", err)
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+	s.writePage(w, r, status, title, body)
+}
+
+func (s *Server) writePage(w http.ResponseWriter, r *http.Request, status int, title string, body template.HTML) {
+	var b bytes.Buffer
+	if err := s.tmpl.ExecuteTemplate(&b, "layout", s.layout(r, title, body)); err != nil {
+		LoggerFrom(r.Context()).Error("render layout", "err", err)
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	w.WriteHeader(status)
+	_, _ = w.Write(b.Bytes())
+}
+
+func (s *Server) renderError(w http.ResponseWriter, r *http.Request, status int, msg string) {
+	s.render(w, r, status, http.StatusText(status), "error", map[string]string{"Message": msg})
+}
+
+// ---- handlers ------------------------------------------------------------------
+
+func handleVersion(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
+	if err := json.NewEncoder(w).Encode(version.Get()); err != nil {
+		LoggerFrom(r.Context()).Warn("write /version response", "err", err)
+	}
+}
+
+func handleGPC(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "public, max-age=86400")
+	_ = json.NewEncoder(w).Encode(map[string]any{"gpc": true, "lastUpdate": GPCLastUpdate})
+}
+
+func (s *Server) handleStatic(w http.ResponseWriter, r *http.Request) {
+	a, ok := s.assets.byPath["/static/"+r.PathValue("file")]
+	if !ok {
+		http.NotFound(w, r)
+		return
+	}
+	w.Header().Set("Content-Type", a.contentType)
+	w.Header().Set("Cache-Control", "public, max-age=31536000, immutable") // names change with content
+	_, _ = w.Write(a.data)
+}
+
+func (s *Server) handleHome(w http.ResponseWriter, r *http.Request) {
+	d := map[string]any{"Site": s.cfg.SiteName(r.Context()), "HostKey": s.cfg.HostKeyFingerprint, "InviteUser": s.cfg.InviteUser}
+	if host, port, err := net.SplitHostPort(s.cfg.SSHAddress); err == nil && host != "" {
+		d["SSHAddress"], d["SSHHost"], d["SSHPort"] = s.cfg.SSHAddress, host, port
+	}
+	s.render(w, r, http.StatusOK, "Welcome", "home", d)
+}
+
+func (s *Server) handlePrivacy(w http.ResponseWriter, r *http.Request) {
+	src := s.policy
+	if !s.custom {
+		var b strings.Builder
+		t, err := ttemplate.New("policy").Parse(s.policy)
+		if err == nil {
+			err = t.Execute(&b, map[string]any{
+				"Site": s.cfg.SiteName(r.Context()), "ChatDays": s.cfg.ChatDays, "AuditDays": s.cfg.AuditDays, "GraceDays": s.cfg.GraceDays,
+			})
+		}
+		if err != nil {
+			LoggerFrom(r.Context()).Error("privacy policy template", "err", err)
+			s.renderError(w, r, http.StatusInternalServerError, "The privacy policy could not be shown.")
+			return
+		}
+		src = b.String()
+	}
+	html, err := markdown.RenderHTML(src, s.cfg.Grader)
+	if err != nil {
+		s.renderError(w, r, http.StatusInternalServerError, "The privacy policy could not be shown.")
+		return
+	}
+	s.writePage(w, r, http.StatusOK, "Privacy", template.HTML(html)) //nolint:gosec // sanitising markdown renderer
+}
+
+func (s *Server) handleLoginForm(w http.ResponseWriter, r *http.Request) {
+	if sessionFrom(r) != nil {
+		http.Redirect(w, r, "/home", http.StatusSeeOther)
+		return
+	}
+	s.render(w, r, http.StatusOK, "Log in", "login", map[string]string{})
+}
+
+func clientIP(r *http.Request) string {
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return r.RemoteAddr
+	}
+	return host
+}
+
+func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, maxFormBytes)
+	if err := r.ParseForm(); err != nil {
+		s.renderError(w, r, http.StatusBadRequest, "The form could not be read.")
+		return
+	}
+	username := auth.NormalizeUsername(r.PostForm.Get("username"))
+	code := r.PostForm.Get("code")
+	ipKey, userKey := "ip:"+clientIP(r), "user:"+username
+	fail := func(status int, msg string) {
+		s.render(w, r, status, "Log in", "login", map[string]string{"Error": msg, "Username": username})
+	}
+	if s.ipLim.Blocked(ipKey) || s.userLim.Blocked(userKey) {
+		LoggerFrom(r.Context()).Info("web login rate-limited")
+		fail(http.StatusTooManyRequests, "Too many failed attempts. Please wait a few minutes and get a new code.")
+		return
+	}
+	uid, err := s.cfg.Sessions.Redeem(r.Context(), username, code)
+	if err != nil {
+		s.ipLim.Fail(ipKey)
+		s.userLim.Fail(userKey)
+		LoggerFrom(r.Context()).Info("web login refused")
+		fail(http.StatusUnauthorized, "That username and code did not work. Codes work once and expire after five minutes.")
+		return
+	}
+	tok, sess, err := s.cfg.Sessions.Create(r.Context(), uid)
+	if err != nil {
+		LoggerFrom(r.Context()).Error("create web session", "err", err)
+		s.renderError(w, r, http.StatusInternalServerError, "You could not be logged in. Please try again.")
+		return
+	}
+	s.ipLim.Reset(ipKey)
+	s.userLim.Reset(userKey)
+	http.SetCookie(w, &http.Cookie{
+		Name: s.cookieName(), Value: tok, Path: "/", Expires: sess.ExpiresAt,
+		HttpOnly: true, Secure: !s.cfg.InsecureCookies, SameSite: http.SameSiteStrictMode,
+	})
+	LoggerFrom(r.Context()).Info("web login", "user_id", uid)
+	http.Redirect(w, r, "/home", http.StatusSeeOther)
+}
+
+func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, maxFormBytes)
+	sess := sessionFrom(r)
+	if sess == nil || r.ParseForm() != nil || !websess.CheckCSRF(*sess, r.PostForm.Get("csrf")) {
+		s.renderError(w, r, http.StatusForbidden, "Your session has ended. Please log in again.")
+		return
+	}
+	if c, err := r.Cookie(s.cookieName()); err == nil {
+		_ = s.cfg.Sessions.Delete(r.Context(), c.Value)
+	}
+	http.SetCookie(w, &http.Cookie{Name: s.cookieName(), Value: "", Path: "/", MaxAge: -1, HttpOnly: true,
+		Secure: !s.cfg.InsecureCookies, SameSite: http.SameSiteStrictMode})
+	http.Redirect(w, r, "/", http.StatusSeeOther)
+}
+
+func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
+	sess := sessionFrom(r)
+	if sess == nil {
+		http.Redirect(w, r, "/login", http.StatusSeeOther)
+		return
+	}
+	d := s.layout(r, "Home", "")
+	s.render(w, r, http.StatusOK, "Home", "dashboard", map[string]any{"User": d.User, "Nav": d.Nav})
+}
+
+// webSession is the member as seen by plugin pages.
+type webSession struct {
+	s      *Server
+	user   int64
+	plugin string
+}
+
+func (ws webSession) UserID() int64 { return ws.user }
+func (ws webSession) Permissions(ctx context.Context) (perm.Set, error) {
+	return ws.s.cfg.Perms.Permissions(ctx, ws.user)
+}
+func (ws webSession) Markdown(src string) template.HTML {
+	html, err := markdown.RenderHTML(src, ws.s.cfg.Grader)
+	if err != nil {
+		return template.HTML("<p>This content could not be shown.</p>")
+	}
+	return template.HTML(html) //nolint:gosec // sanitising markdown renderer
+}
+func (ws webSession) Path(rel string) string { return "/p/" + ws.plugin + rel }
+
+// pluginPage serves a plugin's page to logged-in members holding the
+// route's permission. Pages the member may not open are reported as not
+// found.
+func (s *Server) pluginPage(id string, route plugin.WebRoute) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		sess := sessionFrom(r)
+		if sess == nil {
+			http.Redirect(w, r, "/login", http.StatusSeeOther)
+			return
+		}
+		set, err := s.cfg.Perms.Permissions(r.Context(), sess.UserID)
+		if err != nil || !allowed(set, route.AnyOf) {
+			s.renderError(w, r, http.StatusNotFound, "Page not found.")
+			return
+		}
+		page, err := safeHandle(route, r, webSession{s: s, user: sess.UserID, plugin: id})
+		switch {
+		case errors.Is(err, plugin.ErrWebNotFound):
+			s.renderError(w, r, http.StatusNotFound, "Page not found.")
+		case err != nil:
+			LoggerFrom(r.Context()).Error("plugin page failed", "plugin", id, "err", err)
+			s.renderError(w, r, http.StatusInternalServerError, "Sorry, something went wrong.")
+		default:
+			s.writePage(w, r, http.StatusOK, page.Title, page.Body)
+		}
+	})
+}
+
+func safeHandle(route plugin.WebRoute, r *http.Request, ws plugin.WebSession) (page plugin.WebPage, err error) {
+	defer func() {
+		if rec := recover(); rec != nil {
+			err = fmt.Errorf("panic: %v", rec)
+		}
+	}()
+	return route.Handle(r, ws)
 }

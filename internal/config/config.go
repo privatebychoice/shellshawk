@@ -40,6 +40,10 @@ const (
 	EnvLogFormat = "SHELLSHAWK_LOG_FORMAT"
 	EnvHTTPAddr  = "SHELLSHAWK_HTTP_ADDR"
 
+	EnvPublicSSHAddress    = "SHELLSHAWK_PUBLIC_SSH_ADDRESS"
+	EnvHTTPInsecureCookies = "SHELLSHAWK_HTTP_INSECURE_COOKIES"
+	EnvPrivacyPolicyFile   = "SHELLSHAWK_PRIVACY_POLICY_FILE"
+
 	EnvSSHAddr       = "SHELLSHAWK_SSH_ADDR"
 	EnvSSHHostKey    = "SHELLSHAWK_SSH_HOST_KEY"
 	EnvSSHMaxConns   = "SHELLSHAWK_SSH_MAX_CONNS"
@@ -70,6 +74,14 @@ type Config struct {
 	// HTTPAddr is the host:port the web interface listens on. Empty disables
 	// the web interface.
 	HTTPAddr string
+	// PublicSSHAddress is the host:port members use to connect, shown on
+	// the web start page (optional).
+	PublicSSHAddress string
+	// HTTPInsecureCookies drops the Secure cookie attribute and HSTS, for
+	// local testing over plain HTTP only.
+	HTTPInsecureCookies bool
+	// PrivacyPolicyFile replaces the built-in privacy policy (markdown).
+	PrivacyPolicyFile string
 	// SSHAddr is the host:port the SSH server listens on. Empty disables SSH.
 	SSHAddr string
 	// SSHHostKeyPath is the Ed25519 host key file, created on first run if
@@ -198,6 +210,23 @@ func Load(getenv func(string) string) (Config, error) {
 	}
 
 	cfg.PBCDataFile = strings.TrimSpace(getenv(EnvPBCDataFile))
+	cfg.PrivacyPolicyFile = strings.TrimSpace(getenv(EnvPrivacyPolicyFile))
+
+	if v := strings.TrimSpace(getenv(EnvPublicSSHAddress)); v != "" {
+		if host, port, err := net.SplitHostPort(v); err != nil || host == "" || port == "" {
+			errs = append(errs, fmt.Errorf("%s: invalid address %q (want host:port)", EnvPublicSSHAddress, v))
+		} else {
+			cfg.PublicSSHAddress = v
+		}
+	}
+
+	if v := strings.TrimSpace(getenv(EnvHTTPInsecureCookies)); v != "" {
+		b, err := strconv.ParseBool(v)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("%s: invalid value %q (want true or false)", EnvHTTPInsecureCookies, v))
+		}
+		cfg.HTTPInsecureCookies = b
+	}
 
 	if v := strings.TrimSpace(getenv(EnvFirstPartyDomains)); v != "" {
 		for _, d := range strings.Split(v, ",") {

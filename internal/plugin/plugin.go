@@ -60,6 +60,8 @@ type Manifest struct {
 	// SFTP mounts are top-level SFTP directories. Each name must be the
 	// plugin ID or start with "<id>-".
 	SFTP []sftpd.Mount
+	// Web pages the plugin adds to the web interface.
+	Web []WebRoute
 	// Export returns everything the plugin stores about a member, for the
 	// data export at /me/export/<id>/ (right of access). Plugins that store
 	// member data must provide it, and must also handle events.UserErased.

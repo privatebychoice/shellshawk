@@ -21,6 +21,8 @@ import (
 	"syscall"
 	"time"
 
+	"golang.org/x/crypto/ssh"
+
 	"go.privatebychoice.com/shellshawk/internal/audit"
 	"go.privatebychoice.com/shellshawk/internal/auth"
 	"go.privatebychoice.com/shellshawk/internal/bbs"
@@ -48,6 +50,7 @@ import (
 	"go.privatebychoice.com/shellshawk/internal/theme"
 	"go.privatebychoice.com/shellshawk/internal/version"
 	"go.privatebychoice.com/shellshawk/internal/web"
+	"go.privatebychoice.com/shellshawk/internal/websess"
 )
 
 const (
@@ -178,9 +181,15 @@ func (a *app) serve(ctx context.Context) error {
 			"hint", "set "+config.EnvSSHAddr+" and/or "+config.EnvHTTPAddr)
 	}
 
+	siteSettings := settings.NewService(a.db, nil, log)
 	handler := &bbs.Handler{
-		Auth: a.auth, Settings: settings.NewService(a.db, nil, log), Grader: a.grade, Perms: a.perms, Prefs: a.prefs,
+		Auth: a.auth, Settings: siteSettings, Grader: a.grade, Perms: a.perms, Prefs: a.prefs,
 		Menu: menu.NewService(a.db, a.perms, nil, log), Plugins: a.plugins, Presence: a.presence, Privacy: a.privacy, Log: log,
+	}
+	var webSessions *websess.Service
+	if cfg.WebEnabled() {
+		webSessions = websess.NewService(a.db, a.auth, nil, log)
+		handler.WebLogin = webSessions
 	}
 	if err := handler.Menu.Seed(ctx, handler.MenuDefaults()); err != nil {
 		return err
@@ -192,11 +201,13 @@ func (a *app) serve(ctx context.Context) error {
 	errc := make(chan error, 2)
 
 	var sshSrv *sshd.Server
+	var hostKeyFP string
 	if cfg.SSHEnabled() {
 		hostKey, err := sshd.LoadOrCreateHostKey(cfg.SSHHostKeyPath, log)
 		if err != nil {
 			return err
 		}
+		hostKeyFP = ssh.FingerprintSHA256(hostKey.PublicKey())
 		sftpSrv, err := sftpd.New(a.auth, a.perms, cfg.SFTPMaxUpload, log,
 			append([]sftpd.Mount{sftpd.MeMount(a.auth, a.perms, append([]export.Source{a.privacy.ExportSource()}, a.plugins.ExportSources()...)...)},
 				a.plugins.Mounts()...)...)
@@ -226,7 +237,20 @@ func (a *app) serve(ctx context.Context) error {
 
 	var webSrv *http.Server
 	if cfg.WebEnabled() {
-		webSrv = web.NewServer(cfg.HTTPAddr, log)
+		site, err := web.New(web.Config{
+			Log: log, SiteName: siteSettings.BBSName, Auth: a.auth, Perms: a.perms, Sessions: webSessions,
+			Prefs: a.prefs, Themes: a.prefs.Themes(), Plugins: a.plugins, Grader: a.grade,
+			SSHAddress: cfg.PublicSSHAddress, HostKeyFingerprint: hostKeyFP, InviteUser: cfg.InviteUser,
+			InsecureCookies: cfg.HTTPInsecureCookies, PrivacyPolicyFile: cfg.PrivacyPolicyFile,
+			ChatDays: chat.DefaultRetention, AuditDays: cfg.AuditRetentionDays, GraceDays: cfg.ErasureGraceDays,
+		})
+		if err != nil {
+			return err
+		}
+		if cfg.HTTPInsecureCookies {
+			log.Warn("insecure web cookies enabled: use only for local testing over plain HTTP")
+		}
+		webSrv = web.NewHTTPServer(cfg.HTTPAddr, site.Handler(), log)
 		go func() {
 			log.Info("web interface listening", "addr", cfg.HTTPAddr)
 			if err := webSrv.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {

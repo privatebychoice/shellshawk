@@ -169,3 +169,22 @@ func (s *session) eraseAccount(ctx context.Context) error {
 	}
 	return errLogout
 }
+
+// webLoginCode shows a one-time code for the web interface.
+func (s *session) webLoginCode(ctx context.Context) error {
+	code, expires, err := s.h.WebLogin.NewCode(ctx, s.userID)
+	if err != nil {
+		return err
+	}
+	u, err := s.h.Auth.UserByID(ctx, s.userID)
+	if err != nil {
+		return err
+	}
+	return tui.Message(ctx, s.ui, s.Title("Web login code"),
+		"Your code is:",
+		"",
+		"    "+code,
+		"",
+		fmt.Sprintf("On the website's login page, enter your username (%s) and this code. It works once and expires at %s. Getting a new code cancels this one.",
+			u.Username, expires.UTC().Format("15:04 UTC")))
+}

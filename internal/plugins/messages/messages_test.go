@@ -3,12 +3,14 @@ package messages
 import (
 	"errors"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 
 	"go.privatebychoice.com/shellshawk/internal/form"
 	"go.privatebychoice.com/shellshawk/internal/perm"
+	"go.privatebychoice.com/shellshawk/internal/plugin"
 	"go.privatebychoice.com/shellshawk/internal/plugins/contacts"
 	"go.privatebychoice.com/shellshawk/internal/plugins/plugintest"
 	"go.privatebychoice.com/shellshawk/internal/privacy"
@@ -269,5 +271,24 @@ func TestEraseAndExport(t *testing.T) {
 	f.DB.QueryRow(`SELECT count(*) FROM messages_recipients WHERE user_id = ?`, f.alice).Scan(&left)
 	if left != 0 {
 		t.Error("erased member's received messages kept")
+	}
+}
+
+func TestWebPages(t *testing.T) {
+	f := setup(t)
+	id, _ := f.p.Send(f.Ctx, f.alice, Draft{To: "bob", Subject: "Hi <b>", Body: "*there*"})
+	inbox, err := f.WebGet(f.p, "/", nil, f.bob)
+	if err != nil || !strings.Contains(string(inbox.Body), "New: ") || !strings.Contains(string(inbox.Body), "Hi &lt;b&gt;") {
+		t.Errorf("inbox = %s, %v", inbox.Body, err)
+	}
+	msg, err := f.WebGet(f.p, "/m/{id}", map[string]string{"id": strconv.FormatInt(id, 10)}, f.bob)
+	if err != nil || !strings.Contains(string(msg.Body), "<em>there</em>") {
+		t.Errorf("message = %s, %v", msg.Body, err)
+	}
+	if c, _ := f.p.Count(f.Ctx, f.bob); c.Unread != 0 {
+		t.Error("opening on the web did not mark the message read")
+	}
+	if _, err := f.WebGet(f.p, "/m/{id}", map[string]string{"id": strconv.FormatInt(id, 10)}, f.carol); !errors.Is(err, plugin.ErrWebNotFound) {
+		t.Errorf("someone else's message err = %v", err)
 	}
 }
