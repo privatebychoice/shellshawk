@@ -314,3 +314,167 @@ func TestEditor(t *testing.T) {
 		t.Errorf("max not enforced: %q", s.value())
 	}
 }
+
+func TestScreenEdit(t *testing.T) {
+	preview := func(s string) Page { return Page{Title: "P", Lines: []Line{Text("PREVIEW:" + s)}} }
+	tests := []struct {
+		name    string
+		initial string
+		input   string
+		want    string
+		err     error
+		outHas  string
+	}{
+		{"type and save", "", "hello\rworld\x0f", "hello\nworld", nil, ""},
+		{"tab is spaces", "", "\ta\x0f", "    a", nil, ""},
+		{"cut and paste lines", "one\ntwo\nthree", "\x0b\x1b[B\x15\x0f", "two\none\nthree", nil, ""},
+		{"two cuts paste together", "a\nb\nc\nd", "\x0b\x0b\x1b[B\x15\x0f", "c\na\nb\nd", nil, ""},
+		{"find moves cursor", "alpha\nbeta\ngamma", "\x17gam\rX\x0f", "alpha\nbeta\nXgamma", nil, ""},
+		{"find not found", "abc", "\x17zzz\r\x0f", "abc", nil, "Not found: zzz"},
+		{"exit unchanged cancels", "x", "\x18", "", ErrCancelled, ""},
+		{"exit changed, discard", "x", "y\x18n", "", ErrCancelled, "Save your changes?"},
+		{"exit changed, save", "x", "y\x18y", "yx", nil, ""},
+		{"exit changed, keep editing", "x", "y\x18cz\x0f", "yzx", nil, ""},
+		{"preview shown", "", "**b**\x10\r\x0f", "**b**", nil, "PREVIEW:**b**"},
+		{"paste keeps newlines, strips escapes", "", "\x1b[200~a\nb\x1b]0;t\x07\x1b[201~\x0f", "a\nb]0;t", nil, ""},
+		{"over limit refused", "", "abcdef\x0f", "abcd", nil, "Character limit reached (4)."},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ui, out := newTestScreen(tt.input)
+			max := 0
+			if tt.name == "over limit refused" {
+				max = 4
+			}
+			got, err := ui.Edit(ctxT(t), EditRequest{Title: "Edit", Text: tt.initial, MaxLen: max, Preview: preview})
+			if !errors.Is(err, tt.err) {
+				t.Fatalf("err = %v, want %v", err, tt.err)
+			}
+			if got != tt.want {
+				t.Errorf("text = %q, want %q", got, tt.want)
+			}
+			if tt.outHas != "" && !strings.Contains(out.String(), tt.outHas) {
+				t.Errorf("output missing %q", tt.outHas)
+			}
+		})
+	}
+}
+
+func TestLinesEdit(t *testing.T) {
+	preview := func(s string) Page { return Page{Title: "P", Lines: []Line{Text("PREVIEW:" + s)}} }
+	tests := []struct {
+		name    string
+		initial string
+		input   string
+		want    string
+		err     error
+		outHas  string
+	}{
+		{"type and finish", "", "one\rtwo\r.\r", "one\ntwo", nil, ". (a single period) to finish"},
+		{"keep current", "old text", ".keep\r", "old text", nil, "Current text, 1 line(s):"},
+		{"clear", "", "junk\r.clear\rgood\r.\r", "good", nil, "Cleared."},
+		{"cancel", "", "x\r.cancel\r", "", ErrCancelled, ""},
+		{"preview then finish", "", "**b**\r.preview\r\r.\r", "**b**", nil, "PREVIEW:**b**"},
+		{"over limit", "", "abcdef\r.\r.clear\rab\r.\r", "ab", nil, "the limit is 4"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tm, out := newTestTerm(tt.input, true)
+			max := 0
+			if tt.name == "over limit" {
+				max = 4
+			}
+			got, err := NewLines(tm, 0).Edit(ctxT(t), EditRequest{Title: "Edit", Text: tt.initial, MaxLen: max, Preview: preview})
+			if !errors.Is(err, tt.err) || got != tt.want {
+				t.Fatalf("Edit = %q, %v; want %q, %v", got, err, tt.want, tt.err)
+			}
+			if tt.outHas != "" && !strings.Contains(out.String(), tt.outHas) {
+				t.Errorf("output missing %q:\n%s", tt.outHas, out.String())
+			}
+		})
+	}
+}
+
+// liveHarness feeds keystrokes through a pipe so incoming lines can be
+// interleaved with typing.
+func liveHarness(t *testing.T, pty bool, screen bool) (*io.PipeWriter, *syncBuf, UI) {
+	t.Helper()
+	pr, pw := io.Pipe()
+	out := &syncBuf{}
+	tm := term.New(pr, out, pty, term.Size{Cols: 80, Rows: 20}, nil)
+	if screen {
+		cat, _ := theme.Builtin()
+		prof, _ := theme.LookupProfile(theme.ProfileModern)
+		return pw, out, NewScreen(tm, theme.Styler{Theme: cat.Get(theme.DefaultTheme), Profile: prof})
+	}
+	return pw, out, NewLines(tm, 0)
+}
+
+func waitFor(t *testing.T, out *syncBuf, s string) {
+	t.Helper()
+	deadline := time.Now().Add(3 * time.Second)
+	for !strings.Contains(out.String(), s) {
+		if time.Now().After(deadline) {
+			t.Fatalf("timed out waiting for %q in:\n%q", s, out.String())
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
+func TestLive(t *testing.T) {
+	for _, screen := range []bool{false, true} {
+		name := map[bool]string{false: "lines", true: "screen"}[screen]
+		t.Run(name, func(t *testing.T) {
+			pw, out, ui := liveHarness(t, true, screen)
+			in := make(chan Line, 4)
+			var submitted []string
+			done := make(chan error, 1)
+			go func() {
+				done <- ui.Live(ctxT(t), LiveRequest{
+					Title: "Chat", History: []Line{Text("old message")}, Incoming: in,
+					Submit: func(s string) ([]Line, bool) {
+						submitted = append(submitted, s)
+						if s == "/quit" {
+							return nil, true
+						}
+						return []Line{Text("echo:" + s)}, false
+					},
+				})
+			}()
+			waitFor(t, out, "old message")
+			pw.Write([]byte("hel"))             // part-way through typing...
+			in <- Text("bob: hi \x1b[2Jthere")  // ...a message arrives
+			waitFor(t, out, "bob: hi [2Jthere") // sanitised
+			pw.Write([]byte("lo\r"))
+			waitFor(t, out, "echo:hello")
+			pw.Write([]byte("/quit\r"))
+			if err := <-done; err != nil {
+				t.Fatal(err)
+			}
+			if strings.Join(submitted, "|") != "hello|/quit" {
+				t.Errorf("submitted = %v (typing must survive an incoming message)", submitted)
+			}
+			if strings.Contains(out.String(), "\x1b[2J"+"there") {
+				t.Error("escape sequence from a message reached the terminal")
+			}
+		})
+	}
+}
+
+func TestLiveEndsWhenIncomingCloses(t *testing.T) {
+	_, _, ui := liveHarness(t, true, false)
+	in := make(chan Line)
+	done := make(chan error, 1)
+	go func() {
+		done <- ui.Live(ctxT(t), LiveRequest{Title: "Chat", Incoming: in, Submit: func(string) ([]Line, bool) { return nil, false }})
+	}()
+	close(in)
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("Live did not end when Incoming closed")
+	}
+}

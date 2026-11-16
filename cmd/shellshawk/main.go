@@ -31,7 +31,14 @@ import (
 	"go.privatebychoice.com/shellshawk/internal/menu"
 	"go.privatebychoice.com/shellshawk/internal/perm"
 	"go.privatebychoice.com/shellshawk/internal/plugin"
+	"go.privatebychoice.com/shellshawk/internal/plugins/chat"
+	"go.privatebychoice.com/shellshawk/internal/plugins/conferences"
+	"go.privatebychoice.com/shellshawk/internal/plugins/contacts"
+	"go.privatebychoice.com/shellshawk/internal/plugins/messages"
+	"go.privatebychoice.com/shellshawk/internal/plugins/polls"
+	"go.privatebychoice.com/shellshawk/internal/plugins/userlist"
 	"go.privatebychoice.com/shellshawk/internal/prefs"
+	"go.privatebychoice.com/shellshawk/internal/presence"
 	"go.privatebychoice.com/shellshawk/internal/settings"
 	"go.privatebychoice.com/shellshawk/internal/sftpd"
 	"go.privatebychoice.com/shellshawk/internal/sshd"
@@ -63,12 +70,18 @@ type app struct {
 	prefs *prefs.Service
 	grade *linkgrade.Grader
 
-	plugins *plugin.Registry
+	plugins  *plugin.Registry
+	presence *presence.Tracker
 }
 
-// installedPlugins are compiled into this build. Core plugins are added here
-// as they are built (docs/DESIGN.md §12).
-func installedPlugins() []plugin.Plugin { return nil }
+// installedPlugins are compiled into this build (docs/DESIGN.md §12).
+func installedPlugins() []plugin.Plugin {
+	c := contacts.New()
+	m := messages.New(c)
+	pl := polls.New()
+	ch := chat.New()
+	return []plugin.Plugin{c, m, pl, userlist.New(c, m), ch, conferences.New(pl, ch)}
+}
 
 func run(args []string) error {
 	cfg, err := config.Load(os.Getenv)
@@ -108,7 +121,8 @@ func run(args []string) error {
 	}
 	bus := events.New(log)
 	a.auth.SetPublisher(bus)
-	plugins, err := plugin.Load(ctx, plugin.Deps{DB: db, Perms: perms, Auth: a.auth, Events: bus, Log: log}, installedPlugins()...)
+	a.presence = presence.New(nil)
+	plugins, err := plugin.Load(ctx, plugin.Deps{DB: db, Perms: perms, Auth: a.auth, Events: bus, Presence: a.presence, Log: log}, installedPlugins()...)
 	if err != nil {
 		return err
 	}
@@ -153,7 +167,7 @@ func (a *app) serve(ctx context.Context) error {
 
 	handler := &bbs.Handler{
 		Auth: a.auth, Settings: settings.NewService(a.db, nil, log), Grader: a.grade, Perms: a.perms, Prefs: a.prefs,
-		Menu: menu.NewService(a.db, a.perms, nil, log), Plugins: a.plugins, Log: log,
+		Menu: menu.NewService(a.db, a.perms, nil, log), Plugins: a.plugins, Presence: a.presence, Log: log,
 	}
 	if err := handler.Menu.Seed(ctx, handler.MenuDefaults()); err != nil {
 		return err

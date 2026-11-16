@@ -13,6 +13,7 @@ import (
 	"go.privatebychoice.com/shellshawk/internal/auth"
 	"go.privatebychoice.com/shellshawk/internal/events"
 	"go.privatebychoice.com/shellshawk/internal/perm"
+	"go.privatebychoice.com/shellshawk/internal/presence"
 	"go.privatebychoice.com/shellshawk/internal/sftpd"
 	"go.privatebychoice.com/shellshawk/internal/store"
 )
@@ -32,12 +33,13 @@ var reservedIDs = map[string]bool{"core": true, "system": true, "admin": true, "
 
 // Deps are the core services handed to plugins.
 type Deps struct {
-	DB     *sql.DB
-	Perms  *perm.Service
-	Auth   *auth.Service
-	Events *events.Bus
-	Log    *slog.Logger
-	Now    func() time.Time // nil = time.Now
+	DB       *sql.DB
+	Perms    *perm.Service
+	Auth     *auth.Service
+	Events   *events.Bus
+	Presence *presence.Tracker
+	Log      *slog.Logger
+	Now      func() time.Time // nil = time.Now
 }
 
 // Loaded is a started plugin.
@@ -165,7 +167,7 @@ func Load(ctx context.Context, d Deps, plugins ...Plugin) (*Registry, error) {
 			return nil, err
 		}
 		st := &Settings{id: m.ID, defs: m.Settings, db: d.DB, now: d.Now, log: log}
-		h := &Host{ID: m.ID, DB: d.DB, Perms: d.Perms, Auth: d.Auth, Events: d.Events, Settings: st, Log: log}
+		h := &Host{ID: m.ID, DB: d.DB, Perms: d.Perms, Auth: d.Auth, Events: d.Events, Presence: d.Presence, Settings: st, Log: log}
 		if err := p.Init(ctx, h); err != nil {
 			return nil, fmt.Errorf("plugin %s: init: %w", m.ID, err)
 		}

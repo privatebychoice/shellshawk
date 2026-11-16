@@ -116,6 +116,37 @@ func (t *Terminal) Next(ctx context.Context) (Event, error) {
 	}
 }
 
+// NextWake is Next that also returns (with woke true) when wake receives,
+// so a caller can react to outside events such as new chat messages.
+func (t *Terminal) NextWake(ctx context.Context, wake <-chan struct{}) (ev Event, woke bool, err error) {
+	select {
+	case ev := <-t.events:
+		return ev, false, nil
+	default:
+	}
+	select {
+	case ev := <-t.events:
+		return ev, false, nil
+	case <-wake:
+		return Event{}, true, nil
+	case s := <-t.resize:
+		t.mu.Lock()
+		t.size = s
+		t.mu.Unlock()
+		return Event{Key: KeyResize}, false, nil
+	case err := <-t.errc:
+		t.errc <- err
+		select {
+		case ev := <-t.events:
+			return ev, false, nil
+		default:
+		}
+		return Event{}, false, err
+	case <-ctx.Done():
+		return Event{}, false, ctx.Err()
+	}
+}
+
 // Size returns the current terminal size.
 func (t *Terminal) Size() Size {
 	t.mu.Lock()

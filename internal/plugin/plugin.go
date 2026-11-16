@@ -17,6 +17,7 @@ import (
 	"go.privatebychoice.com/shellshawk/internal/events"
 	"go.privatebychoice.com/shellshawk/internal/form"
 	"go.privatebychoice.com/shellshawk/internal/perm"
+	"go.privatebychoice.com/shellshawk/internal/presence"
 	"go.privatebychoice.com/shellshawk/internal/sftpd"
 	"go.privatebychoice.com/shellshawk/internal/store"
 	"go.privatebychoice.com/shellshawk/internal/tui"
@@ -64,8 +65,10 @@ type Permission struct {
 	Name        string
 	Description string
 	// DefaultGroups receive the permission the first time the plugin is
-	// loaded (e.g. "member" for posting). Administrators can change it
-	// afterwards; it is never re-granted.
+	// loaded. Groups do not inherit from each other, so an everyday
+	// permission should list both "member" and "moderator" (an account
+	// invited straight into "moderator" is not in "member").
+	// Administrators can change it afterwards; it is never re-granted.
 	DefaultGroups []string
 }
 
@@ -132,6 +135,7 @@ type Host struct {
 	Perms    *perm.Service
 	Auth     *auth.Service
 	Events   *events.Bus
-	Settings *Settings // this plugin's settings only
+	Presence *presence.Tracker // who has a BBS session open; may be nil in tests
+	Settings *Settings         // this plugin's settings only
 	Log      *slog.Logger
 }

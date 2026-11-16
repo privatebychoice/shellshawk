@@ -424,3 +424,25 @@ func TestAccountEvents(t *testing.T) {
 		t.Errorf("events = %v, want %v (failed changes must not publish)", got, want)
 	}
 }
+
+func TestMembersDirectory(t *testing.T) {
+	f := newFixture(t)
+	f.user("anna_b")
+	f.user("annaxb")
+	locked := f.user("lockme")
+	f.svc.SetLocked(f.ctx, f.admin, locked, true)
+	f.register(f.invite(f.admin, InviteOptions{RequireApproval: true}), "pend1")
+
+	all, total, err := f.svc.Members(f.ctx, "", 0, 100)
+	if err != nil || total != 3 || len(all) != 3 {
+		t.Fatalf("members = %v (%d), %v; want only the 3 active accounts", all, total, err)
+	}
+	got, total, _ := f.svc.Members(f.ctx, "anna_", 0, 10)
+	if total != 1 || got[0].Username != "anna_b" {
+		t.Errorf("literal prefix = %v", got)
+	}
+	page2, total, _ := f.svc.Members(f.ctx, "", 2, 2)
+	if total != 3 || len(page2) != 1 || page2[0].Username != "sysadmin1" {
+		t.Errorf("page 2 = %v", page2)
+	}
+}

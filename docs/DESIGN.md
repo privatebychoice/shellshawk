@@ -298,7 +298,7 @@ full-screen redraws poorly. Accessible mode therefore changes more than colours:
 
 ### 6.4 Text editor
 
-*Not yet built — stage 4 provides a basic multi-line input (arrows, Enter, Backspace, bracketed paste); the full editor arrives with conferences/messages.* nano-like: `^O` save, `^X` exit, `^K` cut line, `^U` paste, `^W` find, `^G`
+*Built in stage 8 (`tui.UI.Edit`). Line mode uses dot-commands on their own line: `.` finish, `.preview`, `.clear`, `.cancel`, `.keep`. Tab inserts four spaces.* nano-like: `^O` save, `^X` exit, `^K` cut line, `^U` paste, `^W` find, `^G`
 help, arrow/Home/End/PgUp/PgDn, a help bar on the bottom two lines (hidden in
 accessible mode; `^G` prints the help instead). Markdown-aware syntax colouring
 in Modern/PuTTY profiles. `^P` toggles preview through the TUI renderer.
@@ -443,13 +443,19 @@ TOML/JSON files; admins can add more.
 | Plugin | Notes |
 |--------|-------|
 | **Conferences** | Areas → conferences → threads → posts. Permission group per conference. Optional polls (uses the Polls API). Optional per-thread chat channel created through the Chat API, enabled by an admin/moderator. SFTP thread export. |
+| | *Implemented (stage 8):* SFTP file names include the thread ID (`YYYYMMDD-<id>-<slug>.md`) so names stay unique; deleting a post, thread or conference also deletes its polls and thread chat; a thread chat inherits the conference's permission; authors can edit/delete their posts until a thread is locked; deleting the first post deletes the thread. |
 | **Polls** | Single/multi choice, open/close dates, **anonymous by default** (creator may make a poll named; voters are told before voting), pinned polls, results view (bar rendering in TUI, a table in accessible mode and as the web fallback). |
 | **Contacts** | Personal lists and user-defined contact groups. Exposes `IsContact`, `IsMutual` (→ "friend"), `ListGroup` to other plugins. |
-| **Messages** | Subject + markdown body, threaded replies, per-user unread/read/deleted counters, honours the recipient's DM privacy setting. |
-| **User list** | All users (respecting privacy), my contacts, contact groups, online now. |
+| **Messages** | Subject + markdown body, threaded replies, per-user unread/read/deleted counters (computed, with a restorable Deleted folder), recipients by username or contact group, admin-set limits (recipients, per hour, length), read-only SFTP `/messages/{inbox,sent}`. Honouring the recipient's DM privacy setting arrives with the privacy settings (stage 9). |
+| **User list** | All users (respecting privacy), my contacts, contact groups, online now. Stage 8: shows usernames and join dates only; online status (in-memory presence of open BBS sessions) only between friends until the privacy settings define it. |
 | **Chat** | Channel types shown as a tag: `[P]` persistent, `[T]` thread (conference), `[A]` ad hoc, `[D]` direct. Commands `/who /channels /join /part /topic /kick /invite /createchat /destroychat`. Logging on by default, stored in SQLite, downloadable over SFTP by permitted users. Retention **90 days** default, overridable per channel (0 = logging off). Web uses SSE (no third-party websocket libraries). |
 
-Each channel's join banner states whether it is logged and for how long.
+Each channel's join banner states whether it is logged and for how long. Implemented (stage 8): channel kinds persistent/adhoc/thread; ad hoc
+chats are invite-only (creator, invitees, chat moderators); kick removes
+the member now and, in ad hoc chats, withdraws the invitation; join/leave
+events are broadcast but not logged (only messages and topic changes are);
+retention 0 = not logged at all; a direct-message chat is an ad hoc chat
+with one invitee (no separate [D] type); live delivery is in-process.
 
 ---
 

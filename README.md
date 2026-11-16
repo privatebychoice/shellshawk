@@ -3,10 +3,11 @@
 A self-hosted, privacy-first BBS with an SSH TUI, SFTP, and an optional web
 interface. See [docs/DESIGN.md](docs/DESIGN.md) for the full design.
 
-> **Status:** stage 7: SSH server, accounts, the TUI (full-screen and
-> screen-reader interfaces), markdown with graded links, plugins,
-> configurable menus, administration, and SFTP. Conferences, messages,
-> chat and the other core plugins come next.
+> **Status:** stage 8 complete: SSH server, accounts, the TUI (full-screen
+> and screen-reader interfaces), markdown with graded links, plugins,
+> configurable menus, administration, SFTP, and the core plugins —
+> Conferences, Messages, Contacts, Members, Polls and Chat. Privacy settings
+> and erasure (stage 9) and the web interface (stage 10) come next.
 
 ## Build
 
@@ -157,6 +158,52 @@ where a plugin allows them, up to the configured size, and are stored only
 if the transfer completes. `mkdir`, `rm`, `rename` and links are refused.
 Password (add-key) logins cannot use SFTP. Permissions are re-checked on
 every request, so locking an account takes effect immediately.
+
+## Contacts and messages
+
+- **Conferences**: areas of conferences, each optionally limited to a
+  permission (grant it to a group for a group-only conference). Threads of
+  markdown posts written in the editor; authors edit (marked *edited*) or
+  delete their posts; moderators lock threads, edit or delete anything,
+  manage areas and conferences, and can enable a live chat for a thread.
+  Posts can carry polls. Each thread downloads as one markdown file over
+  SFTP: `/conferences/<area>/<conference>/<YYYYMMDD>-<id>-<title>.md`.
+  Permissions: `conferences.read`/`.post` (members and moderators),
+  `conferences.moderate` (moderators).
+- **Contacts**: your personal list (with private notes) and named contact
+  groups. A contact who also has you in their list is shown as a *friend*.
+- **Messages**: private mail with a subject and a markdown body, sent to
+  usernames and/or your contact groups; replies quote the original. The
+  mailbox shows unread, read and deleted counts; deleted messages can be
+  restored. Your mail is also available read-only over SFTP in
+  `/messages/inbox` and `/messages/sent`. Sending needs `messages.send`
+  (granted to `member` on first start). Administrators can change the
+  per-message recipient limit, the hourly sending limit and the maximum
+  length under *Plugin settings*.
+- **Polls**: single or multiple choice (2–10 options), anonymous unless
+  the creator makes them named (voters are told before voting), optional
+  automatic closing, changeable votes while open. Results appear after you
+  vote or when the poll closes, with counts and percentages written out.
+  Pinned polls are listed first. `polls.vote`/`polls.create` go to
+  members, `polls.manage` (pin, close, delete any) to moderators.
+- **Members**: browse and search members (username and join date only),
+  your contacts and contact groups, and a member's profile with *Add to my
+  contacts* and *Send a message*. Until privacy settings exist, online
+  status is shown only between friends (mutual contacts).
+- **Chat**: live channels. `[P]` persistent channels are run by chat
+  moderators (who can restrict them by permission and set how long the log
+  is kept, 0 = not logged); `[A]` private chats are invite-only and can be
+  started by any member; `[T]` thread chats belong to conference threads.
+  Commands: `/help`, `/who`, `/channels`, `/join`, `/topic`, `/invite`,
+  `/kick`, `/createchat`, `/destroychat`, `/quit`. Logging is on by default
+  (90 days) and every channel says so when you join; logs are downloadable
+  over SFTP at `/chat/<channel>/<YYYYMMDD>.log` by members who can enter
+  the channel. Joins and leaves are shown live but never logged. Flood
+  control allows 5 messages per 5 seconds.
+- **Editor**: full screen it works like nano — Ctrl-O save, Ctrl-X exit,
+  Ctrl-K cut line, Ctrl-U paste, Ctrl-W find, Ctrl-P preview, Ctrl-G help.
+  In screen reader mode, type lines and finish with `.` on its own line
+  (`.preview`, `.clear`, `.cancel`, `.keep` are also available).
 
 ## Endpoints
 

@@ -18,6 +18,7 @@ import (
 	"go.privatebychoice.com/shellshawk/internal/perm"
 	"go.privatebychoice.com/shellshawk/internal/plugin"
 	"go.privatebychoice.com/shellshawk/internal/prefs"
+	"go.privatebychoice.com/shellshawk/internal/presence"
 	"go.privatebychoice.com/shellshawk/internal/settings"
 	"go.privatebychoice.com/shellshawk/internal/sshd"
 	"go.privatebychoice.com/shellshawk/internal/tui"
@@ -30,7 +31,8 @@ type Handler struct {
 	Settings *settings.Service
 	Grader   markdown.Grader // grades links in rendered markdown; may be nil
 	Menu     *menu.Service
-	Plugins  *plugin.Registry // may be nil when no plugins are installed
+	Plugins  *plugin.Registry  // may be nil when no plugins are installed
+	Presence *presence.Tracker // may be nil
 	Perms    *perm.Service
 	Prefs    *prefs.Service
 	Log      *slog.Logger
@@ -135,6 +137,9 @@ func (s *session) run(ctx context.Context) error {
 	case sshd.ModeMember:
 		if err := s.openUserUI(ctx); err != nil {
 			return err
+		}
+		if s.h.Presence != nil {
+			defer s.h.Presence.Enter(s.userID)()
 		}
 		return s.home(ctx)
 	}

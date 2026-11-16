@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
+	"io"
 	"log/slog"
 	"net"
 	"path/filepath"
@@ -21,6 +22,11 @@ import (
 	"go.privatebychoice.com/shellshawk/internal/menu"
 	"go.privatebychoice.com/shellshawk/internal/perm"
 	"go.privatebychoice.com/shellshawk/internal/plugin"
+	"go.privatebychoice.com/shellshawk/internal/plugins/chat"
+	"go.privatebychoice.com/shellshawk/internal/plugins/conferences"
+	"go.privatebychoice.com/shellshawk/internal/plugins/contacts"
+	"go.privatebychoice.com/shellshawk/internal/plugins/messages"
+	"go.privatebychoice.com/shellshawk/internal/plugins/polls"
 	"go.privatebychoice.com/shellshawk/internal/prefs"
 	"go.privatebychoice.com/shellshawk/internal/settings"
 	"go.privatebychoice.com/shellshawk/internal/sshd"
@@ -39,7 +45,8 @@ type env struct {
 	prefs   *prefs.Service
 }
 
-func startBBS(t *testing.T) *env {
+// startBBS runs a BBS with the given plugins (the hello test plugin if none).
+func startBBS(t *testing.T, plugins ...plugin.Plugin) *env {
 	t.Helper()
 	ctx := context.Background()
 	log := slog.New(slog.DiscardHandler)
@@ -58,7 +65,10 @@ func startBBS(t *testing.T) *env {
 	st := settings.NewService(db, nil, log)
 	bus := events.New(log)
 	as.SetPublisher(bus)
-	reg, err := plugin.Load(ctx, plugin.Deps{DB: db, Perms: ps, Auth: as, Events: bus, Log: log}, &helloPlugin{})
+	if len(plugins) == 0 {
+		plugins = []plugin.Plugin{&helloPlugin{}}
+	}
+	reg, err := plugin.Load(ctx, plugin.Deps{DB: db, Perms: ps, Auth: as, Events: bus, Log: log}, plugins...)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -436,5 +446,196 @@ func TestMemberDoesNotSeeAdministration(t *testing.T) {
 	}
 	if !strings.Contains(out, "7. Log out") {
 		t.Errorf("menu numbering unexpected:\n%s", out)
+	}
+}
+
+func TestMessagesEndToEnd(t *testing.T) {
+	c := contacts.New()
+	e := startBBS(t, c, messages.New(c))
+	ctx := context.Background()
+	ivyKey := e.accessibleAdmin(t, "ivy")
+	ivy, _ := e.auth.UserByUsername(ctx, "ivy")
+	code, _, _ := e.auth.CreateInvite(ctx, ivy.ID, auth.InviteOptions{})
+	jackKey, line := newUserKey(t)
+	jack, err := e.auth.Register(ctx, code, auth.Registration{Username: "jack", Password: testPassword, PublicKey: line})
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := prefs.Default()
+	p.Profile, p.PageSize = theme.ProfileAccessible, 200
+	e.prefs.Set(ctx, jack.ID, p)
+
+	// ivy (admin menu: 6 Contacts, 7 Messages, 8 Log out): Messages, Write
+	// (4), To jack, Subject, body in the line editor, finish with ".",
+	// dismiss "Message sent.", Back (5), Log out.
+	out := e.session(t, "ivy", ssh.PublicKeys(ivyKey),
+		strings.Join([]string{"7", "4", "jack", "Hello Jack", "**Welcome** aboard", ".", "", "5", "8"}, "\r")+"\r")
+	if !strings.Contains(out, "Message sent.") {
+		t.Fatalf("send failed:\n%s", out)
+	}
+
+	// jack (member menu: 5 Contacts, 6 Messages, 7 Log out): Messages,
+	// Inbox, first message, dismiss it, Back (3), q, Back (5), Log out.
+	out = e.session(t, "jack", ssh.PublicKeys(jackKey),
+		strings.Join([]string{"6", "1", "1", "", "3", "q", "5", "7"}, "\r")+"\r")
+	for _, want := range []string{"Inbox: 1 unread, 0 read.", "1. New: Hello Jack", "From: ivy", "Welcome aboard", "1. Reply"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q", want)
+		}
+	}
+	if t.Failed() {
+		t.Logf("output:\n%s", out)
+	}
+}
+
+func TestPollEndToEnd(t *testing.T) {
+	e := startBBS(t, polls.New())
+	key := e.accessibleAdmin(t, "kim")
+	// Main menu: 6 Polls, 7 Log out. Polls (no polls yet): 2 Create.
+	// Form: question; options typed one per line then "."; multi no;
+	// named no; days 7; pinned no. Dismiss "Poll created.". Polls menu now:
+	// 1 the poll. Poll menu: 1 Vote; choose option 2; results page, dismiss;
+	// 6 Back; 4 Back; 7 Log out.
+	input := strings.Join([]string{
+		"6", "2", "Lunch?", "Pizza", "Soup", ".", "no", "no", "7", "no", "",
+		"1", "1", "2", "", "6", "4", "7",
+	}, "\r") + "\r"
+	out := e.session(t, "kim", ssh.PublicKeys(key), input)
+	for _, want := range []string{"Poll created.", "Votes are anonymous.", "Option 2, Soup: 1 vote(s), 100 percent (your vote).", "1 vote(s) from 1 member(s)."} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q", want)
+		}
+	}
+	if t.Failed() {
+		t.Logf("output:\n%s", out)
+	}
+}
+
+// live is an interactive session for tests that must interleave input
+// with output from other sessions.
+type live struct {
+	t     *testing.T
+	in    io.WriteCloser
+	out   *lockedBuf
+	sess  *ssh.Session
+	close func()
+}
+
+func (e *env) interactive(t *testing.T, user string, am ssh.AuthMethod) *live {
+	t.Helper()
+	c, err := ssh.Dial("tcp", e.addr, &ssh.ClientConfig{
+		User: user, Auth: []ssh.AuthMethod{am}, HostKeyCallback: ssh.FixedHostKey(e.hostKey), Timeout: 5 * time.Second,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sess, _ := c.NewSession()
+	out := &lockedBuf{}
+	sess.Stdout = out
+	in, _ := sess.StdinPipe()
+	if err := sess.RequestPty("xterm", 30, 100, ssh.TerminalModes{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := sess.Shell(); err != nil {
+		t.Fatal(err)
+	}
+	l := &live{t: t, in: in, out: out, sess: sess, close: func() { sess.Close(); c.Close() }}
+	t.Cleanup(l.close)
+	return l
+}
+
+func (l *live) send(s string) {
+	l.t.Helper()
+	if _, err := l.in.Write([]byte(s)); err != nil {
+		l.t.Fatal(err)
+	}
+}
+
+func (l *live) waitFor(s string) {
+	l.t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for !strings.Contains(l.out.String(), s) {
+		if time.Now().After(deadline) {
+			l.t.Fatalf("timed out waiting for %q; output:\n%s", s, l.out.String())
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+func TestChatBetweenTwoSessions(t *testing.T) {
+	e := startBBS(t, chat.New())
+	ctx := context.Background()
+	leeKey := e.accessibleAdmin(t, "lee")
+	lee, _ := e.auth.UserByUsername(ctx, "lee")
+	code, _, _ := e.auth.CreateInvite(ctx, lee.ID, auth.InviteOptions{})
+	miaKey, line := newUserKey(t)
+	mia, err := e.auth.Register(ctx, code, auth.Registration{Username: "mia", Password: testPassword, PublicKey: line})
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := prefs.Default()
+	p.Profile = theme.ProfileAccessible
+	e.prefs.Set(ctx, mia.ID, p)
+
+	// lee: main menu 6 = Chat, then 1 = #lobby.
+	a := e.interactive(t, "lee", ssh.PublicKeys(leeKey))
+	a.waitFor("6. Chat")
+	a.send("6\r")
+	a.waitFor("#lobby [P]")
+	a.send("1\r")
+	a.waitFor("This chat is logged")
+
+	// mia: main menu 5 = Chat (no Administration), then the lobby.
+	b := e.interactive(t, "mia", ssh.PublicKeys(miaKey))
+	b.waitFor("5. Chat")
+	b.send("5\r")
+	b.waitFor("#lobby [P] (1 here)")
+	b.send("1\r")
+	a.waitFor("* mia joined")
+
+	b.send("hello lee\r")
+	a.waitFor("mia: hello lee") // delivered live to the other session
+
+	a.send("/who\r")
+	a.waitFor("In #lobby: lee, mia.")
+	// mia cannot kick (not a moderator); lee, an administrator, can.
+	b.send("/kick lee\r")
+	b.waitFor("You do not have permission to do that.")
+	a.send("/kick mia\r")
+	a.waitFor("* mia was removed by lee")
+	b.waitFor("You were removed from this chat.")
+	b.waitFor("#lobby [P] (1 here)") // back at the channel list
+	a.waitFor("* mia left")
+}
+
+func TestConferenceEndToEnd(t *testing.T) {
+	pl, ch := polls.New(), chat.New()
+	e := startBBS(t, pl, ch, conferences.New(pl, ch))
+	key := e.accessibleAdmin(t, "nora")
+	// Main menu: 6 Chat, 7 Conferences, 8 Polls, 9 Log out.
+	// Conferences: area 1 (General), conference 1 (General discussion),
+	// 1 Start a thread: title, body in the line editor, "." to post,
+	// 1 = no poll, read the thread (Enter), 2 Reply: body, ".", no poll,
+	// read again (Enter), then q back out of thread, conference, area and
+	// areas, and 9 log out.
+	input := strings.Join([]string{
+		"7", "1", "1", "1", "Hello all", "Welcome **everyone**", ".", "1", "",
+		"2", "A reply", ".", "1", "",
+		"q", "q", "q", "q", "9",
+	}, "\r") + "\r"
+	out := e.session(t, "nora", ssh.PublicKeys(key), input)
+	for _, want := range []string{
+		"Heading level 3: Post 1 of 1, by nora",
+		"Welcome everyone",
+		"Heading level 3: Post 2 of 2, by nora",
+		"A reply",
+		"Your post is published. Add a poll to it?",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q", want)
+		}
+	}
+	if t.Failed() {
+		t.Logf("output:\n%s", out)
 	}
 }

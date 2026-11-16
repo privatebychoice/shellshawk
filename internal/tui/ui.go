@@ -68,6 +68,43 @@ type Menu struct {
 	Items []MenuItem
 }
 
+// EditRequest configures the text editor.
+type EditRequest struct {
+	Title  string
+	Text   string // initial text
+	MaxLen int    // maximum characters; 0 = 64 KiB
+	// Preview, if set, renders the text for Ctrl-P (full screen) or
+	// ".preview" (line mode).
+	Preview func(text string) Page
+}
+
+func (r EditRequest) max() int {
+	if r.MaxLen > 0 {
+		return r.MaxLen
+	}
+	return maxInputLen
+}
+
+// LiveRequest configures a live conversation view (chat).
+type LiveRequest struct {
+	Title   string
+	History []Line // shown first
+	// Incoming delivers new lines while the view is open. Closing it ends
+	// the view (e.g. the member was removed from the channel).
+	Incoming <-chan Line
+	// Submit handles a line the member entered. It returns lines to show
+	// only to this member (command output, errors) and whether to leave.
+	Submit func(text string) (feedback []Line, leave bool)
+	MaxLen int // longest line accepted; 0 = 500
+}
+
+func (r LiveRequest) max() int {
+	if r.MaxLen > 0 {
+		return r.MaxLen
+	}
+	return 500
+}
+
 // UI is implemented by Screen and Lines.
 type UI interface {
 	// Show displays a page and returns when the user dismisses it.
@@ -78,6 +115,12 @@ type UI interface {
 	// ErrCancelled. values pre-fills fields; errs shows errors from a
 	// previous attempt (e.g. "username taken") and focuses those fields.
 	Form(ctx context.Context, fm *form.Form, values form.Values, errs form.Errors) (form.Values, error)
+	// Edit opens the text editor and returns the edited text, or
+	// ErrCancelled if the user leaves without saving.
+	Edit(ctx context.Context, r EditRequest) (string, error)
+	// Live runs a conversation view until the member leaves, Submit asks
+	// to leave, or Incoming is closed.
+	Live(ctx context.Context, r LiveRequest) error
 	// LineMode reports whether this is the line-by-line UI.
 	LineMode() bool
 	// Close restores the terminal.

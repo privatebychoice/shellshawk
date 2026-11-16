@@ -280,3 +280,74 @@ func (s *Service) ListUsers(ctx context.Context, actor int64, prefix string) ([]
 // DB returns the database handle, for read-only listings (such as the audit
 // log) whose permission checks the caller performs.
 func (s *Service) DB() *sql.DB { return s.db }
+
+// Usernames returns the usernames of the given accounts. Accounts that no
+// longer exist are absent from the map.
+func (s *Service) Usernames(ctx context.Context, ids []int64) (map[int64]string, error) {
+	out := map[int64]string{}
+	if len(ids) == 0 {
+		return out, nil
+	}
+	ph := strings.TrimSuffix(strings.Repeat("?,", len(ids)), ",")
+	args := make([]any, len(ids))
+	for i, id := range ids {
+		args[i] = id
+	}
+	rows, err := s.db.QueryContext(ctx, `SELECT id, username FROM users WHERE id IN (`+ph+`)`, args...)
+	if err != nil {
+		return nil, fmt.Errorf("auth: usernames: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id int64
+		var name string
+		if err := rows.Scan(&id, &name); err != nil {
+			return nil, err
+		}
+		out[id] = name
+	}
+	return out, rows.Err()
+}
+
+// Member is the public view of an account used in member directories. It
+// deliberately has no email, status details or login times.
+type Member struct {
+	ID       int64
+	Username string
+	Since    time.Time // registration date
+}
+
+// MaxMembersPage bounds a Members page.
+const MaxMembersPage = 100
+
+// Members lists active accounts whose username starts with prefix, sorted
+// by username, and the total number matching. Any logged-in member may call
+// it.
+func (s *Service) Members(ctx context.Context, prefix string, offset, limit int) ([]Member, int, error) {
+	limit = min(max(limit, 1), MaxMembersPage)
+	esc := strings.NewReplacer(`\`, `\\`, "%", `\%`, "_", `\_`).Replace(NormalizeUsername(prefix)) + "%"
+	var total int
+	if err := s.db.QueryRowContext(ctx, `SELECT count(*) FROM users WHERE status = ? AND username LIKE ? ESCAPE '\'`,
+		StatusActive, esc).Scan(&total); err != nil {
+		return nil, 0, fmt.Errorf("auth: count members: %w", err)
+	}
+	rows, err := s.db.QueryContext(ctx, `SELECT id, username, created_at FROM users WHERE status = ? AND username LIKE ? ESCAPE '\'
+		ORDER BY username LIMIT ? OFFSET ?`, StatusActive, esc, limit, max(offset, 0))
+	if err != nil {
+		return nil, 0, fmt.Errorf("auth: list members: %w", err)
+	}
+	defer rows.Close()
+	var out []Member
+	for rows.Next() {
+		var m Member
+		var since string
+		if err := rows.Scan(&m.ID, &m.Username, &since); err != nil {
+			return nil, 0, err
+		}
+		if m.Since, err = store.ParseTime(since); err != nil {
+			return nil, 0, err
+		}
+		out = append(out, m)
+	}
+	return out, total, rows.Err()
+}
