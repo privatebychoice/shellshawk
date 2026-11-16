@@ -3,11 +3,11 @@
 A self-hosted, privacy-first BBS with an SSH TUI, SFTP, and an optional web
 interface. See [docs/DESIGN.md](docs/DESIGN.md) for the full design.
 
-> **Status:** stage 3: configuration, SQLite with migrations, logging,
-> `/version`, the locked-down SSH server, and accounts (users, keys, groups,
-> permissions, invites, approvals). Logins work, but **there is no TUI yet**:
-> after logging in you see a one-line notice and are disconnected. The
-> registration and add-key screens arrive with the TUI in stage 4.
+> **Status:** stage 4: SSH server, accounts, and the TUI core — full-screen
+> and screen-reader (line) interfaces, themes, terminal profiles, standard
+> form controls, registration, add-key, display settings, SSH key
+> management, a terminal test, and basic administration (approvals and
+> invites). Conferences, messages, chat and the other plugins come later.
 
 ## Build
 
@@ -77,6 +77,26 @@ Built-in groups: `admin` (`core.admin`, implies everything), `moderator`
 permission, assign a group, or attach a group to an invite unless they hold
 every permission involved, and the last active administrator cannot be
 removed or locked.
+
+## Using the TUI
+
+- **Full screen** (default): Tab / Shift-Tab move between fields, Ctrl-S
+  submits a form, Esc goes back. Menus accept arrow keys or the item number.
+- **Screen reader mode**: no colours, no screen drawing — every screen starts
+  with `Screen: <name>`, fields are asked one at a time, and long pages pause
+  every N lines. Choose it at registration (type `s`), or later under
+  *Display settings → Terminal type*. Clients that do not request a terminal
+  (e.g. `ssh -T`) always get this mode.
+- **Terminal types**: Modern (24-bit colour), PuTTY (256 colours, italic as a
+  colour), Basic (16 colours, ASCII), Screen reader. Bold and italic can each
+  be shown as real bold/italic, a highlight colour, underline, or not at all —
+  use *Terminal test* to see what your terminal supports.
+- **Themes**: Classic BBS, Amber Terminal, Green Phosphor, Dark, Light and
+  High Contrast. Text colours meet WCAG AA contrast (AAA for High Contrast),
+  enforced by tests.
+
+All user-supplied text is stripped of control characters and escape
+sequences before it is written to anyone's terminal.
 
 ## Endpoints
 

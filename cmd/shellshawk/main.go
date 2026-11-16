@@ -23,11 +23,14 @@ import (
 
 	"go.privatebychoice.com/shellshawk/internal/audit"
 	"go.privatebychoice.com/shellshawk/internal/auth"
+	"go.privatebychoice.com/shellshawk/internal/bbs"
 	"go.privatebychoice.com/shellshawk/internal/config"
 	"go.privatebychoice.com/shellshawk/internal/logging"
 	"go.privatebychoice.com/shellshawk/internal/perm"
+	"go.privatebychoice.com/shellshawk/internal/prefs"
 	"go.privatebychoice.com/shellshawk/internal/sshd"
 	"go.privatebychoice.com/shellshawk/internal/store"
+	"go.privatebychoice.com/shellshawk/internal/theme"
 	"go.privatebychoice.com/shellshawk/internal/version"
 	"go.privatebychoice.com/shellshawk/internal/web"
 )
@@ -35,6 +38,9 @@ import (
 const (
 	shutdownTimeout    = 10 * time.Second
 	auditPurgeInterval = 24 * time.Hour
+	// bbsName is shown in screen titles. It becomes an admin setting with
+	// the branding work (docs/DESIGN.md §15).
+	bbsName = "shellshawk"
 )
 
 func main() {
@@ -51,6 +57,7 @@ type app struct {
 	db    *sql.DB
 	perms *perm.Service
 	auth  *auth.Service
+	prefs *prefs.Service
 }
 
 func run(args []string) error {
@@ -73,8 +80,16 @@ func run(args []string) error {
 			log.Error("close database", "err", err)
 		}
 	}()
+	themes, err := theme.Builtin()
+	if err != nil {
+		return err
+	}
 	perms := perm.NewService(db, perm.NewRegistry(), nil, log)
-	a := &app{cfg: cfg, log: log, db: db, perms: perms, auth: auth.NewService(db, perms, cfg.InviteUser, nil, log)}
+	a := &app{
+		cfg: cfg, log: log, db: db, perms: perms,
+		auth:  auth.NewService(db, perms, cfg.InviteUser, nil, log),
+		prefs: prefs.NewService(db, themes, nil),
+	}
 
 	switch {
 	case len(args) == 0:
@@ -127,7 +142,7 @@ func (a *app) serve(ctx context.Context) error {
 			Addr:     cfg.SSHAddr,
 			HostKey:  hostKey,
 			Auth:     auth.NewSSHAuthenticator(a.auth),
-			Handler:  unavailableHandler{},
+			Handler:  &bbs.Handler{Name: bbsName, Auth: a.auth, Perms: a.perms, Prefs: a.prefs, Log: log},
 			MaxConns: cfg.SSHMaxConns,
 			Log:      log,
 		})
@@ -199,23 +214,4 @@ func (a *app) purgeAuditLog(ctx context.Context) {
 		case <-t.C:
 		}
 	}
-}
-
-// unavailableHandler is the session handler until the TUI exists (stage 4).
-// Logins now work, but there is nothing to show yet; it says so and exits.
-type unavailableHandler struct{}
-
-func (unavailableHandler) HandleShell(_ context.Context, s *sshd.Session) {
-	var msg string
-	switch s.Identity.Mode {
-	case sshd.ModeRegister:
-		msg = "Your invite code is valid, but the registration screen is not built yet (stage 4)."
-	case sshd.ModePending:
-		msg = "Your account is awaiting approval."
-	case sshd.ModeAddKey:
-		msg = "Password accepted, but the add-key screen is not built yet (stage 4)."
-	default:
-		msg = "Login successful, but the BBS interface is not built yet (stage 4)."
-	}
-	_, _ = io.WriteString(s, msg+"\r\n")
 }

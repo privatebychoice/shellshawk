@@ -266,9 +266,23 @@ full-screen redraws poorly. Accessible mode therefore changes more than colours:
 - Separately toggleable: **high contrast theme**, **reduce motion**,
   **ASCII only**, **verbose markers**, **page size** (lines before `--More--`).
 
+### 6.3.1 Implementation notes (stage 4)
+
+- Screens are written once against a `tui.UI` interface with two
+  implementations: full-screen (`tui.Screen`) and line mode (`tui.Lines`).
+- Line mode never uses colour, even for non-screen-reader clients without a
+  PTY, because it cannot know the client's background colour.
+- Registration asks "screen reader mode?" in plain text before any screen
+  drawing, and saves the answer to the new account's preferences.
+- Forms show each field's rules in words (e.g. "3 to 32 characters,
+  required") so nothing is conveyed by colour or position alone; focus is
+  marked with a `▶`/`>` marker as well as colour.
+- 16-colour output maps theme colours by hue, not nearest RGB, so e.g. error
+  red stays red.
+
 ### 6.4 Text editor
 
-nano-like: `^O` save, `^X` exit, `^K` cut line, `^U` paste, `^W` find, `^G`
+*Not yet built — stage 4 provides a basic multi-line input (arrows, Enter, Backspace, bracketed paste); the full editor arrives with conferences/messages.* nano-like: `^O` save, `^X` exit, `^K` cut line, `^U` paste, `^W` find, `^G`
 help, arrow/Home/End/PgUp/PgDn, a help bar on the bottom two lines (hidden in
 accessible mode; `^G` prints the help instead). Markdown-aware syntax colouring
 in Modern/PuTTY profiles. `^P` toggles preview through the TUI renderer.
