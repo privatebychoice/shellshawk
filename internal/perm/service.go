@@ -203,6 +203,38 @@ func groupPerms(ctx context.Context, db store.DBTX, groupID int64) ([]string, er
 	return out, rows.Err()
 }
 
+// GroupByID returns the group with id.
+func (s *Service) GroupByID(ctx context.Context, id int64) (Group, error) {
+	return groupByID(ctx, s.db, id)
+}
+
+// Member is a group member.
+type Member struct {
+	UserID   int64
+	Username string
+	Status   string
+}
+
+// GroupMembers lists a group's members by username.
+func (s *Service) GroupMembers(ctx context.Context, groupID int64) ([]Member, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT u.id, u.username, u.status FROM user_access_groups ug JOIN users u ON u.id = ug.user_id
+		WHERE ug.group_id = ? ORDER BY u.username`, groupID)
+	if err != nil {
+		return nil, fmt.Errorf("perm: group members: %w", err)
+	}
+	defer rows.Close()
+	var out []Member
+	for rows.Next() {
+		var m Member
+		if err := rows.Scan(&m.UserID, &m.Username, &m.Status); err != nil {
+			return nil, err
+		}
+		out = append(out, m)
+	}
+	return out, rows.Err()
+}
+
 // UserGroups returns the names of userID's groups.
 func (s *Service) UserGroups(ctx context.Context, userID int64) ([]string, error) {
 	rows, err := s.db.QueryContext(ctx, `

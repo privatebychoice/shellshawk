@@ -39,6 +39,14 @@ func TestRecordAndPurge(t *testing.T) {
 		t.Errorf("system actor rows with NULL actor_id = %d, want 1", nullActors)
 	}
 
+	recs, err := Recent(ctx, db, 10)
+	if err != nil || len(recs) != 3 {
+		t.Fatalf("Recent = %d, %v", len(recs), err)
+	}
+	if recs[0].Action != GroupCreated || recs[0].Actor != "#1" || recs[1].Actor != "system" {
+		t.Errorf("Recent order/actors = %+v", recs)
+	}
+
 	n, err := Purge(ctx, db, now, 365*24*time.Hour)
 	if err != nil || n != 1 {
 		t.Fatalf("Purge = %d, %v; want 1", n, err)

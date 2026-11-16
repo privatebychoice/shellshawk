@@ -13,8 +13,8 @@ import (
 //go:embed guide.md
 var guideMarkdown string
 
-// renderMarkdown renders src for this session's interface and width.
-func (s *session) renderMarkdown(title, src string) tui.Page {
+// Markdown renders src for this session's interface and width.
+func (s *session) Markdown(title, src string) tui.Page {
 	o := markdown.TUIOptions{Accessible: s.ui.LineMode(), Unicode: s.unicode, Grader: s.h.Grader}
 	if !o.Accessible {
 		o.Width = max(s.t.Size().Cols-2, 20)
@@ -26,7 +26,7 @@ func (s *session) renderMarkdown(title, src string) tui.Page {
 // markdown.
 func (s *session) markdownGuide(ctx context.Context) error {
 	for {
-		choice, err := s.ui.Choose(ctx, tui.Menu{Title: s.title("Markdown"), Items: []tui.MenuItem{
+		choice, err := s.ui.Choose(ctx, tui.Menu{Title: s.Title("Markdown"), Items: []tui.MenuItem{
 			{Value: "guide", Label: "Markdown guide", Help: "Every supported style, rendered"},
 			{Value: "try", Label: "Try it", Help: "Type some markdown and see how it looks"},
 			{Value: "back", Label: "Back"},
@@ -39,7 +39,7 @@ func (s *session) markdownGuide(ctx context.Context) error {
 		}
 		switch choice {
 		case "guide":
-			err = s.ui.Show(ctx, s.renderMarkdown(s.title("Markdown guide"), guideMarkdown))
+			err = s.ui.Show(ctx, s.Markdown(s.Title("Markdown guide"), guideMarkdown))
 		case "try":
 			err = s.markdownPreview(ctx)
 		}
@@ -59,15 +59,15 @@ func (s *session) markdownPreview(ctx context.Context) error {
 	}
 	vals := form.Values{}
 	for {
-		v, err := s.form(ctx, fm, vals, nil)
+		v, err := s.Form(ctx, fm, vals, nil)
 		if err != nil {
 			return err
 		}
 		vals = v
-		if err := s.ui.Show(ctx, s.renderMarkdown(s.title("Preview"), v["text"])); err != nil {
+		if err := s.ui.Show(ctx, s.Markdown(s.Title("Preview"), v["text"])); err != nil {
 			return err
 		}
-		again, err := tui.Confirm(ctx, s.ui, s.title("Preview"), "Edit the text and preview again?")
+		again, err := tui.Confirm(ctx, s.ui, s.Title("Preview"), "Edit the text and preview again?")
 		if err != nil || !again {
 			return err
 		}

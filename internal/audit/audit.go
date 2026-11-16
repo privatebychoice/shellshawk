@@ -7,6 +7,7 @@ package audit
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"strconv"
 	"time"
@@ -32,6 +33,8 @@ const (
 	GroupMemberAdded   = "group.member.added"
 	GroupMemberRemoved = "group.member.removed"
 	SettingChanged     = "setting.changed"
+	MenuChanged        = "menu.changed"
+	PluginSettingSet   = "plugin.setting.changed"
 )
 
 // SystemActor marks an action taken by the system or operator CLI rather
@@ -75,4 +78,49 @@ func Purge(ctx context.Context, db store.DBTX, now time.Time, retention time.Dur
 		return 0, fmt.Errorf("audit: purge: %w", err)
 	}
 	return res.RowsAffected()
+}
+
+// Listed is an audit entry as listed for administrators.
+type Listed struct {
+	At         time.Time
+	Actor      string // username, "system", or "#<id>" if the account is gone
+	Action     string
+	TargetType string
+	TargetID   string
+	Detail     string
+}
+
+// Recent returns up to limit entries, newest first. Callers must check
+// core.audit.view first (this package cannot import perm).
+func Recent(ctx context.Context, db store.DBTX, limit int) ([]Listed, error) {
+	rows, err := db.QueryContext(ctx, `
+		SELECT a.at, a.actor_id, COALESCE(u.username, ''), a.action, a.target_type, a.target_id, a.detail
+		FROM audit_log a LEFT JOIN users u ON u.id = a.actor_id
+		ORDER BY a.at DESC, a.id DESC LIMIT ?`, limit)
+	if err != nil {
+		return nil, fmt.Errorf("audit: list: %w", err)
+	}
+	defer rows.Close()
+	var out []Listed
+	for rows.Next() {
+		var r Listed
+		var at, name string
+		var actor sql.NullInt64
+		if err := rows.Scan(&at, &actor, &name, &r.Action, &r.TargetType, &r.TargetID, &r.Detail); err != nil {
+			return nil, err
+		}
+		if r.At, err = store.ParseTime(at); err != nil {
+			return nil, err
+		}
+		switch {
+		case !actor.Valid:
+			r.Actor = "system"
+		case name != "":
+			r.Actor = name
+		default:
+			r.Actor = "#" + strconv.FormatInt(actor.Int64, 10)
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
 }

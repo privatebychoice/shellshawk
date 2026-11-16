@@ -25,9 +25,12 @@ import (
 	"go.privatebychoice.com/shellshawk/internal/auth"
 	"go.privatebychoice.com/shellshawk/internal/bbs"
 	"go.privatebychoice.com/shellshawk/internal/config"
+	"go.privatebychoice.com/shellshawk/internal/events"
 	"go.privatebychoice.com/shellshawk/internal/linkgrade"
 	"go.privatebychoice.com/shellshawk/internal/logging"
+	"go.privatebychoice.com/shellshawk/internal/menu"
 	"go.privatebychoice.com/shellshawk/internal/perm"
+	"go.privatebychoice.com/shellshawk/internal/plugin"
 	"go.privatebychoice.com/shellshawk/internal/prefs"
 	"go.privatebychoice.com/shellshawk/internal/settings"
 	"go.privatebychoice.com/shellshawk/internal/sshd"
@@ -58,7 +61,13 @@ type app struct {
 	auth  *auth.Service
 	prefs *prefs.Service
 	grade *linkgrade.Grader
+
+	plugins *plugin.Registry
 }
+
+// installedPlugins are compiled into this build. Core plugins are added here
+// as they are built (docs/DESIGN.md §12).
+func installedPlugins() []plugin.Plugin { return nil }
 
 func run(args []string) error {
 	cfg, err := config.Load(os.Getenv)
@@ -96,6 +105,13 @@ func run(args []string) error {
 		prefs: prefs.NewService(db, themes, nil),
 		grade: grader,
 	}
+	bus := events.New(log)
+	a.auth.SetPublisher(bus)
+	plugins, err := plugin.Load(ctx, plugin.Deps{DB: db, Perms: perms, Auth: a.auth, Events: bus, Log: log}, installedPlugins()...)
+	if err != nil {
+		return err
+	}
+	a.plugins = plugins
 
 	switch {
 	case len(args) == 0:
@@ -134,6 +150,14 @@ func (a *app) serve(ctx context.Context) error {
 			"hint", "set "+config.EnvSSHAddr+" and/or "+config.EnvHTTPAddr)
 	}
 
+	handler := &bbs.Handler{
+		Auth: a.auth, Settings: settings.NewService(a.db, nil, log), Grader: a.grade, Perms: a.perms, Prefs: a.prefs,
+		Menu: menu.NewService(a.db, a.perms, nil, log), Plugins: a.plugins, Log: log,
+	}
+	if err := handler.Menu.Seed(ctx, handler.MenuDefaults()); err != nil {
+		return err
+	}
+
 	go a.purgeAuditLog(ctx)
 
 	errc := make(chan error, 2)
@@ -148,7 +172,7 @@ func (a *app) serve(ctx context.Context) error {
 			Addr:     cfg.SSHAddr,
 			HostKey:  hostKey,
 			Auth:     auth.NewSSHAuthenticator(a.auth),
-			Handler:  &bbs.Handler{Auth: a.auth, Settings: settings.NewService(a.db, nil, log), Grader: a.grade, Perms: a.perms, Prefs: a.prefs, Log: log},
+			Handler:  handler,
 			MaxConns: cfg.SSHMaxConns,
 			Log:      log,
 		})

@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"go.privatebychoice.com/shellshawk/internal/audit"
+	"go.privatebychoice.com/shellshawk/internal/events"
 	"go.privatebychoice.com/shellshawk/internal/perm"
 	"go.privatebychoice.com/shellshawk/internal/store"
 )
@@ -126,6 +127,7 @@ func (s *Service) Register(ctx context.Context, inviteCode string, r Registratio
 		return User{}, err
 	}
 	s.log.Info("account registered", "user_id", userID, "status", status)
+	s.publish(ctx, events.UserRegistered, userID, userID)
 	return s.UserByID(ctx, userID)
 }
 

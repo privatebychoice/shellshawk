@@ -103,6 +103,13 @@ func (t *Terminal) Next(ctx context.Context) (Event, error) {
 		return Event{Key: KeyResize}, nil
 	case err := <-t.errc:
 		t.errc <- err // keep reporting it
+		// select chooses randomly among ready cases; input that arrived
+		// before the stream ended must still be delivered first.
+		select {
+		case ev := <-t.events:
+			return ev, nil
+		default:
+		}
 		return Event{}, err
 	case <-ctx.Done():
 		return Event{}, ctx.Err()

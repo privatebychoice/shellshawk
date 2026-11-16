@@ -14,7 +14,9 @@ import (
 	"go.privatebychoice.com/shellshawk/internal/auth"
 	"go.privatebychoice.com/shellshawk/internal/form"
 	"go.privatebychoice.com/shellshawk/internal/markdown"
+	"go.privatebychoice.com/shellshawk/internal/menu"
 	"go.privatebychoice.com/shellshawk/internal/perm"
+	"go.privatebychoice.com/shellshawk/internal/plugin"
 	"go.privatebychoice.com/shellshawk/internal/prefs"
 	"go.privatebychoice.com/shellshawk/internal/settings"
 	"go.privatebychoice.com/shellshawk/internal/sshd"
@@ -27,6 +29,8 @@ type Handler struct {
 	Auth     *auth.Service
 	Settings *settings.Service
 	Grader   markdown.Grader // grades links in rendered markdown; may be nil
+	Menu     *menu.Service
+	Plugins  *plugin.Registry // may be nil when no plugins are installed
 	Perms    *perm.Service
 	Prefs    *prefs.Service
 	Log      *slog.Logger
@@ -125,7 +129,7 @@ func (s *session) run(ctx context.Context) error {
 		if err := s.openUserUI(ctx); err != nil {
 			return err
 		}
-		return tui.Message(ctx, s.ui, s.title("Account pending"),
+		return tui.Message(ctx, s.ui, s.Title("Account pending"),
 			"Your account is waiting for approval by a moderator.",
 			"You will be able to use the BBS once it has been approved. Please check back later.")
 	case sshd.ModeMember:
@@ -137,14 +141,14 @@ func (s *session) run(ctx context.Context) error {
 	return errors.New("unknown session mode")
 }
 
-// form shows fm with the BBS name in its title.
-func (s *session) form(ctx context.Context, fm *form.Form, vals form.Values, errs form.Errors) (form.Values, error) {
+// Form shows fm with the BBS name in its title.
+func (s *session) Form(ctx context.Context, fm *form.Form, vals form.Values, errs form.Errors) (form.Values, error) {
 	titled := *fm
-	titled.Title = s.title(fm.Title)
+	titled.Title = s.Title(fm.Title)
 	return s.ui.Form(ctx, &titled, vals, errs)
 }
 
-func (s *session) title(t string) string { return s.name + " - " + t }
+func (s *session) Title(t string) string { return s.name + " - " + t }
 
 // openUserUI opens the UI chosen in the user's preferences. Without a PTY
 // only line mode is possible.

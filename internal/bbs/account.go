@@ -102,9 +102,9 @@ func (s *session) register(ctx context.Context) error {
 	fm := registrationForm(s.h.Auth.InviteUser())
 	vals, errs := form.Values{}, form.Errors{}
 	for {
-		v, err := s.form(ctx, fm, vals, errs)
+		v, err := s.Form(ctx, fm, vals, errs)
 		if errors.Is(err, tui.ErrCancelled) {
-			return tui.Message(ctx, s.ui, s.title("Registration"), "Registration cancelled. Your invite code has not been used.")
+			return tui.Message(ctx, s.ui, s.Title("Registration"), "Registration cancelled. Your invite code has not been used.")
 		}
 		if err != nil {
 			return err
@@ -126,10 +126,10 @@ func (s *session) register(ctx context.Context) error {
 			continue
 		}
 		if errors.Is(err, auth.ErrInviteInvalid) {
-			return tui.Message(ctx, s.ui, s.title("Registration"), "Sorry, this invite code is no longer valid. It may have expired or been used.")
+			return tui.Message(ctx, s.ui, s.Title("Registration"), "Sorry, this invite code is no longer valid. It may have expired or been used.")
 		}
 		s.log.Error("registration failed", "err", err)
-		return tui.Message(ctx, s.ui, s.title("Registration"), "Sorry, something went wrong creating your account. Please try again later.")
+		return tui.Message(ctx, s.ui, s.Title("Registration"), "Sorry, something went wrong creating your account. Please try again later.")
 	}
 }
 
@@ -143,7 +143,7 @@ func (s *session) registered(ctx context.Context, u auth.User) error {
 		fmt.Sprintf("Next time, connect as user %q using the SSH key you just added.", u.Username),
 		"If you ever lose your key, connect with your username and password to add a new one.",
 	)
-	return tui.Message(ctx, s.ui, s.title("Welcome"), lines...)
+	return tui.Message(ctx, s.ui, s.Title("Welcome"), lines...)
 }
 
 // addKeyLogin is the screen for a password login: add a key, nothing else.
@@ -153,7 +153,7 @@ func (s *session) addKeyLogin(ctx context.Context) error {
 		return err
 	}
 	if len(keys) >= auth.MaxKeysPerUser {
-		return tui.Message(ctx, s.ui, s.title("Add SSH key"),
+		return tui.Message(ctx, s.ui, s.Title("Add SSH key"),
 			fmt.Sprintf("Your account already has the maximum of %d keys.", auth.MaxKeysPerUser),
 			"Log in with one of them and remove a key you no longer use first.")
 	}
@@ -161,7 +161,7 @@ func (s *session) addKeyLogin(ctx context.Context) error {
 	if err != nil || !added {
 		return err
 	}
-	return tui.Message(ctx, s.ui, s.title("Add SSH key"), "Your key has been added. Disconnect and log in again using it.")
+	return tui.Message(ctx, s.ui, s.Title("Add SSH key"), "Your key has been added. Disconnect and log in again using it.")
 }
 
 // addKeyForm collects and adds one key. It reports whether a key was added.
@@ -169,7 +169,7 @@ func (s *session) addKeyForm(ctx context.Context, intro string) (bool, error) {
 	fm := &form.Form{Title: "Add SSH key", Intro: intro, Fields: keyFields()}
 	vals, errs := form.Values{}, form.Errors{}
 	for {
-		v, err := s.form(ctx, fm, vals, errs)
+		v, err := s.Form(ctx, fm, vals, errs)
 		if errors.Is(err, tui.ErrCancelled) {
 			return false, nil
 		}
@@ -182,12 +182,12 @@ func (s *session) addKeyForm(ctx context.Context, intro string) (bool, error) {
 		case err == nil:
 			return true, nil
 		case errors.Is(err, auth.ErrKeyLimit):
-			return false, tui.Message(ctx, s.ui, s.title("Add SSH key"), err.Error()+".")
+			return false, tui.Message(ctx, s.ui, s.Title("Add SSH key"), err.Error()+".")
 		case fieldForError(err) != "":
 			errs = form.Errors{fieldForError(err): err}
 		default:
 			s.log.Error("add key failed", "err", err)
-			return false, tui.Message(ctx, s.ui, s.title("Add SSH key"), "Sorry, the key could not be added. Please try again later.")
+			return false, tui.Message(ctx, s.ui, s.Title("Add SSH key"), "Sorry, the key could not be added. Please try again later.")
 		}
 	}
 }

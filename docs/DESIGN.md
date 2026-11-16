@@ -120,9 +120,25 @@ type Plugin interface {
   `user.erased`, `user.renamed`, `group.changed`) — this is how Right to Forget
   reaches plugin data (§5).
 
+Implementation notes (stage 6): `plugin.Manifest` carries the ID,
+permissions (each with optional default groups, granted once and never
+re-granted after an admin revokes them), settings (`form.Field` + default),
+migrations and menu items; `Init(ctx, *Host)` receives the shared DB,
+permission and account services, the event bus and the plugin's own
+settings. Migrations may only create, alter or drop `<id>_` objects and may
+only attach indexes/triggers to them (checked at load). This is a
+convention check, not a security boundary: plugins are trusted, compiled-in
+code. Web routes and SFTP routes are added to the manifest in stages 10
+and 7.
+
 ### 3.2 Configurable menu system
 
-Menus are stored in SQLite (editable from the admin menu) as a tree of entries:
+Menus are stored in SQLite (editable from the admin menu: rename, move,
+extra permission, submenus, reset) as a tree of entries. New menu items
+(core or plugin) are placed before *Log out* the first time they are seen;
+removed items are not re-added. *Administration* and *Log out* cannot be
+deleted. Entries whose item no longer exists are hidden from members and
+flagged in the editor. Previously sketched as:
 `{key, label, target(plugin:item | submenu), required_permission, order}`. A
 default menu is seeded on first run. Users only see entries they are permitted
 to use.

@@ -1,12 +1,14 @@
 package auth
 
 import (
+	"context"
 	"errors"
 	"slices"
 	"testing"
 	"time"
 
 	"go.privatebychoice.com/shellshawk/internal/audit"
+	"go.privatebychoice.com/shellshawk/internal/events"
 	"go.privatebychoice.com/shellshawk/internal/perm"
 )
 
@@ -351,5 +353,74 @@ func TestSingleUseInviteUnderConcurrency(t *testing.T) {
 	}
 	if ok != 1 {
 		t.Errorf("%d registrations succeeded with a single-use invite, want exactly 1", ok)
+	}
+}
+
+func TestListUsers(t *testing.T) {
+	f := newFixture(t)
+	f.user("anna_b")
+	f.user("annaxb") // must not match the literal prefix "anna_"
+	member := f.user("member1")
+
+	tests := []struct {
+		name   string
+		actor  int64
+		prefix string
+		want   []string
+		err    error
+	}{
+		{"prefix is literal, not a wildcard", f.admin, "ANNA_", []string{"anna_b"}, nil},
+		{"all", f.admin, "", []string{"anna_b", "annaxb", "member1", "sysadmin1"}, nil},
+		{"member forbidden", member, "", nil, perm.ErrForbidden},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := f.svc.ListUsers(f.ctx, tt.actor, tt.prefix)
+			if !errors.Is(err, tt.err) {
+				t.Fatalf("err = %v", err)
+			}
+			var names []string
+			for _, u := range got {
+				names = append(names, u.Username)
+			}
+			if !slices.Equal(names, tt.want) {
+				t.Errorf("users = %v, want %v", names, tt.want)
+			}
+		})
+	}
+}
+
+type recordingPublisher struct{ got []events.Event }
+
+func (r *recordingPublisher) Publish(_ context.Context, e events.Event) error {
+	r.got = append(r.got, e)
+	return nil
+}
+
+func TestAccountEvents(t *testing.T) {
+	f := newFixture(t)
+	pub := &recordingPublisher{}
+	f.svc.SetPublisher(pub)
+
+	pending := f.register(f.invite(f.admin, InviteOptions{RequireApproval: true}), "pend1")
+	if err := f.svc.Approve(f.ctx, f.admin, pending.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.svc.SetLocked(f.ctx, f.admin, pending.ID, true); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.svc.Approve(f.ctx, f.admin, pending.ID); err == nil {
+		t.Fatal("approving a locked account should fail")
+	}
+	want := []string{events.UserRegistered, events.UserApproved, events.UserLocked}
+	var got []string
+	for _, e := range pub.got {
+		got = append(got, e.Topic)
+		if e.UserID != pending.ID {
+			t.Errorf("event %s for user %d, want %d", e.Topic, e.UserID, pending.ID)
+		}
+	}
+	if !slices.Equal(got, want) {
+		t.Errorf("events = %v, want %v (failed changes must not publish)", got, want)
 	}
 }

@@ -15,8 +15,8 @@ import (
 	"go.privatebychoice.com/shellshawk/internal/tui"
 )
 
-// admin is the minimal administration menu: approvals and invites. The full
-// admin menu (users, groups, plugin settings) arrives with stage 6.
+// admin is the administration menu. Each section appears only to members
+// holding a permission it needs; the services re-check every action.
 func (s *session) admin(ctx context.Context) error {
 	for {
 		set, err := s.h.Perms.Permissions(ctx, s.userID)
@@ -24,21 +24,23 @@ func (s *session) admin(ctx context.Context) error {
 			return err
 		}
 		var items []tui.MenuItem
-		if set.Has(perm.UsersApprove) {
-			items = append(items, tui.MenuItem{Value: "pending", Label: "Accounts awaiting approval"})
+		addIf := func(ok bool, value, label, help string) {
+			if ok {
+				items = append(items, tui.MenuItem{Value: value, Label: label, Help: help})
+			}
 		}
-		if set.Has(perm.InviteCreate) {
-			items = append(items, tui.MenuItem{Value: "invite", Label: "Create an invite"})
-		}
-		if set.Has(perm.InviteCreate) || set.Has(perm.InviteManage) {
-			items = append(items, tui.MenuItem{Value: "invites", Label: "View or revoke invites"})
-		}
-		if set.Has(perm.SettingsManage) {
-			items = append(items, tui.MenuItem{Value: "branding", Label: "Branding", Help: "The BBS name shown in every title"})
-		}
+		addIf(set.Has(perm.UsersApprove), "pending", "Accounts awaiting approval", "Approve or reject new accounts")
+		addIf(set.Has(perm.UsersManage) || set.Has(perm.GroupsManage), "users", "Users", "Find a user, lock or unlock, change groups")
+		addIf(set.Has(perm.GroupsManage), "groups", "Groups and permissions", "Create groups, grant permissions, manage members")
+		addIf(set.Has(perm.InviteCreate), "invite", "Create an invite", "")
+		addIf(set.Has(perm.InviteCreate) || set.Has(perm.InviteManage), "invites", "View or revoke invites", "")
+		addIf(set.Has(perm.SettingsManage), "branding", "Branding", "The BBS name shown in every title")
+		addIf(set.Has(perm.PluginSettings), "plugins", "Plugin settings", "Settings of installed plugins")
+		addIf(set.Has(perm.MenuManage), "menu", "Menu editor", "Arrange the member menu")
+		addIf(set.Has(perm.AuditView), "audit", "Audit log", "Recent administrative actions")
 		items = append(items, tui.MenuItem{Value: "back", Label: "Back"})
 
-		choice, err := s.ui.Choose(ctx, tui.Menu{Title: s.title("Administration"), Items: items})
+		choice, err := s.ui.Choose(ctx, tui.Menu{Title: s.Title("Administration"), Items: items})
 		if errors.Is(err, tui.ErrCancelled) || choice == "back" {
 			return nil
 		}
@@ -48,20 +50,46 @@ func (s *session) admin(ctx context.Context) error {
 		switch choice {
 		case "pending":
 			err = s.pendingAccounts(ctx)
+		case "users":
+			err = s.adminUsers(ctx)
+		case "groups":
+			err = s.adminGroups(ctx)
 		case "invite":
 			err = s.createInvite(ctx)
 		case "invites":
 			err = s.manageInvites(ctx)
 		case "branding":
 			err = s.branding(ctx)
+		case "plugins":
+			err = s.pluginSettings(ctx)
+		case "menu":
+			err = s.menuEditor(ctx, 0, "Main menu")
+		case "audit":
+			err = s.auditLog(ctx)
 		}
-		if errors.Is(err, perm.ErrForbidden) {
-			err = tui.Message(ctx, s.ui, s.title("Administration"), "You do not have permission to do that.")
+		if msg := adminErrorMessage(err); msg != "" {
+			err = tui.Message(ctx, s.ui, s.Title("Administration"), msg)
 		}
 		if err != nil && !errors.Is(err, tui.ErrCancelled) {
 			return err
 		}
 	}
+}
+
+// adminErrorMessage turns expected service errors into a message for the
+// administrator; "" means the error is not one of them.
+func adminErrorMessage(err error) string {
+	switch {
+	case err == nil:
+		return ""
+	case errors.Is(err, perm.ErrForbidden):
+		return "You do not have permission to do that. It may involve permissions you do not hold yourself."
+	case errors.Is(err, perm.ErrLastAdmin):
+		return "That would leave the BBS without an active administrator, so it was not done."
+	case errors.Is(err, perm.ErrProtected):
+		return "Built-in groups cannot be changed that way."
+	}
+	return ""
 }
 
 func (s *session) pendingAccounts(ctx context.Context) error {
@@ -71,20 +99,20 @@ func (s *session) pendingAccounts(ctx context.Context) error {
 			return err
 		}
 		if len(users) == 0 {
-			return tui.Message(ctx, s.ui, s.title("Approvals"), "No accounts are waiting for approval.")
+			return tui.Message(ctx, s.ui, s.Title("Approvals"), "No accounts are waiting for approval.")
 		}
 		var items []tui.MenuItem
 		for _, u := range users {
 			items = append(items, tui.MenuItem{Value: strconv.FormatInt(u.ID, 10), Label: u.Username, Help: "Registered " + fmtTime(&u.CreatedAt)})
 		}
 		choice, err := s.ui.Choose(ctx, tui.Menu{
-			Title: s.title("Approvals"), Intro: fmt.Sprintf("%d account(s) waiting. Choose one to approve or reject.", len(users)), Items: items,
+			Title: s.Title("Approvals"), Intro: fmt.Sprintf("%d account(s) waiting. Choose one to approve or reject.", len(users)), Items: items,
 		})
 		if err != nil {
 			return err
 		}
 		id, _ := strconv.ParseInt(choice, 10, 64)
-		action, err := s.ui.Choose(ctx, tui.Menu{Title: s.title("Approvals"), Items: []tui.MenuItem{
+		action, err := s.ui.Choose(ctx, tui.Menu{Title: s.Title("Approvals"), Items: []tui.MenuItem{
 			{Value: "approve", Label: "Approve", Help: "The account can use the BBS"},
 			{Value: "reject", Label: "Reject", Help: "The account and its keys are deleted"},
 			{Value: "back", Label: "Back"},
@@ -98,7 +126,7 @@ func (s *session) pendingAccounts(ctx context.Context) error {
 		if action == "approve" {
 			err = s.h.Auth.Approve(ctx, s.userID, id)
 		} else {
-			ok, cerr := tui.Confirm(ctx, s.ui, s.title("Approvals"), "Reject and delete this account?")
+			ok, cerr := tui.Confirm(ctx, s.ui, s.Title("Approvals"), "Reject and delete this account?")
 			if cerr != nil || !ok {
 				continue
 			}
@@ -106,9 +134,9 @@ func (s *session) pendingAccounts(ctx context.Context) error {
 		}
 		switch {
 		case errors.Is(err, perm.ErrForbidden):
-			err = tui.Message(ctx, s.ui, s.title("Approvals"), "You cannot act on this account: it would receive permissions you do not have.")
+			err = tui.Message(ctx, s.ui, s.Title("Approvals"), "You cannot act on this account: it would receive permissions you do not have.")
 		case errors.Is(err, auth.ErrNotPending):
-			err = tui.Message(ctx, s.ui, s.title("Approvals"), "This account is no longer pending.")
+			err = tui.Message(ctx, s.ui, s.Title("Approvals"), "This account is no longer pending.")
 		}
 		if err != nil {
 			return err
@@ -141,7 +169,7 @@ func (s *session) createInvite(ctx context.Context) error {
 	vals := form.Values{"uses": "1", "days": "7", "approval": form.False}
 	var errs form.Errors
 	for {
-		v, err := s.form(ctx, fm, vals, errs)
+		v, err := s.Form(ctx, fm, vals, errs)
 		if err != nil {
 			return err
 		}
@@ -163,7 +191,7 @@ func (s *session) createInvite(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		return tui.Message(ctx, s.ui, s.title("Invite created"),
+		return tui.Message(ctx, s.ui, s.Title("Invite created"),
 			"Invite code:",
 			"",
 			"    "+code,
@@ -180,7 +208,7 @@ func (s *session) manageInvites(ctx context.Context) error {
 		return err
 	}
 	now := time.Now()
-	p := tui.Page{Title: s.title("Invites")}
+	p := tui.Page{Title: s.Title("Invites")}
 	var items []tui.MenuItem
 	for _, inv := range invs {
 		state := "usable"
@@ -210,11 +238,11 @@ func (s *session) manageInvites(ctx context.Context) error {
 	if len(items) == 0 {
 		return nil
 	}
-	choice, err := s.ui.Choose(ctx, tui.Menu{Title: s.title("Revoke an invite"), Intro: "Choose an invite to revoke, or go back.", Items: items})
+	choice, err := s.ui.Choose(ctx, tui.Menu{Title: s.Title("Revoke an invite"), Intro: "Choose an invite to revoke, or go back.", Items: items})
 	if err != nil {
 		return err
 	}
-	ok, err := tui.Confirm(ctx, s.ui, s.title("Revoke an invite"), "Revoke this invite? It can no longer be used.")
+	ok, err := tui.Confirm(ctx, s.ui, s.Title("Revoke an invite"), "Revoke this invite? It can no longer be used.")
 	if err != nil || !ok {
 		return err
 	}
@@ -222,7 +250,7 @@ func (s *session) manageInvites(ctx context.Context) error {
 	if err := s.h.Auth.RevokeInvite(ctx, s.userID, id); err != nil {
 		return err
 	}
-	return tui.Message(ctx, s.ui, s.title("Revoke an invite"), "Invite revoked.")
+	return tui.Message(ctx, s.ui, s.Title("Revoke an invite"), "Invite revoked.")
 }
 
 func (s *session) branding(ctx context.Context) error {
@@ -234,7 +262,7 @@ func (s *session) branding(ctx context.Context) error {
 			Check: settings.NormalizeBBSName,
 		}},
 	}
-	v, err := s.form(ctx, fm, form.Values{"name": s.name}, nil)
+	v, err := s.Form(ctx, fm, form.Values{"name": s.name}, nil)
 	if err != nil {
 		return err
 	}
@@ -242,5 +270,5 @@ func (s *session) branding(ctx context.Context) error {
 		return err
 	}
 	s.name = s.h.Settings.BBSName(ctx)
-	return tui.Message(ctx, s.ui, s.title("Branding"), "The BBS name has been changed. Other members see it the next time they connect.")
+	return tui.Message(ctx, s.ui, s.Title("Branding"), "The BBS name has been changed. Other members see it the next time they connect.")
 }

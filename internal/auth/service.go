@@ -8,9 +8,11 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"go.privatebychoice.com/shellshawk/internal/audit"
+	"go.privatebychoice.com/shellshawk/internal/events"
 	"go.privatebychoice.com/shellshawk/internal/perm"
 	"go.privatebychoice.com/shellshawk/internal/store"
 )
@@ -40,9 +42,15 @@ type User struct {
 	LastLoginAt *time.Time
 }
 
+// Publisher receives account events. *events.Bus implements it.
+type Publisher interface {
+	Publish(ctx context.Context, e events.Event) error
+}
+
 // Service manages accounts.
 type Service struct {
 	db         *sql.DB
+	events     Publisher
 	perms      *perm.Service
 	inviteUser string
 	now        func() time.Time
@@ -56,6 +64,17 @@ func NewService(db *sql.DB, perms *perm.Service, inviteUser string, now func() t
 		now = time.Now
 	}
 	return &Service{db: db, perms: perms, inviteUser: NormalizeUsername(inviteUser), now: now, log: log.With("component", "auth")}
+}
+
+// SetPublisher makes the service publish account events after each change
+// commits. Subscriber failures are logged by the bus and never undo the
+// change.
+func (s *Service) SetPublisher(p Publisher) { s.events = p }
+
+func (s *Service) publish(ctx context.Context, topic string, userID, actor int64) {
+	if s.events != nil {
+		_ = s.events.Publish(ctx, events.Event{Topic: topic, UserID: userID, Actor: actor})
+	}
 }
 
 // InviteUser returns the configured registration login name.
@@ -142,7 +161,7 @@ func (s *Service) PendingUsers(ctx context.Context, actor int64) ([]User, error)
 
 // Approve activates a pending account.
 func (s *Service) Approve(ctx context.Context, actor, userID int64) error {
-	return store.WithTx(ctx, s.db, func(tx *sql.Tx) error {
+	err := store.WithTx(ctx, s.db, func(tx *sql.Tx) error {
 		if err := perm.RequireOutranks(ctx, tx, actor, userID, perm.UsersApprove); err != nil {
 			return err
 		}
@@ -158,13 +177,17 @@ func (s *Service) Approve(ctx context.Context, actor, userID int64) error {
 		s.log.Info("account approved", "actor", actor, "user_id", userID)
 		return audit.Record(ctx, tx, now, audit.Entry{Actor: actor, Action: audit.UserApproved, TargetType: "user", TargetID: userID})
 	})
+	if err == nil {
+		s.publish(ctx, events.UserApproved, userID, actor)
+	}
+	return err
 }
 
 // Reject deletes a pending account and everything attached to it (keys,
 // group memberships). Nothing about the rejected registration is kept
 // beyond the audit entry.
 func (s *Service) Reject(ctx context.Context, actor, userID int64) error {
-	return store.WithTx(ctx, s.db, func(tx *sql.Tx) error {
+	err := store.WithTx(ctx, s.db, func(tx *sql.Tx) error {
 		if err := perm.RequireOutranks(ctx, tx, actor, userID, perm.UsersApprove); err != nil {
 			return err
 		}
@@ -178,6 +201,10 @@ func (s *Service) Reject(ctx context.Context, actor, userID int64) error {
 		s.log.Info("account rejected", "actor", actor, "user_id", userID)
 		return audit.Record(ctx, tx, s.now(), audit.Entry{Actor: actor, Action: audit.UserRejected, TargetType: "user", TargetID: userID})
 	})
+	if err == nil {
+		s.publish(ctx, events.UserRejected, userID, actor)
+	}
+	return err
 }
 
 // SetLocked locks or unlocks an active account. Locked accounts cannot log
@@ -186,11 +213,11 @@ func (s *Service) SetLocked(ctx context.Context, actor, userID int64, locked boo
 	if actor == userID {
 		return ErrSelf
 	}
-	from, to, action := StatusActive, StatusLocked, audit.UserLocked
+	from, to, action, topic := StatusActive, StatusLocked, audit.UserLocked, events.UserLocked
 	if !locked {
-		from, to, action = StatusLocked, StatusActive, audit.UserUnlocked
+		from, to, action, topic = StatusLocked, StatusActive, audit.UserUnlocked, events.UserUnlocked
 	}
-	return store.WithTx(ctx, s.db, func(tx *sql.Tx) error {
+	err := store.WithTx(ctx, s.db, func(tx *sql.Tx) error {
 		if err := perm.RequireOutranks(ctx, tx, actor, userID, perm.UsersManage); err != nil {
 			return err
 		}
@@ -211,4 +238,45 @@ func (s *Service) SetLocked(ctx context.Context, actor, userID int64, locked boo
 		s.log.Info("account status changed", "actor", actor, "user_id", userID, "status", to)
 		return audit.Record(ctx, tx, s.now(), audit.Entry{Actor: actor, Action: action, TargetType: "user", TargetID: userID})
 	})
+	if err == nil {
+		s.publish(ctx, topic, userID, actor)
+	}
+	return err
 }
+
+// MaxListUsers bounds ListUsers results.
+const MaxListUsers = 200
+
+// ListUsers returns accounts whose username starts with prefix (all if
+// empty), up to MaxListUsers, for administrators holding core.users.manage
+// or core.groups.manage.
+func (s *Service) ListUsers(ctx context.Context, actor int64, prefix string) ([]User, error) {
+	set, err := s.perms.Permissions(ctx, actor)
+	if err != nil {
+		return nil, err
+	}
+	if !set.Has(perm.UsersManage) && !set.Has(perm.GroupsManage) {
+		return nil, perm.ErrForbidden
+	}
+	// Escape LIKE wildcards so the prefix is matched literally.
+	esc := strings.NewReplacer(`\`, `\\`, "%", `\%`, "_", `\_`).Replace(NormalizeUsername(prefix))
+	rows, err := s.db.QueryContext(ctx, `SELECT `+userColumns+` FROM users WHERE username LIKE ? ESCAPE '\' ORDER BY username LIMIT ?`,
+		esc+"%", MaxListUsers)
+	if err != nil {
+		return nil, fmt.Errorf("auth: list users: %w", err)
+	}
+	defer rows.Close()
+	var out []User
+	for rows.Next() {
+		u, err := scanUser(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, u)
+	}
+	return out, rows.Err()
+}
+
+// DB returns the database handle, for read-only listings (such as the audit
+// log) whose permission checks the caller performs.
+func (s *Service) DB() *sql.DB { return s.db }

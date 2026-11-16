@@ -3,10 +3,10 @@
 A self-hosted, privacy-first BBS with an SSH TUI, SFTP, and an optional web
 interface. See [docs/DESIGN.md](docs/DESIGN.md) for the full design.
 
-> **Status:** stage 5: SSH server, accounts, the TUI core (full-screen and
-> screen-reader interfaces, themes, forms), and markdown rendering with a
-> privacy grade on every link. Conferences, messages, chat and the other
-> plugins come later.
+> **Status:** stage 6: SSH server, accounts, the TUI (full-screen and
+> screen-reader interfaces), markdown with graded links, the plugin system,
+> the configurable member menu, and the full administration menu.
+> Conferences, messages, chat and the other core plugins come next.
 
 ## Build
 
@@ -110,6 +110,34 @@ under *Administration → Branding*.
 
 All user-supplied text is stripped of control characters and escape
 sequences before it is written to anyone's terminal.
+
+## Administration
+
+Members holding any administrative permission see *Administration* in the
+main menu, showing only the sections they may use:
+
+| Section | Permission |
+|---------|------------|
+| Accounts awaiting approval | `core.users.approve` |
+| Users (find, lock/unlock, change groups) | `core.users.manage` or `core.groups.manage` |
+| Groups and permissions | `core.groups.manage` |
+| Create / view / revoke invites | `core.invite.create`, `core.invite.manage` |
+| Branding (BBS name) | `core.settings.manage` |
+| Plugin settings | `core.plugins.settings` (admins and moderators) |
+| Menu editor | `core.menu.manage` |
+| Audit log | `core.audit.view` |
+
+`admin` has every permission. The member menu can be rearranged, renamed,
+split into submenus and restricted by permission; *Administration* and *Log
+out* can be moved or renamed but never deleted.
+
+## Plugins
+
+Plugins are Go packages compiled into the binary (no runtime loading). Each
+declares its permissions (optionally granted to default groups once), its
+settings, its own `<id>_`-prefixed tables and its menu items in a manifest.
+A plugin error or panic in a menu item is logged and shown as a generic
+error; the session continues.
 
 ## Endpoints
 
