@@ -1,0 +1,21 @@
+# Build output
+/bin/
+
+# Test binaries and coverage
+*.test
+*.out
+coverage.*
+*.coverprofile
+
+# Local databases (never commit user data)
+*.db
+*.db-wal
+*.db-shm
+
+# Go workspace
+go.work
+go.work.sum
+
+# Environment files
+.env
+.env.*
