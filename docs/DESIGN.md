@@ -343,6 +343,12 @@ TUI heading markers follow markdown convention, padded so text aligns:
 | Link | `<a rel="nofollow noopener noreferrer">` with grade badge | `Link {LETTER} {GRADE NAME}: {LINK TEXT} -> {URL}` in grade colour | `Link, grade B Considerate: {LINK TEXT}, {URL}` |
 | Image | not rendered | not rendered | not rendered (alt text shown as plain text) |
 
+Resolved for stage 5: in addition to the elements above, inline code,
+bare-URL autolinks (http/https, `www.` → https) and strikethrough are
+supported; tables are not. Unsupported syntax renders as plain text. In
+screen-reader mode lists end with "End of list.", quotes with "End quote.",
+and nested lists are announced ("Sub-list, 2 items:") instead of indented.
+
 ### 8.1 Links and pbc-classification
 
 The library returns `Grade` (`Letter()`, `Name()`, `Icon()`), `Trust`
@@ -441,6 +447,9 @@ Each channel's join banner states whether it is logged and for how long.
 | 11 | Polls / chat | Anonymous by default; chat logs 90 days, per-channel override |
 | 12 | Module path | `go.privatebychoice.com/shellshawk` |
 | 13 | Branding | See §15 |
+| 14 | Markdown extras | Inline code, bare-URL autolinks, strikethrough; no tables |
+| 15 | BBS name | Admin setting (`branding.name` in `system_settings`), perm `core.settings.manage` |
+| 16 | pbc data | Optional `SHELLSHAWK_PBC_DATA_FILE` merged over built-in data; optional `SHELLSHAWK_FIRST_PARTY_DOMAINS` |
 
 ---
 

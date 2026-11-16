@@ -34,9 +34,10 @@ func (s *session) home(ctx context.Context) error {
 			{Value: "settings", Label: "Display settings", Help: "Terminal type, colour theme and accessibility"},
 			{Value: "keys", Label: "SSH keys", Help: "Add or remove the keys you log in with"},
 			{Value: "termtest", Label: "Terminal test", Help: "Check which text styles your terminal can show"},
+			{Value: "markdown", Label: "Markdown guide", Help: "How to format posts and messages, with a preview"},
 		}
 		if s.canAdmin(ctx) {
-			items = append(items, tui.MenuItem{Value: "admin", Label: "Administration", Help: "Account approvals and invites"})
+			items = append(items, tui.MenuItem{Value: "admin", Label: "Administration", Help: "Account approvals, invites and branding"})
 		}
 		items = append(items, tui.MenuItem{Value: "logout", Label: "Log out"})
 
@@ -54,6 +55,8 @@ func (s *session) home(ctx context.Context) error {
 			err = s.keys(ctx)
 		case "termtest":
 			err = s.termTest(ctx)
+		case "markdown":
+			err = s.markdownGuide(ctx)
 		case "admin":
 			err = s.admin(ctx)
 		}
@@ -69,7 +72,7 @@ func (s *session) canAdmin(ctx context.Context) bool {
 		s.log.Error("load permissions", "err", err)
 		return false
 	}
-	return set.Has(perm.UsersApprove) || set.Has(perm.InviteCreate) || set.Has(perm.InviteManage)
+	return set.Has(perm.UsersApprove) || set.Has(perm.InviteCreate) || set.Has(perm.InviteManage) || set.Has(perm.SettingsManage)
 }
 
 // ---- display settings ----------------------------------------------------

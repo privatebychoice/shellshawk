@@ -2,6 +2,7 @@ package config
 
 import (
 	"log/slog"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -28,11 +29,13 @@ func TestLoad(t *testing.T) {
 				EnvDBPath: " bbs.db ", EnvLogLevel: "debug", EnvLogFormat: "JSON", EnvHTTPAddr: "127.0.0.1:8080",
 				EnvSSHAddr: ":2222", EnvSSHHostKey: "host_key", EnvSSHMaxConns: "25",
 				EnvInviteUser: "SignUp", EnvAuditRetentionDays: "90",
+				EnvPBCDataFile: " /data/pbc.json ", EnvFirstPartyDomains: "Example.org, bbs.example.net,",
 			},
 			want: Config{
 				DBPath: "bbs.db", LogLevel: slog.LevelDebug, LogFormat: LogFormatJSON, HTTPAddr: "127.0.0.1:8080",
 				SSHAddr: ":2222", SSHHostKeyPath: "host_key", SSHMaxConns: 25,
 				InviteUser: "signup", AuditRetentionDays: 90,
+				PBCDataFile: "/data/pbc.json", FirstPartyDomains: []string{"example.org", "bbs.example.net"},
 			},
 		},
 		{
@@ -96,6 +99,11 @@ func TestLoad(t *testing.T) {
 			wantErr: []string{EnvAuditRetentionDays},
 		},
 		{
+			name:    "bad first-party domain",
+			env:     map[string]string{EnvDBPath: "x", EnvFirstPartyDomains: "example.org, https://bad"},
+			wantErr: []string{EnvFirstPartyDomains},
+		},
+		{
 			name:    "errors are reported together",
 			env:     map[string]string{EnvLogLevel: "loud", EnvLogFormat: "xml"},
 			wantErr: []string{EnvDBPath, EnvLogLevel, EnvLogFormat},
@@ -118,7 +126,7 @@ func TestLoad(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Load() unexpected error: %v", err)
 			}
-			if got != tt.want {
+			if !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("Load() = %+v, want %+v", got, tt.want)
 			}
 			if got.WebEnabled() != (tt.want.HTTPAddr != "") {

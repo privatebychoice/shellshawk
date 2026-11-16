@@ -25,9 +25,11 @@ import (
 	"go.privatebychoice.com/shellshawk/internal/auth"
 	"go.privatebychoice.com/shellshawk/internal/bbs"
 	"go.privatebychoice.com/shellshawk/internal/config"
+	"go.privatebychoice.com/shellshawk/internal/linkgrade"
 	"go.privatebychoice.com/shellshawk/internal/logging"
 	"go.privatebychoice.com/shellshawk/internal/perm"
 	"go.privatebychoice.com/shellshawk/internal/prefs"
+	"go.privatebychoice.com/shellshawk/internal/settings"
 	"go.privatebychoice.com/shellshawk/internal/sshd"
 	"go.privatebychoice.com/shellshawk/internal/store"
 	"go.privatebychoice.com/shellshawk/internal/theme"
@@ -38,9 +40,6 @@ import (
 const (
 	shutdownTimeout    = 10 * time.Second
 	auditPurgeInterval = 24 * time.Hour
-	// bbsName is shown in screen titles. It becomes an admin setting with
-	// the branding work (docs/DESIGN.md §15).
-	bbsName = "shellshawk"
 )
 
 func main() {
@@ -58,6 +57,7 @@ type app struct {
 	perms *perm.Service
 	auth  *auth.Service
 	prefs *prefs.Service
+	grade *linkgrade.Grader
 }
 
 func run(args []string) error {
@@ -84,11 +84,17 @@ func run(args []string) error {
 	if err != nil {
 		return err
 	}
+	grader, err := linkgrade.New(cfg.PBCDataFile, cfg.FirstPartyDomains)
+	if err != nil {
+		return err
+	}
+	log.Info("link grading ready", "local_dataset", cfg.PBCDataFile != "", "first_party_domains", len(cfg.FirstPartyDomains))
 	perms := perm.NewService(db, perm.NewRegistry(), nil, log)
 	a := &app{
 		cfg: cfg, log: log, db: db, perms: perms,
 		auth:  auth.NewService(db, perms, cfg.InviteUser, nil, log),
 		prefs: prefs.NewService(db, themes, nil),
+		grade: grader,
 	}
 
 	switch {
@@ -142,7 +148,7 @@ func (a *app) serve(ctx context.Context) error {
 			Addr:     cfg.SSHAddr,
 			HostKey:  hostKey,
 			Auth:     auth.NewSSHAuthenticator(a.auth),
-			Handler:  &bbs.Handler{Name: bbsName, Auth: a.auth, Perms: a.perms, Prefs: a.prefs, Log: log},
+			Handler:  &bbs.Handler{Auth: a.auth, Settings: settings.NewService(a.db, nil, log), Grader: a.grade, Perms: a.perms, Prefs: a.prefs, Log: log},
 			MaxConns: cfg.SSHMaxConns,
 			Log:      log,
 		})

@@ -106,8 +106,8 @@ func (f *frame) flush() error {
 	return f.u.t.Flush()
 }
 
-// wrapLine wraps a styled line to width, breaking at spaces.
-func wrapLine(l Line, width int) []Line {
+// WrapLine wraps a styled line to width, breaking at spaces.
+func WrapLine(l Line, width int) []Line {
 	var out []Line
 	var cur Line
 	used := 0
@@ -154,7 +154,7 @@ func (u *Screen) Show(ctx context.Context, p Page) error {
 		cols, _ := u.dims()
 		var lines []Line
 		for _, l := range p.Lines {
-			lines = append(lines, wrapLine(l, cols-2)...)
+			lines = append(lines, WrapLine(l, cols-2)...)
 		}
 		help := "Enter close"
 		f := u.newFrame(p.Title, "")
@@ -223,7 +223,7 @@ func (u *Screen) Choose(ctx context.Context, m Menu) (string, error) {
 		f := u.newFrame(m.Title, fmt.Sprintf("%s/%s move  Enter select  1-9 shortcut  Esc back", u.sym("↑", "Up"), u.sym("↓", "Down")))
 		row := f.bodyTop()
 		if m.Intro != "" {
-			for _, l := range wrapLine(Text(m.Intro), cols-2) {
+			for _, l := range WrapLine(Text(m.Intro), cols-2) {
 				f.putLine(row, 1, l)
 				row++
 			}
@@ -540,7 +540,7 @@ func (u *Screen) drawForm(fm *form.Form, states []*fieldState, focus, scroll int
 	}
 
 	if fm.Intro != "" {
-		for _, l := range wrapLine(Text(fm.Intro), cols-2) {
+		for _, l := range WrapLine(Text(fm.Intro), cols-2) {
 			add(-1, -1, func(f *frame, r int) { f.putLine(r, 1, l) })
 		}
 		add(-1, -1, func(*frame, int) {})
@@ -614,7 +614,7 @@ func (u *Screen) drawForm(fm *form.Form, states []*fieldState, focus, scroll int
 			add(i, -1, func(f *frame, r int) { f.put(r, 1, text, st, cols-2) })
 		}
 		if fs.f.Help != "" && focused {
-			for _, l := range wrapLine(Styled(fs.f.Help, theme.Style{FG: theme.Muted}), cols-6) {
+			for _, l := range WrapLine(Styled(fs.f.Help, theme.Style{FG: theme.Muted}), cols-6) {
 				add(i, -1, func(f *frame, r int) { f.putLine(r, 4, l) })
 			}
 		}

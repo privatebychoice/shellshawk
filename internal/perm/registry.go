@@ -16,12 +16,13 @@ import (
 
 // Core permissions.
 const (
-	Admin        = "core.admin"         // implies every permission
-	UsersApprove = "core.users.approve" // approve or reject pending accounts
-	UsersManage  = "core.users.manage"  // lock/unlock accounts
-	GroupsManage = "core.groups.manage" // create/delete groups, grant permissions, change membership
-	InviteCreate = "core.invite.create" // create invites (own)
-	InviteManage = "core.invite.manage" // list and revoke anyone's invites
+	Admin          = "core.admin"           // implies every permission
+	UsersApprove   = "core.users.approve"   // approve or reject pending accounts
+	UsersManage    = "core.users.manage"    // lock/unlock accounts
+	GroupsManage   = "core.groups.manage"   // create/delete groups, grant permissions, change membership
+	InviteCreate   = "core.invite.create"   // create invites (own)
+	InviteManage   = "core.invite.manage"   // list and revoke anyone's invites
+	SettingsManage = "core.settings.manage" // change system settings (branding)
 )
 
 var permName = regexp.MustCompile(`^[a-z][a-z0-9]*(\.[a-z][a-z0-9_]*)+$`)
@@ -36,12 +37,13 @@ type Registry struct {
 // NewRegistry returns a registry containing the core permissions.
 func NewRegistry() *Registry {
 	return &Registry{perms: map[string]string{
-		Admin:        "Full administration; implies every permission",
-		UsersApprove: "Approve or reject pending accounts",
-		UsersManage:  "Lock and unlock accounts",
-		GroupsManage: "Manage groups, their permissions and members",
-		InviteCreate: "Create invite codes",
-		InviteManage: "List and revoke all invite codes",
+		Admin:          "Full administration; implies every permission",
+		UsersApprove:   "Approve or reject pending accounts",
+		UsersManage:    "Lock and unlock accounts",
+		GroupsManage:   "Manage groups, their permissions and members",
+		InviteCreate:   "Create invite codes",
+		InviteManage:   "List and revoke all invite codes",
+		SettingsManage: "Change system settings such as branding",
 	}}
 }
 

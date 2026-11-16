@@ -11,6 +11,7 @@ import (
 	"go.privatebychoice.com/shellshawk/internal/auth"
 	"go.privatebychoice.com/shellshawk/internal/form"
 	"go.privatebychoice.com/shellshawk/internal/perm"
+	"go.privatebychoice.com/shellshawk/internal/settings"
 	"go.privatebychoice.com/shellshawk/internal/tui"
 )
 
@@ -32,6 +33,9 @@ func (s *session) admin(ctx context.Context) error {
 		if set.Has(perm.InviteCreate) || set.Has(perm.InviteManage) {
 			items = append(items, tui.MenuItem{Value: "invites", Label: "View or revoke invites"})
 		}
+		if set.Has(perm.SettingsManage) {
+			items = append(items, tui.MenuItem{Value: "branding", Label: "Branding", Help: "The BBS name shown in every title"})
+		}
 		items = append(items, tui.MenuItem{Value: "back", Label: "Back"})
 
 		choice, err := s.ui.Choose(ctx, tui.Menu{Title: s.title("Administration"), Items: items})
@@ -48,6 +52,8 @@ func (s *session) admin(ctx context.Context) error {
 			err = s.createInvite(ctx)
 		case "invites":
 			err = s.manageInvites(ctx)
+		case "branding":
+			err = s.branding(ctx)
 		}
 		if errors.Is(err, perm.ErrForbidden) {
 			err = tui.Message(ctx, s.ui, s.title("Administration"), "You do not have permission to do that.")
@@ -217,4 +223,24 @@ func (s *session) manageInvites(ctx context.Context) error {
 		return err
 	}
 	return tui.Message(ctx, s.ui, s.title("Revoke an invite"), "Invite revoked.")
+}
+
+func (s *session) branding(ctx context.Context) error {
+	fm := &form.Form{
+		Title: "Branding",
+		Fields: []form.Field{{
+			Name: "name", Label: "BBS name", Kind: form.SingleLine, Required: true, MaxLen: settings.MaxBBSNameLen,
+			Help:  "Shown in every title bar and on the welcome prompt.",
+			Check: settings.NormalizeBBSName,
+		}},
+	}
+	v, err := s.form(ctx, fm, form.Values{"name": s.name}, nil)
+	if err != nil {
+		return err
+	}
+	if err := s.h.Settings.SetBBSName(ctx, s.userID, v["name"]); err != nil {
+		return err
+	}
+	s.name = s.h.Settings.BBSName(ctx)
+	return tui.Message(ctx, s.ui, s.title("Branding"), "The BBS name has been changed. Other members see it the next time they connect.")
 }

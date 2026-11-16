@@ -3,11 +3,10 @@
 A self-hosted, privacy-first BBS with an SSH TUI, SFTP, and an optional web
 interface. See [docs/DESIGN.md](docs/DESIGN.md) for the full design.
 
-> **Status:** stage 4: SSH server, accounts, and the TUI core — full-screen
-> and screen-reader (line) interfaces, themes, terminal profiles, standard
-> form controls, registration, add-key, display settings, SSH key
-> management, a terminal test, and basic administration (approvals and
-> invites). Conferences, messages, chat and the other plugins come later.
+> **Status:** stage 5: SSH server, accounts, the TUI core (full-screen and
+> screen-reader interfaces, themes, forms), and markdown rendering with a
+> privacy grade on every link. Conferences, messages, chat and the other
+> plugins come later.
 
 ## Build
 
@@ -33,6 +32,8 @@ no built-in defaults.
 | `SHELLSHAWK_SSH_MAX_CONNS` | no | `100` | Maximum concurrent SSH connections |
 | `SHELLSHAWK_INVITE_USER` | no | `new` | SSH login name for registering with an invite code |
 | `SHELLSHAWK_AUDIT_RETENTION_DAYS` | no | `365` | Audit log entries older than this are purged daily |
+| `SHELLSHAWK_PBC_DATA_FILE` | no | built-in data only | Local pbc-classification JSON dataset, merged over the library's built-in data |
+| `SHELLSHAWK_FIRST_PARTY_DOMAINS` | no | — | Comma-separated list of your own domains, graded as first-party |
 | `SHELLSHAWK_HTTP_ADDR` | no | disabled | `host:port` for the web interface; unset = web disabled |
 | `SHELLSHAWK_LOG_LEVEL` | no | `INFO` | `DEBUG`, `INFO`, `WARN`, `ERROR` |
 | `SHELLSHAWK_LOG_FORMAT` | no | `text` | `text` or `json` |
@@ -94,6 +95,18 @@ removed or locked.
 - **Themes**: Classic BBS, Amber Terminal, Green Phosphor, Dark, Light and
   High Contrast. Text colours meet WCAG AA contrast (AAA for High Contrast),
   enforced by tests.
+
+## Markdown
+
+Posts and messages use markdown: bold, italic, ~~strikethrough~~, inline
+code, headings (3 levels), quotes, ordered and bulleted lists, code blocks,
+horizontal rules, links and bare URLs. Every link is shown with its
+pbc-classification privacy grade, e.g.
+`Link B Considerate: docs -> https://example.org/docs`. Only http, https and
+mailto links are kept; images are never loaded; HTML is shown as text and
+never run. Tables are not supported. Members can read *Markdown guide* in the
+main menu and preview their own text. Administrators can change the BBS name
+under *Administration → Branding*.
 
 All user-supplied text is stripped of control characters and escape
 sequences before it is written to anyone's terminal.

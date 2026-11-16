@@ -13,8 +13,10 @@ import (
 
 	"go.privatebychoice.com/shellshawk/internal/auth"
 	"go.privatebychoice.com/shellshawk/internal/form"
+	"go.privatebychoice.com/shellshawk/internal/markdown"
 	"go.privatebychoice.com/shellshawk/internal/perm"
 	"go.privatebychoice.com/shellshawk/internal/prefs"
+	"go.privatebychoice.com/shellshawk/internal/settings"
 	"go.privatebychoice.com/shellshawk/internal/sshd"
 	"go.privatebychoice.com/shellshawk/internal/tui"
 	"go.privatebychoice.com/shellshawk/internal/tui/term"
@@ -22,11 +24,12 @@ import (
 
 // Handler runs BBS sessions. It implements sshd.SessionHandler.
 type Handler struct {
-	Name  string // BBS name shown in titles
-	Auth  *auth.Service
-	Perms *perm.Service
-	Prefs *prefs.Service
-	Log   *slog.Logger
+	Auth     *auth.Service
+	Settings *settings.Service
+	Grader   markdown.Grader // grades links in rendered markdown; may be nil
+	Perms    *perm.Service
+	Prefs    *prefs.Service
+	Log      *slog.Logger
 }
 
 var _ sshd.SessionHandler = (*Handler)(nil)
@@ -53,7 +56,10 @@ type session struct {
 	t      *term.Terminal
 	ui     tui.UI
 	userID int64 // 0 before registration
-	log    *slog.Logger
+	name   string
+	// unicode reports whether the current profile allows Unicode symbols.
+	unicode bool
+	log     *slog.Logger
 }
 
 // Run serves one session until the user leaves or the connection ends.
@@ -79,7 +85,7 @@ func (h *Handler) Run(ctx context.Context, c Conn) {
 		}
 	}()
 
-	s := &session{h: h, conn: c, t: term.New(c.RW, c.RW, c.PTY != nil, size, resize), log: log}
+	s := &session{h: h, conn: c, t: term.New(c.RW, c.RW, c.PTY != nil, size, resize), log: log, name: h.Settings.BBSName(ctx)}
 	if c.Identity.UserID != "" {
 		id, err := strconv.ParseInt(c.Identity.UserID, 10, 64)
 		if err != nil {
@@ -138,12 +144,7 @@ func (s *session) form(ctx context.Context, fm *form.Form, vals form.Values, err
 	return s.ui.Form(ctx, &titled, vals, errs)
 }
 
-func (s *session) title(t string) string {
-	if s.h.Name == "" {
-		return t
-	}
-	return s.h.Name + " - " + t
-}
+func (s *session) title(t string) string { return s.name + " - " + t }
 
 // openUserUI opens the UI chosen in the user's preferences. Without a PTY
 // only line mode is possible.
@@ -161,6 +162,7 @@ func (s *session) openUI(p prefs.Prefs) {
 		_ = s.ui.Close()
 	}
 	st := s.h.Prefs.Styler(p)
+	s.unicode = st.Profile.Unicode
 	if s.conn.PTY == nil || st.Profile.LineMode {
 		s.ui = tui.NewLines(s.t, p.PageSize)
 		return
@@ -175,11 +177,7 @@ func (s *session) askAccessible(ctx context.Context) (bool, error) {
 		return true, nil
 	}
 	lines := tui.NewLines(s.t, 0)
-	name := s.h.Name
-	if name == "" {
-		name = "the BBS"
-	}
-	ans, err := lines.ReadLine(ctx, "Welcome to "+name+". Press Enter to continue, or type s and press Enter for screen reader mode: ")
+	ans, err := lines.ReadLine(ctx, "Welcome to "+s.name+". Press Enter to continue, or type s and press Enter for screen reader mode: ")
 	if err != nil {
 		return false, err
 	}

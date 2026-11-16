@@ -279,7 +279,7 @@ func TestScreenChooseAndShow(t *testing.T) {
 
 func TestWrapLine(t *testing.T) {
 	l := Line{{Text: "hello brave "}, {Text: "new world", Style: theme.Style{Bold: true}}}
-	got := wrapLine(l, 11)
+	got := WrapLine(l, 11)
 	var plain []string
 	for _, x := range got {
 		plain = append(plain, x.Plain())
@@ -288,7 +288,7 @@ func TestWrapLine(t *testing.T) {
 	if strings.Join(plain, "|") != strings.Join(want, "|") {
 		t.Errorf("wrap = %q, want %q", plain, want)
 	}
-	long := wrapLine(Text(strings.Repeat("x", 25)), 10)
+	long := WrapLine(Text(strings.Repeat("x", 25)), 10)
 	if len(long) != 3 {
 		t.Errorf("long word wrapped into %d lines, want 3", len(long))
 	}

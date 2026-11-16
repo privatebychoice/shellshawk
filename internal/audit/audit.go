@@ -31,6 +31,7 @@ const (
 	GroupRevoked       = "group.permission.revoked"
 	GroupMemberAdded   = "group.member.added"
 	GroupMemberRemoved = "group.member.removed"
+	SettingChanged     = "setting.changed"
 )
 
 // SystemActor marks an action taken by the system or operator CLI rather

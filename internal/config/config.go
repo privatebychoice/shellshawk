@@ -22,6 +22,10 @@ const (
 	DefaultAuditRetentionDays = 365
 )
 
+// domainPattern is a deliberately simple hostname check for first-party
+// domains: dot-separated labels of letters, digits and hyphens.
+var domainPattern = regexp.MustCompile(`^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$`)
+
 // inviteUserPattern matches the username rules in internal/auth.
 var inviteUserPattern = regexp.MustCompile(`^[a-z][a-z0-9_-]{2,31}$`)
 
@@ -38,6 +42,9 @@ const (
 
 	EnvInviteUser         = "SHELLSHAWK_INVITE_USER"
 	EnvAuditRetentionDays = "SHELLSHAWK_AUDIT_RETENTION_DAYS"
+
+	EnvPBCDataFile       = "SHELLSHAWK_PBC_DATA_FILE"
+	EnvFirstPartyDomains = "SHELLSHAWK_FIRST_PARTY_DOMAINS"
 )
 
 // Log output formats.
@@ -69,6 +76,11 @@ type Config struct {
 	InviteUser string
 	// AuditRetentionDays is how long audit log entries are kept. Default: 365.
 	AuditRetentionDays int
+	// PBCDataFile is an optional local pbc-classification dataset merged
+	// over the library's built-in data.
+	PBCDataFile string
+	// FirstPartyDomains are the operator's own sites, graded as first-party.
+	FirstPartyDomains []string
 }
 
 // SSHEnabled reports whether the SSH server should be started.
@@ -151,6 +163,22 @@ func Load(getenv func(string) string) (Config, error) {
 			errs = append(errs, fmt.Errorf("%s: invalid value %q (want a positive number of days)", EnvAuditRetentionDays, v))
 		} else {
 			cfg.AuditRetentionDays = n
+		}
+	}
+
+	cfg.PBCDataFile = strings.TrimSpace(getenv(EnvPBCDataFile))
+
+	if v := strings.TrimSpace(getenv(EnvFirstPartyDomains)); v != "" {
+		for _, d := range strings.Split(v, ",") {
+			d = strings.ToLower(strings.TrimSpace(d))
+			if d == "" {
+				continue
+			}
+			if !domainPattern.MatchString(d) {
+				errs = append(errs, fmt.Errorf("%s: invalid domain %q", EnvFirstPartyDomains, d))
+				continue
+			}
+			cfg.FirstPartyDomains = append(cfg.FirstPartyDomains, d)
 		}
 	}
 

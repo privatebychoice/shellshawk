@@ -13,6 +13,9 @@ To list exactly what is linked into a build: `go version -m bin/shellshawk`.
 | `modernc.org/sqlite` | v1.62.0 | https://gitlab.com/cznic/sqlite | SQLite driver for `database/sql` (bundles SQLite 3.54.1) | Pure Go: SQLite's C code is machine-translated to Go, so no cgo and fully static, cross-compiled binaries. Embedded, file-based database; no network access. Actively maintained. A known trade-off is that the transitive tree is larger than the cgo driver's (listed below). `govulncheck` reported nothing (2026-11-16). |
 | `golang.org/x/crypto` | v0.59.0 | https://pkg.go.dev/golang.org/x/crypto | SSH server (`ssh`: key exchange incl. ML-KEM hybrid, ciphers, auth) and password hashing (`argon2`, argon2id) | Maintained by the Go team. Algorithm lists are pinned explicitly in `internal/sshd/policy.go` so a library upgrade cannot widen them. Watch Go security announcements for `x/crypto/ssh` advisories. `govulncheck` reported nothing (2026-11-16). |
 
+| `github.com/yuin/goldmark` | v1.8.7 | https://github.com/yuin/goldmark | Markdown parsing (CommonMark + strikethrough + bare-URL linking) | No dependencies outside the Go standard library. Widely used, actively maintained. Raw HTML is never passed through: shellshawk's own renderers escape it. `govulncheck` reported nothing (2026-11-16). |
+| `go.privatebychoice.com/pbc-classification` | v0.0.0-20260730135944-80efcd7146bf | https://github.com/privatebychoice/pbc-classification | Privacy grade for every link | Own project. Offline: no network calls; data is embedded plus an optional local file. **Pinned to a pseudo-version** (commit `80efcd7`) because the repository has no release tags yet; switch to a tag once one exists. |
+
 ## Transitive dependencies linked into the binary
 
 Pulled in by `modernc.org/sqlite` unless noted. None make network calls.
@@ -22,6 +25,7 @@ Pulled in by `modernc.org/sqlite` unless noted. None make network calls.
 | `modernc.org/libc` | v1.80.1 | https://gitlab.com/cznic/libc | C runtime emulation for the translated SQLite code; same maintainer |
 | `modernc.org/mathutil` | v1.7.1 | https://gitlab.com/cznic/mathutil | Math helpers; same maintainer |
 | `modernc.org/memory` | v1.12.1 | https://gitlab.com/cznic/memory | Memory allocator for libc; same maintainer |
+| `golang.org/x/net` | v0.62.0 | https://pkg.go.dev/golang.org/x/net/publicsuffix | Public Suffix List for registrable-domain lookup; pulled in by pbc-classification. Embedded data, no network access; Go team |
 | `golang.org/x/sys` | v0.50.0 | https://pkg.go.dev/golang.org/x/sys | OS syscalls (sqlite and x/crypto); Go team |
 | `github.com/dustin/go-humanize` | v1.1.0 | https://github.com/dustin/go-humanize | Number formatting used by libc; small, stable, rarely updated |
 | `github.com/google/uuid` | v1.6.0 | https://github.com/google/uuid | UUIDs used by libc; Google-maintained |
@@ -38,5 +42,3 @@ compiled into shellshawk.
 | Name | Stage | Purpose |
 |------|-------|---------|
 | `github.com/pkg/sftp` | 7 | SFTP subsystem (`RequestServer` API only) |
-| `github.com/yuin/goldmark` | 5 | Markdown parsing |
-| `go.privatebychoice.com/pbc-classification` | 5 | Link privacy grading |

@@ -18,6 +18,7 @@ import (
 	"go.privatebychoice.com/shellshawk/internal/auth"
 	"go.privatebychoice.com/shellshawk/internal/perm"
 	"go.privatebychoice.com/shellshawk/internal/prefs"
+	"go.privatebychoice.com/shellshawk/internal/settings"
 	"go.privatebychoice.com/shellshawk/internal/sshd"
 	"go.privatebychoice.com/shellshawk/internal/store"
 	"go.privatebychoice.com/shellshawk/internal/theme"
@@ -49,12 +50,13 @@ func startBBS(t *testing.T) *env {
 	ps := perm.NewService(db, perm.NewRegistry(), nil, log)
 	as := auth.NewService(db, ps, "new", nil, log)
 	pr := prefs.NewService(db, cat, nil)
+	st := settings.NewService(db, nil, log)
 
 	_, hostPriv, _ := ed25519.GenerateKey(rand.Reader)
 	host, _ := ssh.NewSignerFromKey(hostPriv)
 	srv, err := sshd.New(sshd.Config{
 		HostKey: host, Auth: auth.NewSSHAuthenticator(as), Log: log,
-		Handler: &Handler{Name: "shellshawk", Auth: as, Perms: ps, Prefs: pr, Log: log},
+		Handler: &Handler{Auth: as, Settings: st, Perms: ps, Prefs: pr, Log: log},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -180,9 +182,9 @@ func TestRegisterLineModeThenLogin(t *testing.T) {
 		t.Errorf("screen reader choice not saved: %+v", p)
 	}
 
-	// Log in with the key: line mode main menu, then log out (item 5).
-	out = e.session(t, "alice", ssh.PublicKeys(signer), "5\r")
-	for _, want := range []string{"Screen: shellshawk - Main menu", "Welcome, alice.", "4. Administration"} {
+	// Log in with the key: line mode main menu, then log out (item 6).
+	out = e.session(t, "alice", ssh.PublicKeys(signer), "6\r")
+	for _, want := range []string{"Screen: shellshawk - Main menu", "Welcome, alice.", "5. Administration"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("member output missing %q\n---\n%s", want, out)
 		}
@@ -264,8 +266,8 @@ func TestSettingsSwitchesToLineMode(t *testing.T) {
 	// field (terminal type) has the cursor on option 1; move down to option
 	// 4 (screen reader) and select it with Space, then Ctrl-S. The
 	// confirmation is then shown in line mode; Enter dismisses it, and in
-	// the line-mode main menu, 5 logs out.
-	input := "1" + "\x1b[B\x1b[B\x1b[B " + "\x13" + "\r" + "5\r"
+	// the line-mode main menu, 6 logs out.
+	input := "1" + "\x1b[B\x1b[B\x1b[B " + "\x13" + "\r" + "6\r"
 	out := e.session(t, "carol", ssh.PublicKeys(signer), input)
 	p, _ := e.prefs.Get(ctx, u.ID)
 	if p.Profile != theme.ProfileAccessible {
@@ -273,5 +275,42 @@ func TestSettingsSwitchesToLineMode(t *testing.T) {
 	}
 	if !strings.Contains(out, "Screen: shellshawk - Display settings") || !strings.Contains(out, "Your settings have been saved.") {
 		t.Errorf("line mode confirmation missing\n%q", out)
+	}
+}
+
+func TestMarkdownGuideLineMode(t *testing.T) {
+	e := startBBS(t)
+	ctx := context.Background()
+	bootstrap, _ := e.auth.CreateBootstrapInvite(ctx)
+	signer, keyLine := newUserKey(t)
+	u, err := e.auth.Register(ctx, bootstrap, auth.Registration{Username: "dave", Password: testPassword, PublicKey: keyLine})
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := prefs.Default()
+	p.Profile, p.PageSize = theme.ProfileAccessible, 200
+	if err := e.prefs.Set(ctx, u.ID, p); err != nil {
+		t.Fatal(err)
+	}
+	// Main menu 4 = Markdown, 1 = guide, Enter to finish reading,
+	// 2 = Try it: type markdown, end with ".", then "no" to stop, 3 = back, 6 = log out.
+	input := strings.Join([]string{"4", "1", "", "2", "# Hi", "[x](javascript:alert(1))", ".", "", "1", "3", "6"}, "\r") + "\r"
+	out := e.session(t, "dave", ssh.PublicKeys(signer), input)
+	for _, want := range []string{
+		"Heading level 1: Markdown guide",
+		"Quote level 2:",
+		"Code block start, language go, 2 lines:",
+		"Link, grade ? Unclassified: https://example.org",
+		"Section break.",
+		"Screen: shellshawk - Preview",
+		"Heading level 1: Hi",
+		"x (link removed: unsupported address)",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q", want)
+		}
+	}
+	if t.Failed() {
+		t.Logf("output:\n%s", out)
 	}
 }
