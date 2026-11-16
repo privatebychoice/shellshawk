@@ -10,8 +10,12 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"strconv"
 	"strings"
 )
+
+// DefaultSSHMaxConns is used when SHELLSHAWK_SSH_MAX_CONNS is unset.
+const DefaultSSHMaxConns = 100
 
 // Environment variable names.
 const (
@@ -19,6 +23,10 @@ const (
 	EnvLogLevel  = "SHELLSHAWK_LOG_LEVEL"
 	EnvLogFormat = "SHELLSHAWK_LOG_FORMAT"
 	EnvHTTPAddr  = "SHELLSHAWK_HTTP_ADDR"
+
+	EnvSSHAddr     = "SHELLSHAWK_SSH_ADDR"
+	EnvSSHHostKey  = "SHELLSHAWK_SSH_HOST_KEY"
+	EnvSSHMaxConns = "SHELLSHAWK_SSH_MAX_CONNS"
 )
 
 // Log output formats.
@@ -38,7 +46,17 @@ type Config struct {
 	// HTTPAddr is the host:port the web interface listens on. Empty disables
 	// the web interface.
 	HTTPAddr string
+	// SSHAddr is the host:port the SSH server listens on. Empty disables SSH.
+	SSHAddr string
+	// SSHHostKeyPath is the Ed25519 host key file, created on first run if
+	// missing. Required when SSH is enabled.
+	SSHHostKeyPath string
+	// SSHMaxConns caps concurrent SSH connections. Default: 100.
+	SSHMaxConns int
 }
+
+// SSHEnabled reports whether the SSH server should be started.
+func (c Config) SSHEnabled() bool { return c.SSHAddr != "" }
 
 // WebEnabled reports whether the web interface should be started.
 func (c Config) WebEnabled() bool { return c.HTTPAddr != "" }
@@ -53,6 +71,10 @@ func Load(getenv func(string) string) (Config, error) {
 		LogLevel:  slog.LevelInfo,
 		LogFormat: LogFormatText,
 		HTTPAddr:  strings.TrimSpace(getenv(EnvHTTPAddr)),
+
+		SSHAddr:        strings.TrimSpace(getenv(EnvSSHAddr)),
+		SSHHostKeyPath: strings.TrimSpace(getenv(EnvSSHHostKey)),
+		SSHMaxConns:    DefaultSSHMaxConns,
 	}
 
 	if cfg.DBPath == "" {
@@ -74,9 +96,25 @@ func Load(getenv func(string) string) (Config, error) {
 		}
 	}
 
-	if cfg.HTTPAddr != "" {
-		if _, port, err := net.SplitHostPort(cfg.HTTPAddr); err != nil || port == "" {
-			errs = append(errs, fmt.Errorf("%s: invalid address %q (want host:port)", EnvHTTPAddr, cfg.HTTPAddr))
+	if cfg.HTTPAddr != "" && !validAddr(cfg.HTTPAddr) {
+		errs = append(errs, fmt.Errorf("%s: invalid address %q (want host:port)", EnvHTTPAddr, cfg.HTTPAddr))
+	}
+
+	if cfg.SSHAddr != "" {
+		if !validAddr(cfg.SSHAddr) {
+			errs = append(errs, fmt.Errorf("%s: invalid address %q (want host:port)", EnvSSHAddr, cfg.SSHAddr))
+		}
+		if cfg.SSHHostKeyPath == "" {
+			errs = append(errs, fmt.Errorf("%s is required when %s is set", EnvSSHHostKey, EnvSSHAddr))
+		}
+	}
+
+	if v := strings.TrimSpace(getenv(EnvSSHMaxConns)); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil || n < 1 {
+			errs = append(errs, fmt.Errorf("%s: invalid value %q (want a positive integer)", EnvSSHMaxConns, v))
+		} else {
+			cfg.SSHMaxConns = n
 		}
 	}
 
@@ -84,4 +122,9 @@ func Load(getenv func(string) string) (Config, error) {
 		return Config{}, err
 	}
 	return cfg, nil
+}
+
+func validAddr(addr string) bool {
+	_, port, err := net.SplitHostPort(addr)
+	return err == nil && port != ""
 }

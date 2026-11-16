@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"os"
@@ -16,6 +17,7 @@ import (
 
 	"go.privatebychoice.com/shellshawk/internal/config"
 	"go.privatebychoice.com/shellshawk/internal/logging"
+	"go.privatebychoice.com/shellshawk/internal/sshd"
 	"go.privatebychoice.com/shellshawk/internal/store"
 	"go.privatebychoice.com/shellshawk/internal/version"
 	"go.privatebychoice.com/shellshawk/internal/web"
@@ -54,13 +56,47 @@ func run() error {
 		}
 	}()
 
-	errc := make(chan error, 1)
-	var srv *http.Server
+	if !cfg.SSHEnabled() && !cfg.WebEnabled() {
+		log.Warn("neither SSH nor web is enabled; nothing to serve",
+			"hint", "set "+config.EnvSSHAddr+" and/or "+config.EnvHTTPAddr)
+	}
+
+	errc := make(chan error, 2)
+
+	var sshSrv *sshd.Server
+	if cfg.SSHEnabled() {
+		hostKey, err := sshd.LoadOrCreateHostKey(cfg.SSHHostKeyPath, log)
+		if err != nil {
+			return err
+		}
+		sshSrv, err = sshd.New(sshd.Config{
+			Addr:    cfg.SSHAddr,
+			HostKey: hostKey,
+			// Accounts arrive in stage 3; until then nobody can log in.
+			Auth:     sshd.DenyAll{},
+			Handler:  unavailableHandler{},
+			MaxConns: cfg.SSHMaxConns,
+			Log:      log,
+		})
+		if err != nil {
+			return err
+		}
+		log.Warn("SSH logins are disabled until account support is implemented (stage 3)")
+		go func() {
+			if err := sshSrv.ListenAndServe(); !errors.Is(err, sshd.ErrServerClosed) {
+				errc <- err
+			}
+		}()
+	} else {
+		log.Info("ssh disabled", "hint", config.EnvSSHAddr+" not set")
+	}
+
+	var webSrv *http.Server
 	if cfg.WebEnabled() {
-		srv = web.NewServer(cfg.HTTPAddr, log)
+		webSrv = web.NewServer(cfg.HTTPAddr, log)
 		go func() {
 			log.Info("web interface listening", "addr", cfg.HTTPAddr)
-			if err := srv.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
+			if err := webSrv.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
 				errc <- fmt.Errorf("web server: %w", err)
 			}
 		}()
@@ -68,20 +104,35 @@ func run() error {
 		log.Info("web interface disabled", "hint", config.EnvHTTPAddr+" not set")
 	}
 
+	var runErr error
 	select {
 	case <-ctx.Done():
 		log.Info("shutdown signal received")
-	case err := <-errc:
-		return err
+	case runErr = <-errc:
+		log.Error("server failed; shutting down", "err", runErr)
 	}
 
-	if srv != nil {
-		sctx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
-		defer cancel()
-		if err := srv.Shutdown(sctx); err != nil {
+	sctx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
+	defer cancel()
+	if sshSrv != nil {
+		if err := sshSrv.Shutdown(sctx); err != nil {
+			log.Warn("ssh server shutdown", "err", err)
+		}
+	}
+	if webSrv != nil {
+		if err := webSrv.Shutdown(sctx); err != nil {
 			log.Warn("web server shutdown", "err", err)
 		}
 	}
 	log.Info("stopped")
-	return nil
+	return runErr
+}
+
+// unavailableHandler is the session handler until the TUI exists (stage 4).
+// With sshd.DenyAll in place it is never reached; it exists because the
+// server requires a handler.
+type unavailableHandler struct{}
+
+func (unavailableHandler) HandleShell(_ context.Context, s *sshd.Session) {
+	_, _ = io.WriteString(s, "The shellshawk BBS interface is not available yet.\r\n")
 }

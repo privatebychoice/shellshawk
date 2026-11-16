@@ -35,8 +35,8 @@ These are invariants, enforced in code and covered by tests:
 
 1. **No OS access, ever.** The SSH server only accepts `session` channels with
    `pty-req`, `window-change`, `shell` (→ BBS TUI), and `subsystem sftp` (→
-   virtual FS). Rejected: `exec`, `env` (except an allowlist like `LANG`,
-   `TERM`), `x11-req`, `auth-agent-req@openssh.com`, `direct-tcpip`,
+   virtual FS). Rejected: `exec`, `env` (except `LANG`, `LC_ALL`,
+   `LC_CTYPE`, `COLORTERM`; the terminal type arrives via `pty-req`), `x11-req`, `auth-agent-req@openssh.com`, `direct-tcpip`,
    `tcpip-forward`, and every other channel/request type. No call to
    `os/exec` anywhere in the codebase (enforced by a lint/test that greps the
    module).

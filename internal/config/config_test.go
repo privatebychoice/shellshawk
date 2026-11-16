@@ -20,19 +20,23 @@ func TestLoad(t *testing.T) {
 		{
 			name: "minimal",
 			env:  map[string]string{EnvDBPath: "bbs.db"},
-			want: Config{DBPath: "bbs.db", LogLevel: slog.LevelInfo, LogFormat: LogFormatText},
+			want: Config{DBPath: "bbs.db", LogLevel: slog.LevelInfo, LogFormat: LogFormatText, SSHMaxConns: DefaultSSHMaxConns},
 		},
 		{
 			name: "all set",
 			env: map[string]string{
 				EnvDBPath: " bbs.db ", EnvLogLevel: "debug", EnvLogFormat: "JSON", EnvHTTPAddr: "127.0.0.1:8080",
+				EnvSSHAddr: ":2222", EnvSSHHostKey: "host_key", EnvSSHMaxConns: "25",
 			},
-			want: Config{DBPath: "bbs.db", LogLevel: slog.LevelDebug, LogFormat: LogFormatJSON, HTTPAddr: "127.0.0.1:8080"},
+			want: Config{
+				DBPath: "bbs.db", LogLevel: slog.LevelDebug, LogFormat: LogFormatJSON, HTTPAddr: "127.0.0.1:8080",
+				SSHAddr: ":2222", SSHHostKeyPath: "host_key", SSHMaxConns: 25,
+			},
 		},
 		{
 			name: "listen on all interfaces",
 			env:  map[string]string{EnvDBPath: "bbs.db", EnvHTTPAddr: ":8080"},
-			want: Config{DBPath: "bbs.db", LogLevel: slog.LevelInfo, LogFormat: LogFormatText, HTTPAddr: ":8080"},
+			want: Config{DBPath: "bbs.db", LogLevel: slog.LevelInfo, LogFormat: LogFormatText, HTTPAddr: ":8080", SSHMaxConns: DefaultSSHMaxConns},
 		},
 		{
 			name:    "missing db path",
@@ -58,6 +62,26 @@ func TestLoad(t *testing.T) {
 			name:    "empty port",
 			env:     map[string]string{EnvDBPath: "x", EnvHTTPAddr: "localhost:"},
 			wantErr: []string{EnvHTTPAddr},
+		},
+		{
+			name:    "ssh without host key",
+			env:     map[string]string{EnvDBPath: "x", EnvSSHAddr: ":2222"},
+			wantErr: []string{EnvSSHHostKey},
+		},
+		{
+			name:    "bad ssh addr",
+			env:     map[string]string{EnvDBPath: "x", EnvSSHAddr: "2222", EnvSSHHostKey: "k"},
+			wantErr: []string{EnvSSHAddr},
+		},
+		{
+			name:    "bad max conns",
+			env:     map[string]string{EnvDBPath: "x", EnvSSHMaxConns: "0"},
+			wantErr: []string{EnvSSHMaxConns},
+		},
+		{
+			name:    "non-numeric max conns",
+			env:     map[string]string{EnvDBPath: "x", EnvSSHMaxConns: "lots"},
+			wantErr: []string{EnvSSHMaxConns},
 		},
 		{
 			name:    "errors are reported together",
@@ -87,6 +111,9 @@ func TestLoad(t *testing.T) {
 			}
 			if got.WebEnabled() != (tt.want.HTTPAddr != "") {
 				t.Errorf("WebEnabled() = %v", got.WebEnabled())
+			}
+			if got.SSHEnabled() != (tt.want.SSHAddr != "") {
+				t.Errorf("SSHEnabled() = %v", got.SSHEnabled())
 			}
 		})
 	}
