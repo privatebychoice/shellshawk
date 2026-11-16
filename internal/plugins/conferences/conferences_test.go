@@ -229,3 +229,39 @@ func TestWebPages(t *testing.T) {
 		t.Errorf("bad id err = %v", err)
 	}
 }
+
+func TestCreateArea(t *testing.T) {
+	f := setup(t)
+	tests := []struct {
+		name, slug, title string
+		want              error
+	}{
+		{"ok", "news", "News", nil},
+		{"second", "help", "Help desk", nil},
+		{"duplicate", "news", "News again", ErrExists},
+		{"bad short name", "No Spaces", "x", ErrInvalid},
+		{"empty name", "empty", " ", ErrInvalid},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			id, err := f.p.CreateArea(f.Ctx, f.mod, tt.slug, tt.title, "")
+			if !errors.Is(err, tt.want) {
+				t.Fatalf("err = %v, want %v", err, tt.want)
+			}
+			if err == nil && id == 0 {
+				t.Error("no id returned")
+			}
+		})
+	}
+	areas, err := f.p.Areas(f.Ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var slugs []string
+	for _, a := range areas {
+		slugs = append(slugs, a.Slug)
+	}
+	if got := strings.Join(slugs[1:], ","); len(areas) != 3 || got != "news,help" {
+		t.Errorf("areas after the seeded one = %q (%d total), want news,help in creation order", got, len(areas))
+	}
+}

@@ -320,8 +320,11 @@ func (p *Plugin) CreateArea(ctx context.Context, actor int64, slug, name, desc s
 	if !slugPattern.MatchString(slug) || !okN || !okD {
 		return 0, fmt.Errorf("%w: short name 2-32 lowercase letters, digits or '-'; name 1-%d and description up to %d printable characters", ErrInvalid, MaxName, MaxDescription)
 	}
+	// "WHERE true" is required: without a WHERE clause SQLite parses
+	// "FROM t ON CONFLICT" as a join constraint (see SQLite upsert docs).
 	res, err := p.h.DB.ExecContext(ctx, `INSERT INTO conferences_areas (slug, name, description, position, created_at)
-		SELECT ?, ?, ?, COALESCE(MAX(position), 0) + 1, ? FROM conferences_areas ON CONFLICT DO NOTHING`,
+		SELECT ?, ?, ?, COALESCE(MAX(position), 0) + 1, ? FROM conferences_areas WHERE true
+		ON CONFLICT DO NOTHING`,
 		slug, name, desc, store.FormatTime(p.now()))
 	if err != nil {
 		return 0, fmt.Errorf("conferences: create area: %w", err)
