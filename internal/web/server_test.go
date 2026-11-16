@@ -159,7 +159,7 @@ func TestSecurityHeadersEverywhere(t *testing.T) {
 	for _, p := range []string{"/", "/privacy", "/login", "/nope", "/.well-known/gpc.json", "/version"} {
 		rec := e.do(req{method: "GET", path: p})
 		h := rec.Header()
-		if h.Get("Content-Security-Policy") != ContentSecurityPolicy || h.Get("Referrer-Policy") != "no-referrer" ||
+		if h.Get("Content-Security-Policy") != ContentSecurityPolicy || h.Get("Referrer-Policy") != "same-origin" ||
 			h.Get("X-Content-Type-Options") != "nosniff" || h.Get("X-Frame-Options") != "DENY" ||
 			!strings.Contains(h.Get("Strict-Transport-Security"), "max-age=") {
 			t.Errorf("%s: missing security headers: %v", p, h)

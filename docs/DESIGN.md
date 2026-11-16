@@ -452,7 +452,7 @@ TOML/JSON files; admins can add more.
 - GPC: `Sec-GPC` header detection middleware, `navigator.globalPrivacyControl`
   noted client-side, `/.well-known/gpc.json`, privacy policy page.
 - Strict CSP without breaking Privacy Badger (`default-src 'self'`, no
-  `style-src 'none'`), `Referrer-Policy: no-referrer`, HSTS, fingerprinted
+  `style-src 'none'`), `Referrer-Policy: same-origin` (`no-referrer` would make browsers send `Origin: null` on the site's own form posts), HSTS, fingerprinted
   asset names, `/version` endpoint, build number `1.0.x` in footer.
 - No analytics, no third-party requests. Session cookie: `HttpOnly; Secure;
   SameSite=Strict`, no other cookies.
