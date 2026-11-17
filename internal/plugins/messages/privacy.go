@@ -46,20 +46,23 @@ func (p *Plugin) export(ctx context.Context, user int64) ([]export.File, error) 
 
 // erase deletes the member's copies of messages they received. Messages
 // they sent stay in the recipients' mailboxes, credited to the anonymous
-// tombstone name (docs/DESIGN.md §5.2); sent messages nobody else holds
-// any more (such as notes to self) are deleted.
+// tombstone name (docs/DESIGN.md §5.2); the member's Sent copies go, so
+// messages nobody else holds (such as notes to self) are deleted now, and
+// the rest once their last recipient removes them.
 func (p *Plugin) erase(ctx context.Context, e events.Event) error {
 	return store.WithTx(ctx, p.h.DB, func(tx *sql.Tx) error {
 		if _, err := tx.ExecContext(ctx, `DELETE FROM messages_recipients WHERE user_id = ?`, e.UserID); err != nil {
 			return fmt.Errorf("messages: erase received: %w", err)
 		}
-		res, err := tx.ExecContext(ctx, `DELETE FROM messages_messages WHERE sender_id = ?
-			AND NOT EXISTS (SELECT 1 FROM messages_recipients r WHERE r.message_id = messages_messages.id)`, e.UserID)
-		if err != nil {
-			return fmt.Errorf("messages: erase unreceived: %w", err)
+		if _, err := tx.ExecContext(ctx, `UPDATE messages_messages SET sender_deleted_at = COALESCE(sender_deleted_at, ?) WHERE sender_id = ?`,
+			store.FormatTime(p.now()), e.UserID); err != nil {
+			return fmt.Errorf("messages: erase sent: %w", err)
 		}
-		n, _ := res.RowsAffected()
-		p.h.Log.Info("erased messages", "user_id", e.UserID, "sent_without_recipients_deleted", n)
+		n, err := removeUnheld(ctx, tx)
+		if err != nil {
+			return err
+		}
+		p.h.Log.Info("erased messages", "user_id", e.UserID, "messages_removed", n)
 		return nil
 	})
 }

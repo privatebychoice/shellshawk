@@ -28,6 +28,11 @@ never treated as consent. Support is declared at
   status message. You choose who can see each of these.
 - **What you write**: posts, messages, chat messages, poll votes (anonymous
   unless a poll says otherwise) and contacts.
+- **Deleted messages** stay in your Deleted folder, where you can restore
+  them or remove them for good, and are removed automatically after a
+  period set by the administrator (30 days unless changed; the Deleted
+  folder shows the current period). A message's text is removed as soon as
+  nobody holds a copy.
 - **Logs**: chat channels say when they are logged and for how long (the
   default is {{.ChatDays}} days). Server logs never contain IP addresses.
   Administrative actions are kept in an audit log for {{.AuditDays}} days.

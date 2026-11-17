@@ -67,6 +67,12 @@ func (p *Plugin) folder(ctx context.Context, s plugin.Session, folder string) er
 			return tui.Message(ctx, s.UI(), s.Title(titles[folder]), "There are no messages here.")
 		}
 		var items []tui.MenuItem
+		intro := ""
+		if folder == Deleted {
+			intro = fmt.Sprintf("Messages here are removed permanently after %d days. You can move them back to the inbox until then.", p.DeletedDays(ctx))
+			items = append(items, tui.MenuItem{Value: "empty", Label: fmt.Sprintf("Empty the Deleted folder (%d)", len(list)),
+				Help: "Remove every message here permanently"})
+		}
 		for _, m := range list {
 			label := m.Subject
 			if !m.Read {
@@ -78,12 +84,24 @@ func (p *Plugin) folder(ctx context.Context, s plugin.Session, folder string) er
 			}
 			items = append(items, tui.MenuItem{Value: strconv.FormatInt(m.ID, 10), Label: label, Help: who + ", " + fmtTime(m)})
 		}
-		choice, err := s.UI().Choose(ctx, tui.Menu{Title: s.Title(titles[folder]), Items: items})
+		choice, err := s.UI().Choose(ctx, tui.Menu{Title: s.Title(titles[folder]), Intro: intro, Items: items})
 		if errors.Is(err, tui.ErrCancelled) {
 			return nil
 		}
 		if err != nil {
 			return err
+		}
+		if choice == "empty" {
+			ok, err := tui.Confirm(ctx, s.UI(), s.Title(titles[folder]), fmt.Sprintf("Remove all %d deleted message(s) permanently? This cannot be undone.", len(list)))
+			if err != nil {
+				return err
+			}
+			if ok {
+				if _, err := p.EmptyDeleted(ctx, s.UserID()); err != nil {
+					return err
+				}
+			}
+			continue
 		}
 		id, _ := strconv.ParseInt(choice, 10, 64)
 		if err := p.view(ctx, s, id, folder); err != nil && !errors.Is(err, tui.ErrCancelled) {
@@ -125,7 +143,8 @@ func (p *Plugin) view(ctx context.Context, s plugin.Session, id int64, folder st
 	}
 	switch folder {
 	case Deleted:
-		items = append(items, tui.MenuItem{Value: "restore", Label: "Move back to the inbox"})
+		items = append(items, tui.MenuItem{Value: "restore", Label: "Move back to the inbox"},
+			tui.MenuItem{Value: "forever", Label: "Delete permanently"})
 	case Sent:
 		items = append(items, tui.MenuItem{Value: "delete", Label: "Remove from Sent"})
 	default:
@@ -151,6 +170,12 @@ func (p *Plugin) view(ctx context.Context, s plugin.Session, id int64, folder st
 		return p.Delete(ctx, s.UserID(), m.ID, folder)
 	case "restore":
 		return p.Restore(ctx, s.UserID(), m.ID)
+	case "forever":
+		ok, err := tui.Confirm(ctx, s.UI(), s.Title("Message"), "Delete this message permanently? This cannot be undone.")
+		if err != nil || !ok {
+			return err
+		}
+		return p.DeleteForever(ctx, s.UserID(), m.ID)
 	}
 	return nil
 }

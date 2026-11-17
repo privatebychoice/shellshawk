@@ -179,7 +179,11 @@ every request, so locking an account takes effect immediately.
 - **Messages**: private mail with a subject and a markdown body, sent to
   usernames and/or your contact groups (including yourself, for a note to
   self); replies quote the original. The mailbox shows unread, read and
-  deleted counts; deleted messages can be restored. A message you send
+  deleted counts. Deleted messages can be restored, deleted permanently one
+  by one or all at once ("Empty the Deleted folder"), and are removed
+  automatically after 30 days (administrators can change this under the
+  Messages settings, 1 to 3650 days). A message's text is deleted as soon
+  as nobody holds a copy any more. A message you send
   yourself is in both your inbox and Sent; deleting it from one leaves the
   other. When an account is erased, notes to self are deleted with it. Your mail is also available read-only over SFTP in
   `/messages/inbox` and `/messages/sent`. Sending needs `messages.send`

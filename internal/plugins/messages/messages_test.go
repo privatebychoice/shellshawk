@@ -210,7 +210,7 @@ func TestReplies(t *testing.T) {
 func TestLimitsAndPermission(t *testing.T) {
 	f := setup(t)
 	st := f.Registry.Plugins()[1].Settings
-	if errs, err := st.Save(f.Ctx, f.Admin, form.Values{setMaxRecipients: "1", setMaxPerHour: "2", setMaxBody: "100"}); err != nil || errs != nil {
+	if errs, err := st.Save(f.Ctx, f.Admin, form.Values{setMaxRecipients: "1", setMaxPerHour: "2", setMaxBody: "100", setDeletedDays: "30"}); err != nil || errs != nil {
 		t.Fatal(errs, err)
 	}
 	if _, err := f.p.Send(f.Ctx, f.alice, Draft{To: "bob, carol", Subject: "x", Body: "x"}); !errors.Is(err, ErrInvalid) {
@@ -328,6 +328,17 @@ func TestEraseAndExport(t *testing.T) {
 	if notes != 0 {
 		t.Error("erased member's note to self kept: nobody else holds it")
 	}
+	// What alice sent stays for bob until he removes it; then it is gone.
+	if f.texts(t, "kept for bob") != 1 {
+		t.Fatal("message to bob removed by the sender's erasure")
+	}
+	f.p.Delete(f.Ctx, f.bob, inbox[0].ID, Inbox)
+	if err := f.p.DeleteForever(f.Ctx, f.bob, inbox[0].ID); err != nil {
+		t.Fatal(err)
+	}
+	if f.texts(t, "kept for bob") != 0 {
+		t.Error("erased sender's message kept after its last recipient removed it")
+	}
 }
 
 func TestWebPages(t *testing.T) {
@@ -346,5 +357,134 @@ func TestWebPages(t *testing.T) {
 	}
 	if _, err := f.WebGet(f.p, "/m/{id}", map[string]string{"id": strconv.FormatInt(id, 10)}, f.carol); !errors.Is(err, plugin.ErrWebNotFound) {
 		t.Errorf("someone else's message err = %v", err)
+	}
+}
+
+// texts counts stored messages with body.
+func (f *fixture) texts(t *testing.T, body string) int {
+	t.Helper()
+	var n int
+	if err := f.DB.QueryRow(`SELECT count(*) FROM messages_messages WHERE body = ?`, body).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	return n
+}
+
+func TestPurgeDeleted(t *testing.T) {
+	f := setup(t)
+	start := time.Date(2026, 3, 1, 12, 0, 0, 0, time.UTC)
+	now := start
+	f.p.now = func() time.Time { return now }
+	id, err := f.p.Send(f.Ctx, f.alice, Draft{To: "bob", Subject: "Old", Body: "old news"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.p.Delete(f.Ctx, f.bob, id, Inbox); err != nil {
+		t.Fatal(err)
+	}
+	if days := f.p.DeletedDays(f.Ctx); days != DefaultDeletedDays {
+		t.Fatalf("default retention = %d days, want %d", days, DefaultDeletedDays)
+	}
+
+	tests := []struct {
+		name        string
+		after       time.Duration
+		wantCopies  int64
+		wantDeleted int
+	}{
+		{"29 days: kept", 29 * 24 * time.Hour, 0, 1},
+		{"31 days: removed", 31 * 24 * time.Hour, 1, 0},
+	}
+	for _, tt := range tests {
+		now = start.Add(tt.after)
+		copies, _, err := f.p.PurgeDeleted(f.Ctx)
+		del, _ := f.p.List(f.Ctx, f.bob, Deleted)
+		if err != nil || copies != tt.wantCopies || len(del) != tt.wantDeleted {
+			t.Errorf("%s: purged %d (err %v), %d left in Deleted; want %d, %d", tt.name, copies, err, len(del), tt.wantCopies, tt.wantDeleted)
+		}
+	}
+	// Alice still has it in Sent, so the text stays until she removes it.
+	if f.texts(t, "old news") != 1 {
+		t.Fatal("text removed while the sender still holds it")
+	}
+	if err := f.p.Delete(f.Ctx, f.alice, id, Sent); err != nil {
+		t.Fatal(err)
+	}
+	if f.texts(t, "old news") != 0 {
+		t.Error("text kept after the last copy was removed")
+	}
+
+	// The administrator's setting controls the period.
+	st := f.Registry.Plugins()[1].Settings
+	if errs, err := st.Save(f.Ctx, f.Admin, form.Values{setMaxRecipients: "20", setMaxPerHour: "30", setMaxBody: "20000", setDeletedDays: "1"}); err != nil || errs != nil {
+		t.Fatal(errs, err)
+	}
+	id2, _ := f.p.Send(f.Ctx, f.alice, Draft{To: "bob", Subject: "New", Body: "short-lived"})
+	if err := f.p.Delete(f.Ctx, f.bob, id2, Inbox); err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(2 * 24 * time.Hour)
+	if copies, _, err := f.p.PurgeDeleted(f.Ctx); err != nil || copies != 1 {
+		t.Errorf("with a 1-day setting, purged %d after 2 days (err %v), want 1", copies, err)
+	}
+	for _, bad := range []string{"0", "3651"} {
+		vals := form.Values{setMaxRecipients: "20", setMaxPerHour: "30", setMaxBody: "20000", setDeletedDays: bad}
+		if errs, _ := st.Save(f.Ctx, f.Admin, vals); errs == nil {
+			t.Errorf("retention %s days accepted", bad)
+		}
+	}
+}
+
+func TestDeleteForeverAndEmpty(t *testing.T) {
+	f := setup(t)
+	shared, _ := f.p.Send(f.Ctx, f.alice, Draft{To: "bob, carol", Subject: "Both", Body: "for two"})
+	other, _ := f.p.Send(f.Ctx, f.carol, Draft{To: "bob", Subject: "One", Body: "for bob"})
+	note, _ := f.p.Send(f.Ctx, f.bob, Draft{To: "bob", Subject: "Me", Body: "my note"})
+	if err := f.p.Delete(f.Ctx, f.alice, shared, Sent); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := f.p.DeleteForever(f.Ctx, f.bob, shared); !errors.Is(err, ErrNotFound) {
+		t.Errorf("permanent delete from the inbox err = %v, want ErrNotFound (Deleted folder only)", err)
+	}
+	if err := f.p.DeleteForever(f.Ctx, f.carol, other); !errors.Is(err, ErrNotFound) {
+		t.Errorf("permanent delete of someone else's copy err = %v", err)
+	}
+
+	// Bob removes his copy of the shared message: Carol still holds it.
+	f.p.Delete(f.Ctx, f.bob, shared, Inbox)
+	if err := f.p.DeleteForever(f.Ctx, f.bob, shared); err != nil {
+		t.Fatal(err)
+	}
+	if f.texts(t, "for two") != 1 {
+		t.Error("text removed while another recipient holds it")
+	}
+	if _, err := f.p.Read(f.Ctx, f.carol, shared); err != nil {
+		t.Errorf("carol lost her copy: %v", err)
+	}
+	f.p.Delete(f.Ctx, f.carol, shared, Inbox)
+	if err := f.p.DeleteForever(f.Ctx, f.carol, shared); err != nil {
+		t.Fatal(err)
+	}
+	if f.texts(t, "for two") != 0 {
+		t.Error("text kept after the last copy was removed")
+	}
+
+	// Emptying Deleted removes only that folder.
+	f.p.Delete(f.Ctx, f.bob, other, Inbox)
+	f.p.Delete(f.Ctx, f.bob, note, Inbox)
+	f.p.Delete(f.Ctx, f.bob, note, Sent)
+	n, err := f.p.EmptyDeleted(f.Ctx, f.bob)
+	if err != nil || n != 2 {
+		t.Fatalf("emptied %d (err %v), want 2", n, err)
+	}
+	if c, _ := f.p.Count(f.Ctx, f.bob); c != (Counts{}) {
+		t.Errorf("counts after emptying = %+v", c)
+	}
+	if f.texts(t, "my note") != 0 {
+		t.Error("note to self kept after both copies were removed")
+	}
+	if f.texts(t, "for bob") != 1 {
+		t.Error("text removed while the sender still has it in Sent")
 	}
 }

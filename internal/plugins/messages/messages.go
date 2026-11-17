@@ -40,7 +40,15 @@ const (
 	setMaxRecipients = "max_recipients"
 	setMaxPerHour    = "max_per_hour"
 	setMaxBody       = "max_body"
+	setDeletedDays   = "deleted_days"
 )
+
+// DefaultDeletedDays is how long messages stay in a Deleted folder before
+// they are removed permanently, unless an administrator changes it.
+const DefaultDeletedDays = 30
+
+// purgeEvery is how often deleted messages past their time are removed.
+const purgeEvery = time.Hour
 
 // Errors.
 var (
@@ -93,6 +101,10 @@ func (p *Plugin) Manifest() plugin.Manifest {
 				Required: true, Min: form.Bound(1), Max: form.Bound(1000)}, Default: "30"},
 			{Field: form.Field{Name: setMaxBody, Label: "Maximum message length (characters)", Kind: form.SingleLine, Subtype: form.Int,
 				Required: true, Min: form.Bound(100), Max: form.Bound(50000)}, Default: "20000"},
+			{Field: form.Field{Name: setDeletedDays, Label: "Days to keep messages in members' Deleted folders",
+				Help: "After this many days a deleted message is removed permanently. Members can also remove them sooner themselves.",
+				Kind: form.SingleLine, Subtype: form.Int, Required: true, Min: form.Bound(1), Max: form.Bound(3650)},
+				Default: strconv.Itoa(DefaultDeletedDays)},
 		},
 		Migrations: []store.Migration{{Version: 1, Name: "messages", SQL: `
 			-- sender_id becomes NULL if the sender's account is deleted;
@@ -124,12 +136,43 @@ func (p *Plugin) Manifest() plugin.Manifest {
 }
 
 // Init implements plugin.Plugin.
-func (p *Plugin) Init(_ context.Context, h *plugin.Host) error {
+// Init implements plugin.Plugin. It starts the hourly removal of deleted
+// messages past their time, which runs until ctx ends.
+func (p *Plugin) Init(ctx context.Context, h *plugin.Host) error {
 	p.h = h
 	if h.Events != nil {
 		h.Events.Subscribe(events.UserErased, "messages", p.erase)
 	}
+	purge := func() {
+		if copies, texts, err := p.PurgeDeleted(ctx); err != nil && ctx.Err() == nil {
+			h.Log.Error("deleted message purge failed", "err", err)
+		} else if copies > 0 || texts > 0 {
+			h.Log.Info("deleted messages purged", "copies", copies, "messages", texts)
+		}
+	}
+	purge() // at startup, before anything else uses the plugin
+	go func() {
+		t := time.NewTicker(purgeEvery)
+		defer t.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+				purge()
+			}
+		}
+	}()
 	return nil
+}
+
+// DeletedDays is how many days messages stay in Deleted folders.
+func (p *Plugin) DeletedDays(ctx context.Context) int {
+	n, err := p.setting(ctx, setDeletedDays)
+	if err != nil {
+		return DefaultDeletedDays
+	}
+	return n
 }
 
 func (p *Plugin) setting(ctx context.Context, key string) (int, error) {
@@ -487,12 +530,83 @@ func (p *Plugin) Delete(ctx context.Context, user, id int64, folder string) erro
 		res, err = p.h.DB.ExecContext(ctx, `UPDATE messages_recipients SET deleted_at = ? WHERE message_id = ? AND user_id = ? AND deleted_at IS NULL`,
 			store.FormatTime(p.now()), id, user)
 	case Sent:
-		res, err = p.h.DB.ExecContext(ctx, `UPDATE messages_messages SET sender_deleted_at = ? WHERE id = ? AND sender_id = ? AND sender_deleted_at IS NULL`,
-			store.FormatTime(p.now()), id, user)
+		// Sent copies cannot be restored, so removing one may leave a
+		// message nobody holds: remove its text too.
+		return store.WithTx(ctx, p.h.DB, func(tx *sql.Tx) error {
+			res, err := tx.ExecContext(ctx, `UPDATE messages_messages SET sender_deleted_at = ? WHERE id = ? AND sender_id = ? AND sender_deleted_at IS NULL`,
+				store.FormatTime(p.now()), id, user)
+			if err := affected(res, err); err != nil {
+				return err
+			}
+			_, err = removeUnheld(ctx, tx)
+			return err
+		})
 	default:
 		return fmt.Errorf("%w: messages can be deleted from the inbox or Sent", ErrInvalid)
 	}
 	return affected(res, err)
+}
+
+// DeleteForever removes a message from the member's Deleted folder for
+// good. Its text is removed once nobody else holds a copy.
+func (p *Plugin) DeleteForever(ctx context.Context, user, id int64) error {
+	return store.WithTx(ctx, p.h.DB, func(tx *sql.Tx) error {
+		res, err := tx.ExecContext(ctx, `DELETE FROM messages_recipients WHERE message_id = ? AND user_id = ? AND deleted_at IS NOT NULL`, id, user)
+		if err := affected(res, err); err != nil {
+			return err
+		}
+		_, err = removeUnheld(ctx, tx)
+		return err
+	})
+}
+
+// EmptyDeleted removes every message in the member's Deleted folder for
+// good and returns how many there were.
+func (p *Plugin) EmptyDeleted(ctx context.Context, user int64) (int64, error) {
+	var n int64
+	err := store.WithTx(ctx, p.h.DB, func(tx *sql.Tx) error {
+		res, err := tx.ExecContext(ctx, `DELETE FROM messages_recipients WHERE user_id = ? AND deleted_at IS NOT NULL`, user)
+		if err != nil {
+			return fmt.Errorf("messages: empty deleted: %w", err)
+		}
+		n, _ = res.RowsAffected()
+		_, err = removeUnheld(ctx, tx)
+		return err
+	})
+	if err == nil {
+		p.h.Log.Info("deleted folder emptied", "user_id", user, "messages", n)
+	}
+	return n, err
+}
+
+// PurgeDeleted removes copies that have been in Deleted folders longer than
+// DeletedDays, then the text of messages nobody holds any more. It returns
+// the number of copies and of messages removed.
+func (p *Plugin) PurgeDeleted(ctx context.Context) (copies, texts int64, err error) {
+	cutoff := p.now().Add(-time.Duration(p.DeletedDays(ctx)) * 24 * time.Hour)
+	err = store.WithTx(ctx, p.h.DB, func(tx *sql.Tx) error {
+		res, err := tx.ExecContext(ctx, `DELETE FROM messages_recipients WHERE deleted_at IS NOT NULL AND deleted_at < ?`, store.FormatTime(cutoff))
+		if err != nil {
+			return fmt.Errorf("messages: purge deleted: %w", err)
+		}
+		copies, _ = res.RowsAffected()
+		texts, err = removeUnheld(ctx, tx)
+		return err
+	})
+	return copies, texts, err
+}
+
+// removeUnheld deletes messages that no member holds any more: no
+// recipient copy is left (in an inbox or Deleted folder) and the sender has
+// removed it from Sent or no longer has an account.
+func removeUnheld(ctx context.Context, db store.DBTX) (int64, error) {
+	res, err := db.ExecContext(ctx, `DELETE FROM messages_messages
+		WHERE (sender_deleted_at IS NOT NULL OR sender_id IS NULL)
+		AND NOT EXISTS (SELECT 1 FROM messages_recipients r WHERE r.message_id = messages_messages.id)`)
+	if err != nil {
+		return 0, fmt.Errorf("messages: remove unheld: %w", err)
+	}
+	return res.RowsAffected()
 }
 
 // Restore moves a received message back from Deleted to the inbox. Sent
