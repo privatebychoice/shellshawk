@@ -26,7 +26,10 @@ func (w WebSession) Permissions(ctx context.Context) (perm.Set, error) {
 	return w.Env.Perms.Permissions(ctx, w.User)
 }
 func (w WebSession) Markdown(src string) template.HTML {
-	h, _ := markdown.RenderHTML(src, nil)
+	return w.MarkdownAt(src, markdown.UnderTitle)
+}
+func (w WebSession) MarkdownAt(src string, level int) template.HTML {
+	h, _ := markdown.RenderHTML(src, nil, level)
 	return template.HTML(h) //nolint:gosec // sanitising renderer
 }
 func (w WebSession) Path(rel string) string { return "/p/" + w.Plugin + rel }

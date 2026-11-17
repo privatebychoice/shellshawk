@@ -38,7 +38,7 @@ no built-in defaults.
 | `SHELLSHAWK_ERASURE_GRACE_DAYS` | no | `14` | Days between an erasure request and the erasure (0 to 365) |
 | `SHELLSHAWK_HTTP_ADDR` | no | disabled | `host:port` for the web interface; unset = web disabled |
 | `SHELLSHAWK_PUBLIC_SSH_ADDRESS` | no | — | `host:port` members connect to, shown on the web start page |
-| `SHELLSHAWK_PRIVACY_POLICY_FILE` | no | built-in | Markdown file replacing the built-in privacy policy |
+| `SHELLSHAWK_PRIVACY_POLICY_FILE` | no | built-in | Markdown file replacing the built-in privacy policy (its `#` headings are shown as `<h2>`, under the page title) |
 | `SHELLSHAWK_HTTP_INSECURE_COOKIES` | no | `false` | Drop the `Secure` cookie flag and HSTS — **local testing over plain HTTP only** |
 | `SHELLSHAWK_LOG_LEVEL` | no | `INFO` | `DEBUG`, `INFO`, `WARN`, `ERROR` |
 | `SHELLSHAWK_LOG_FORMAT` | no | `text` | `text` or `json` |
@@ -107,7 +107,8 @@ removed or locked.
 ## Markdown
 
 Posts and messages use markdown: bold, italic, ~~strikethrough~~, inline
-code, headings (3 levels), quotes, ordered and bulleted lists, code blocks,
+code, headings (3 levels, placed below the page's own title so screen
+reader outlines stay in order), quotes, ordered and bulleted lists, code blocks,
 horizontal rules, links and bare URLs. Every link is shown with its
 pbc-classification privacy grade, e.g.
 `Link B Considerate: docs -> https://example.org/docs`. Only http, https and

@@ -147,6 +147,6 @@ func (f *threadFS) Read(ctx context.Context, u sftpd.User, file []string) ([]byt
 		return nil, time.Time{}, err
 	}
 	doc := fmt.Sprintf("---\ntitle: %q\nconference: %s/%s\nstarted: %s\nposts: %d\n---\n\n# %s\n\n%s",
-		t.Title, c.AreaSlug, c.Slug, t.CreatedAt.UTC().Format(time.RFC3339), len(posts), escape(t.Title), f.p.render(t, posts))
+		t.Title, c.AreaSlug, c.Slug, t.CreatedAt.UTC().Format(time.RFC3339), len(posts), escape(t.Title), f.p.document(t, posts))
 	return []byte(doc), t.LastPostAt, nil
 }

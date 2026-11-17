@@ -105,8 +105,9 @@ func (p *Plugin) webHome(r *http.Request, s plugin.WebSession) (template.HTML, e
 		return "", err
 	}
 	var b bytes.Buffer
+	// The member's headings sit under the panel's <h2>.
 	err = homeTmpl.Execute(&b, map[string]any{
-		"Body": s.Markdown(m.Body), "When": m.UpdatedAt.UTC().Format("2006-01-02 15:04 UTC"), "By": m.UpdatedBy,
+		"Body": s.MarkdownAt(m.Body, 3), "When": m.UpdatedAt.UTC().Format("2006-01-02 15:04 UTC"), "By": m.UpdatedBy,
 	})
 	return template.HTML(b.String()), err //nolint:gosec // html/template output
 }

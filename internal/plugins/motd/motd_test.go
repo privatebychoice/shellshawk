@@ -113,10 +113,10 @@ func TestWebHomeAndPrivacy(t *testing.T) {
 	if html, err := f.p.webHome(httptest.NewRequest("GET", "/home", nil), ws); err != nil || html != "" {
 		t.Errorf("panel with no message = %q, %v", html, err)
 	}
-	f.p.Set(f.Ctx, f.mod, "**Hi** <script>x</script>")
+	f.p.Set(f.Ctx, f.mod, "**Hi** <script>x</script>\n\n# Note")
 	html, err := f.p.webHome(httptest.NewRequest("GET", "/home", nil), ws)
 	if err != nil || !strings.Contains(string(html), "<strong>Hi</strong>") || strings.Contains(string(html), "<script>") ||
-		!strings.Contains(string(html), "by mod1") {
+		!strings.Contains(string(html), "by mod1") || !strings.Contains(string(html), "<h3>Note</h3>") {
 		t.Errorf("panel = %s, %v", html, err)
 	}
 

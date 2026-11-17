@@ -188,7 +188,7 @@ func TestHTMLRendering(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := RenderHTML(tt.src, fakeGrader{})
+			got, err := RenderHTML(tt.src, fakeGrader{}, 1)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -201,6 +201,54 @@ func TestHTMLRendering(t *testing.T) {
 				if strings.Contains(got, w) {
 					t.Errorf("must not contain %q:\n%s", w, got)
 				}
+			}
+		})
+	}
+}
+
+func TestHeadingLevels(t *testing.T) {
+	tests := []struct {
+		name   string
+		top    int
+		src    string
+		html   []string
+		spoken []string
+		screen []string
+	}{
+		{"0 keeps levels", 0, "# A\n\n### C", []string{"<h1>A</h1>", "<h3>C</h3>"},
+			[]string{"Heading level 1: A", "", "Heading level 3: C"}, []string{"#   A", "", "### C"}},
+		{"1 keeps levels", 1, "# A\n\n#### D", []string{"<h1>A</h1>", "<h3>D</h3>"},
+			[]string{"Heading level 1: A", "", "Heading level 3: D"}, []string{"#   A", "", "### D"}},
+		{"under a page title", UnderTitle, "# A\n\n## B\n\n###### F", []string{"<h2>A</h2>", "<h3>B</h3>", "<h4>F</h4>"},
+			[]string{"Heading level 2: A", "", "Heading level 3: B", "", "Heading level 4: F"},
+			[]string{"##   A", "", "###  B", "", "#### F"}},
+		{"under a section", 3, "# A\n\n### C", []string{"<h3>A</h3>", "<h5>C</h5>"},
+			[]string{"Heading level 3: A", "", "Heading level 5: C"}, []string{"###   A", "", "##### C"}},
+		{"capped at 6", 5, "# A\n\n### C", []string{"<h5>A</h5>", "<h6>C</h6>"},
+			[]string{"Heading level 5: A", "", "Heading level 6: C"}, []string{"#####  A", "", "###### C"}},
+		{"far too deep", 9, "# A", []string{"<h6>A</h6>"}, []string{"Heading level 6: A"}, []string{"###### A"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := RenderHTML(tt.src, fakeGrader{}, tt.top)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, w := range tt.html {
+				if !strings.Contains(got, w) {
+					t.Errorf("HTML missing %q in %s", w, got)
+				}
+			}
+			spoken := plain(RenderTUI(tt.src, TUIOptions{Accessible: true, HeadingLevel: tt.top}))
+			if strings.Join(spoken, "\n") != strings.Join(tt.spoken, "\n") {
+				t.Errorf("spoken = %q, want %q", spoken, tt.spoken)
+			}
+			var screen []string
+			for _, l := range plain(RenderTUI(tt.src, TUIOptions{Width: 12, HeadingLevel: tt.top})) {
+				screen = append(screen, strings.TrimRight(l, " "))
+			}
+			if strings.Join(screen, "\n") != strings.Join(tt.screen, "\n") {
+				t.Errorf("screen = %q, want %q", screen, tt.screen)
 			}
 		})
 	}

@@ -338,13 +338,13 @@ func TestMarkdownGuideLineMode(t *testing.T) {
 	input := strings.Join([]string{"5", "1", "", "2", "# Hi", "[x](javascript:alert(1))", ".", "", "1", "3", "9"}, "\r") + "\r"
 	out := e.session(t, "dave", ssh.PublicKeys(signer), input)
 	for _, want := range []string{
-		"Heading level 1: Markdown guide",
+		"Heading level 2: Emphasis",
 		"Quote level 2:",
 		"Code block start, language go, 2 lines:",
 		"Link, grade ? Unclassified: https://example.org",
 		"Section break.",
 		"Screen: shellshawk - Preview",
-		"Heading level 1: Hi",
+		"Heading level 2: Hi", // under the screen title
 		"x (link removed: unsupported address)",
 	} {
 		if !strings.Contains(out, want) {
@@ -641,15 +641,16 @@ func TestConferenceEndToEnd(t *testing.T) {
 	// read again (Enter), then q back out of thread, conference, area and
 	// areas, and 9 log out.
 	input := strings.Join([]string{
-		"8", "1", "1", "1", "Hello all", "Welcome **everyone**", ".", "1", "",
+		"8", "1", "1", "1", "Hello all", "Welcome **everyone**", "# Plans", ".", "1", "",
 		"2", "A reply", ".", "1", "",
 		"q", "q", "q", "q", "10",
 	}, "\r") + "\r"
 	out := e.session(t, "nora", ssh.PublicKeys(key), input)
 	for _, want := range []string{
-		"Heading level 3: Post 1 of 1, by nora",
+		"Heading level 2: Post 1 of 1, by nora",
 		"Welcome everyone",
-		"Heading level 3: Post 2 of 2, by nora",
+		"Heading level 3: Plans", // the member's "#", under the post heading
+		"Heading level 2: Post 2 of 2, by nora",
 		"A reply",
 		"Your post is published. Add a poll to it?",
 	} {

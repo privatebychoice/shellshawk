@@ -54,8 +54,13 @@ type WebRoute struct {
 type WebSession interface {
 	UserID() int64
 	Permissions(ctx context.Context) (perm.Set, error)
-	// Markdown renders markdown as sanitised HTML with graded links.
+	// Markdown renders markdown as sanitised HTML with graded links. The
+	// member's "#" headings become <h2>, under the page's <h1>.
 	Markdown(src string) template.HTML
+	// MarkdownAt is Markdown with the member's "#" headings rendered at
+	// level (deeper ones move down with it, up to <h6>). Use it when the
+	// text sits under a heading of the plugin's own, e.g. 3 under an <h2>.
+	MarkdownAt(src string, level int) template.HTML
 	// Path returns the URL of another page of the same plugin.
 	Path(rel string) string
 	// CSRF is the token POST forms must send in a field named "csrf".

@@ -1,7 +1,7 @@
 This policy describes what {{.Site}} stores and why. The operator of this
 server can replace it with their own.
 
-## No tracking, no selling, no sharing
+# No tracking, no selling, no sharing
 
 - No analytics, advertising, tracking pixels or fingerprinting.
 - No third-party scripts, fonts, stylesheets or images: everything is
@@ -10,7 +10,7 @@ server can replace it with their own.
 - Links in posts are shown with a privacy grade so you can judge a site
   before visiting it. Images in posts are never loaded.
 
-## Global Privacy Control
+# Global Privacy Control
 
 {{.Site}} honours [Global Privacy Control](https://globalprivacycontrol.org/)
 (GPC). When your browser sends the `Sec-GPC: 1` signal, or reports
@@ -21,7 +21,7 @@ protection applies whether or not you send the signal; not sending it is
 never treated as consent. Support is declared at
 `/.well-known/gpc.json`.
 
-## What is stored
+# What is stored
 
 - **Your account**: username, SSH public keys, a hash of your password
   (only used to add keys), and optionally email, full name, phone and a
@@ -42,7 +42,7 @@ never treated as consent. Support is declared at
 - **Website**: one cookie, only after you log in, to keep you logged in for
   up to 12 hours. It is never used for anything else.
 
-## Your rights
+# Your rights
 
 - **Access**: download everything stored about you over SFTP from
   `/me/export`.

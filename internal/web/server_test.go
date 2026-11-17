@@ -204,6 +204,8 @@ func TestGPC(t *testing.T) {
 	}
 	if p := e.do(req{method: "GET", path: "/privacy"}).Body.String(); !strings.Contains(p, "Global Privacy Control") || !strings.Contains(p, "14 days") {
 		t.Error("privacy policy does not describe GPC or the configured retention")
+	} else if strings.Count(p, "<h1>") != 1 || !strings.Contains(p, "<h2>Global Privacy Control</h2>") {
+		t.Error("privacy policy sections are not <h2> under the page's one <h1>")
 	}
 }
 

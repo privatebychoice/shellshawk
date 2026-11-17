@@ -25,6 +25,10 @@ type TUIOptions struct {
 	Unicode bool
 	// Grader grades links; nil shows every link as unclassified.
 	Grader Grader
+	// HeadingLevel is the level "#" is shown at; deeper headings move down
+	// by the same amount, up to 6. Use UnderTitle for content directly
+	// under the screen title. 0 or 1 shows levels as written.
+	HeadingLevel int
 }
 
 // RenderTUI renders markdown source as display lines.
@@ -107,13 +111,16 @@ func (r *tuiRenderer) block(n ast.Node, p *prefix, base theme.Style, quote, list
 		r.paragraph(v, p, base)
 
 	case *ast.Heading:
-		lvl := headingLevel(v)
+		lvl := headingLevel(v, r.o.HeadingLevel)
 		txt := strings.TrimSpace(plainText(v, r.src))
 		if acc {
 			r.emit(p, tui.Text(fmt.Sprintf("Heading level %d: %s", lvl, txt)))
 			return
 		}
-		marker := [3]string{"#   ", "##  ", "### "}[lvl-1]
+		// Markers are padded to the deepest level this text can use (3
+		// below the top) so heading text lines up.
+		deepest := min(max(r.o.HeadingLevel, 1)+2, 6)
+		marker := fmt.Sprintf("%-*s", deepest+1, strings.Repeat("#", lvl))
 		st := theme.Style{FG: theme.HeadingFG, BG: theme.HeadingBG, Bold: true}
 		w := r.avail(p)
 		for _, l := range term.Wrap(marker+txt, w) {

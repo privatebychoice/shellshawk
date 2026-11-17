@@ -223,7 +223,7 @@ func TestSFTP(t *testing.T) {
 
 func TestWebPages(t *testing.T) {
 	f := setup(t)
-	tid, _, _ := f.p.StartThread(f.Ctx, f.alice, f.general, "Hello <web>", "**bold** <script>alert(1)</script>")
+	tid, _, _ := f.p.StartThread(f.Ctx, f.alice, f.general, "Hello <web>", "**bold** <script>alert(1)</script>\n\n# Plan")
 	staffThread, _, _ := f.p.StartThread(f.Ctx, f.mod, f.staffCnf, "Staff", "x")
 	id := func(n int64) map[string]string { return map[string]string{"id": strconv.FormatInt(n, 10)} }
 
@@ -232,7 +232,8 @@ func TestWebPages(t *testing.T) {
 		t.Errorf("areas page = %s, %v", areas.Body, err)
 	}
 	page, err := f.WebGet(f.p, "/t/{id}", id(tid), f.alice)
-	if err != nil || page.Title != "Hello <web>" || !strings.Contains(string(page.Body), "<strong>bold</strong>") || strings.Contains(string(page.Body), "<script>") {
+	if err != nil || page.Title != "Hello <web>" || !strings.Contains(string(page.Body), "<strong>bold</strong>") || strings.Contains(string(page.Body), "<script>") ||
+		!strings.Contains(string(page.Body), "<h3>Plan</h3>") { // under the post's <h2>
 		t.Errorf("thread page = %q / %s, %v", page.Title, page.Body, err)
 	}
 	if _, err := f.WebGet(f.p, "/t/{id}", id(staffThread), f.alice); !errors.Is(err, plugin.ErrWebNotFound) {

@@ -275,8 +275,40 @@ func (p *Plugin) offerPoll(ctx context.Context, s plugin.Session, post int64) er
 	return err
 }
 
-// render shows the whole thread as one markdown document.
-func (p *Plugin) render(t Thread, posts []Post) string {
+// render shows the whole thread as one page. Each post gets a level 2
+// heading, under the thread title, and the member's own headings are moved
+// below it (level 3 and deeper), so the outline stays in order.
+func (p *Plugin) render(s plugin.Session, t Thread, posts []Post) tui.Page {
+	page := tui.Page{Title: s.Title(t.Title)}
+	add := func(src string, level int) {
+		if len(page.Lines) > 0 {
+			page.Lines = append(page.Lines, tui.Text(""))
+		}
+		page.Lines = append(page.Lines, s.MarkdownAt("", src, level).Lines...)
+	}
+	for i, po := range posts {
+		head := fmt.Sprintf("# Post %d of %d, by %s, %s", i+1, len(posts), escape(po.Author), po.CreatedAt.UTC().Format("2006-01-02 15:04 UTC"))
+		if po.EditedAt != nil {
+			head += " (edited)"
+		}
+		add(head, 2)
+		add(po.Body, 3)
+		if len(po.Polls) > 0 {
+			add(fmt.Sprintf("*This post has %d poll(s): choose Polls in this thread.*", len(po.Polls)), 2)
+		}
+		if i < len(posts)-1 {
+			add("---", 2)
+		}
+	}
+	if t.Locked {
+		add("*This thread is locked: no new replies.*", 2)
+	}
+	return page
+}
+
+// document is the whole thread as one markdown file, for SFTP. Post bodies
+// are the members' own text, unchanged.
+func (p *Plugin) document(t Thread, posts []Post) string {
 	var b strings.Builder
 	for i, po := range posts {
 		fmt.Fprintf(&b, "### Post %d of %d, by %s, %s", i+1, len(posts), escape(po.Author), po.CreatedAt.UTC().Format("2006-01-02 15:04 UTC"))
@@ -313,7 +345,7 @@ func (p *Plugin) thread(ctx context.Context, s plugin.Session, id int64) error {
 			return err
 		}
 		if show {
-			if err := s.UI().Show(ctx, s.Markdown(s.Title(t.Title), p.render(t, posts))); err != nil {
+			if err := s.UI().Show(ctx, p.render(s, t, posts)); err != nil {
 				return err
 			}
 			show = false

@@ -471,7 +471,7 @@ func (s *Server) handlePrivacy(w http.ResponseWriter, r *http.Request) {
 		}
 		src = b.String()
 	}
-	html, err := markdown.RenderHTML(src, s.cfg.Grader)
+	html, err := markdown.RenderHTML(src, s.cfg.Grader, markdown.UnderTitle)
 	if err != nil {
 		s.renderError(w, r, http.StatusInternalServerError, "The privacy policy could not be shown.")
 		return
@@ -631,7 +631,11 @@ func (ws webSession) Permissions(ctx context.Context) (perm.Set, error) {
 	return ws.s.cfg.Perms.Permissions(ctx, ws.user)
 }
 func (ws webSession) Markdown(src string) template.HTML {
-	html, err := markdown.RenderHTML(src, ws.s.cfg.Grader)
+	return ws.MarkdownAt(src, markdown.UnderTitle)
+}
+
+func (ws webSession) MarkdownAt(src string, level int) template.HTML {
+	html, err := markdown.RenderHTML(src, ws.s.cfg.Grader, level)
 	if err != nil {
 		return template.HTML("<p>This content could not be shown.</p>")
 	}

@@ -3,7 +3,7 @@
 // screen-reader mode), following docs/DESIGN.md §8.
 //
 // Supported: paragraphs, bold, italic, strikethrough, inline code, headings
-// (levels 4-6 shown as 3), block quotes, ordered and unordered lists,
+// (three levels; 4-6 are shown as 3), block quotes, ordered and unordered lists,
 // horizontal rules, code blocks, links and bare URLs. Images are never
 // loaded; raw HTML is shown as text and never executed. Every link carries
 // a pbc-classification privacy grade.
@@ -130,5 +130,15 @@ func codeSpanText(n *ast.CodeSpan, src []byte) string {
 	return b.String()
 }
 
-// headingLevel clamps headings to the supported 1-3.
-func headingLevel(n *ast.Heading) int { return min(max(n.Level, 1), 3) }
+// UnderTitle is the heading level for "#" in content shown directly under
+// a page's own title (level 1), so a member's headings never compete with
+// it.
+const UnderTitle = 2
+
+// headingLevel is the level a heading is shown at. The author's level is
+// limited to 1-3 and then moved down so that "#" is shown at top, keeping
+// the page outline intact; top below 1 means 1 (levels as written). The
+// result is at most 6.
+func headingLevel(n *ast.Heading, top int) int {
+	return min(min(max(n.Level, 1), 3)+max(top, 1)-1, 6)
+}

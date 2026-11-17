@@ -343,13 +343,13 @@ func TestEraseAndExport(t *testing.T) {
 
 func TestWebPages(t *testing.T) {
 	f := setup(t)
-	id, _ := f.p.Send(f.Ctx, f.alice, Draft{To: "bob", Subject: "Hi <b>", Body: "*there*"})
+	id, _ := f.p.Send(f.Ctx, f.alice, Draft{To: "bob", Subject: "Hi <b>", Body: "*there*\n\n# Agenda"})
 	inbox, err := f.WebGet(f.p, "/", nil, f.bob)
 	if err != nil || !strings.Contains(string(inbox.Body), "New: ") || !strings.Contains(string(inbox.Body), "Hi &lt;b&gt;") {
 		t.Errorf("inbox = %s, %v", inbox.Body, err)
 	}
 	msg, err := f.WebGet(f.p, "/m/{id}", map[string]string{"id": strconv.FormatInt(id, 10)}, f.bob)
-	if err != nil || !strings.Contains(string(msg.Body), "<em>there</em>") {
+	if err != nil || !strings.Contains(string(msg.Body), "<em>there</em>") || !strings.Contains(string(msg.Body), "<h2>Agenda</h2>") {
 		t.Errorf("message = %s, %v", msg.Body, err)
 	}
 	if c, _ := f.p.Count(f.Ctx, f.bob); c.Unread != 0 {

@@ -368,14 +368,24 @@ One parser — `github.com/yuin/goldmark` (CommonMark, no dependencies of its
 own) — producing an AST rendered by four custom renderers. Raw HTML and images
 are disabled everywhere.
 
-TUI heading markers follow markdown convention, padded so text aligns:
-`#   H1`, `##  H2`, `### H3`.
+Authors get three heading levels (`#`–`###`; deeper ones are shown as
+`###`). A member's headings never compete with the page they appear on:
+they are moved down so `#` sits one level below the nearest heading the
+page itself shows. On the web `#` is `<h2>` under the page's `<h1>`, and
+`<h3>` in a conference post (under its "Post N" `<h2>`) or in the message
+of the day panel. Over SSH the screen title counts as level 1 in the same
+way. Levels never go past 6. Plugins choose the level with
+`Session.MarkdownAt` / `WebSession.MarkdownAt`; `Markdown` means level 2.
+
+TUI heading markers follow markdown convention, show the level after the
+move, and are padded so text aligns, e.g. under a screen title:
+`##   H2`, `###  H3`, `#### H4`.
 
 | Element | Web | TUI Modern / PuTTY | TUI Accessible |
 |---------|-----|--------------------|-------------------------------|
 | Bold | `<strong>` | SGR 1 / colour substitute | plain text (optional `*word*`) |
 | Italic | `<em>` | SGR 3 / colour substitute | plain text (optional `_word_`) |
-| H1–H3 | `<h1>`–`<h3>` | `#   HEADING` / `##  HEADING` / `### HEADING` on a full-width background bar | `Heading level 1: Text` |
+| `#`–`###` | `<h2>`–`<h4>` under a page title (one level deeper per heading in between) | `##   HEADING` / `###  HEADING` / `#### HEADING` on a full-width background bar | `Heading level 2: Text` |
 | Blockquote | `<blockquote>` | indented, `>` in quote-marker colour, text in quote-text colour, nesting repeats `>` | `Quote:` … `End quote.` with nesting as `Quote level 2:` |
 | Ordered list | `<ol>` | number colour + `.` colour + text | `List, 3 items:` then `1. text` (nested: `Sub-list of item 2, 2 items:`) |
 | Unordered list | `<ul>` | `-` in bullet colour + text colour | `List, 4 items:` then `- text` |
@@ -529,7 +539,7 @@ with one invitee (no separate [D] type); live delivery is in-process.
 | 4 | Erasure | 14-day grace (configurable); sent message bodies kept + anonymised; audit retention 1 year (configurable); user chooses delete vs. anonymise for posts/chat |
 | 5 | Phone | E.164 normalised |
 | 6 | Markdown | goldmark |
-| 7 | TUI headings | `#` = H1, `##` = H2, `###` = H3 |
+| 7 | Headings | `#`–`###`, moved below the page's own headings (`#` = level 2 under a title) |
 | 8 | Links | `Link B Considerate: {text} -> {url}`; grade colours in themes |
 | 9 | SFTP | pkg/sftp RequestServer |
 | 10 | Web login | One-time code from TUI |

@@ -131,7 +131,7 @@ func (p *Plugin) webThread(r *http.Request, s plugin.WebSession) (plugin.WebPage
 	}
 	var ps []postOut
 	for i, po := range posts {
-		ps = append(ps, postOut{i + 1, po.Author, po.CreatedAt.UTC().Format("2006-01-02 15:04 UTC"), po.EditedAt != nil, len(po.Polls) > 0, s.Markdown(po.Body)})
+		ps = append(ps, postOut{i + 1, po.Author, po.CreatedAt.UTC().Format("2006-01-02 15:04 UTC"), po.EditedAt != nil, len(po.Polls) > 0, s.MarkdownAt(po.Body, 3)}) // under the post's <h2>
 	}
 	var chatPanel template.HTML
 	if t.ChatChannelID != 0 && p.chat != nil {

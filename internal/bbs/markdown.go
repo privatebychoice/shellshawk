@@ -15,7 +15,12 @@ var guideMarkdown string
 
 // Markdown renders src for this session's interface and width.
 func (s *session) Markdown(title, src string) tui.Page {
-	o := markdown.TUIOptions{Accessible: s.ui.LineMode(), Unicode: s.unicode, Grader: s.h.Grader}
+	return s.MarkdownAt(title, src, markdown.UnderTitle)
+}
+
+// MarkdownAt is Markdown with "#" headings shown at level.
+func (s *session) MarkdownAt(title, src string, level int) tui.Page {
+	o := markdown.TUIOptions{Accessible: s.ui.LineMode(), Unicode: s.unicode, Grader: s.h.Grader, HeadingLevel: level}
 	if !o.Accessible {
 		o.Width = max(s.t.Size().Cols-2, 20)
 	}

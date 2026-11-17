@@ -16,14 +16,18 @@ import (
 // HTML in the source is shown as escaped text, images are replaced by their
 // description, only http/https/mailto links are kept, and every link gets a
 // rel="nofollow noopener noreferrer ugc" attribute and a privacy grade badge.
-func RenderHTML(src string, g Grader) (string, error) {
+//
+// top is the level "#" is rendered at (<h2> for 2); deeper headings move
+// down by the same amount, up to <h6>. Use UnderTitle for content directly
+// under the page's <h1>, and one more for each heading in between.
+func RenderHTML(src string, g Grader, top int) (string, error) {
 	b := []byte(src)
 	if len(b) > MaxSource {
 		b = b[:MaxSource]
 	}
 	md := newMarkdown(goldmark.WithRendererOptions(
 		// Priority 100 runs ahead of goldmark's defaults (1000).
-		renderer.WithNodeRenderers(util.Prioritized(&htmlRenderer{g: g}, 100)),
+		renderer.WithNodeRenderers(util.Prioritized(&htmlRenderer{g: g, top: top}, 100)),
 	))
 	var out bytes.Buffer
 	if err := md.Convert(b, &out); err != nil {
@@ -32,7 +36,10 @@ func RenderHTML(src string, g Grader) (string, error) {
 	return out.String(), nil
 }
 
-type htmlRenderer struct{ g Grader }
+type htmlRenderer struct {
+	g   Grader
+	top int // level of "#" (see RenderHTML)
+}
 
 func (r *htmlRenderer) RegisterFuncs(reg renderer.NodeRendererFuncRegisterer) {
 	reg.Register(ast.KindLink, r.link)
@@ -91,7 +98,7 @@ func (r *htmlRenderer) image(w util.BufWriter, src []byte, n ast.Node, entering 
 }
 
 func (r *htmlRenderer) heading(w util.BufWriter, _ []byte, n ast.Node, entering bool) (ast.WalkStatus, error) {
-	lvl := headingLevel(n.(*ast.Heading))
+	lvl := headingLevel(n.(*ast.Heading), r.top)
 	if entering {
 		_, _ = fmt.Fprintf(w, "<h%d>", lvl)
 	} else {

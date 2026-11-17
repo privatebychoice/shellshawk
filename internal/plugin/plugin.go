@@ -133,7 +133,12 @@ type Session interface {
 	// Form shows a form with the BBS name in its title.
 	Form(ctx context.Context, fm *form.Form, values form.Values, errs form.Errors) (form.Values, error)
 	// Markdown renders markdown for this member's interface, grading links.
+	// The member's "#" headings are shown at level 2, under the title.
 	Markdown(title, src string) tui.Page
+	// MarkdownAt is Markdown with the member's "#" headings shown at level
+	// (deeper ones move down with it). Use it when the text sits under a
+	// heading of the plugin's own, e.g. level 3 under a level 2 heading.
+	MarkdownAt(title, src string, level int) tui.Page
 	// Permissions returns the member's current permissions.
 	Permissions(ctx context.Context) (perm.Set, error)
 	// Log is a logger tagged with the session and plugin.

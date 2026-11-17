@@ -38,7 +38,10 @@ func (s *Session) Form(ctx context.Context, fm *form.Form, v form.Values, errs f
 	return s.ui.Form(ctx, fm, v, errs)
 }
 func (s *Session) Markdown(title, src string) tui.Page {
-	return markdown.Page(title, src, markdown.TUIOptions{Accessible: true})
+	return s.MarkdownAt(title, src, markdown.UnderTitle)
+}
+func (s *Session) MarkdownAt(title, src string, level int) tui.Page {
+	return markdown.Page(title, src, markdown.TUIOptions{Accessible: true, HeadingLevel: level})
 }
 func (s *Session) Permissions(ctx context.Context) (perm.Set, error) {
 	return s.Env.Perms.Permissions(ctx, s.User)
