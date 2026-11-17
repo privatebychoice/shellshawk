@@ -164,18 +164,16 @@ func (s *session) menuLoop(ctx context.Context, parent int64, title string) erro
 			}
 			items = append(items, tui.MenuItem{Value: id, Label: e.Label, Help: help})
 		}
-		intro := ""
+		intro, back := "", ""
 		if parent == 0 {
 			u, err := s.h.Auth.UserByID(ctx, s.userID)
 			if err != nil {
 				return err
 			}
-			intro = "Welcome, " + u.Username + "."
-		} else {
-			items = append(items, tui.MenuItem{Value: "back", Label: "Back"})
+			intro, back = "Welcome, "+u.Username+".", "Log out"
 		}
-		choice, err := s.ui.Choose(ctx, tui.Menu{Title: s.Title(title), Intro: intro, Items: items})
-		if errors.Is(err, tui.ErrCancelled) || choice == "back" {
+		choice, err := s.ui.Choose(ctx, tui.Menu{Title: s.Title(title), Intro: intro, Items: items, Back: back})
+		if errors.Is(err, tui.ErrCancelled) {
 			if parent == 0 {
 				return errLogout
 			}

@@ -89,8 +89,8 @@ func TestShownOnceAfterLogin(t *testing.T) {
 func TestMenuEdit(t *testing.T) {
 	f := setup(t)
 	// Moderator: Write (1), editor lines finished with ".", dismiss
-	// "Saved.", Read (1), dismiss, Back (4).
-	s := f.Session(f.mod, strings.Join([]string{"1", "Hello *all*", ".", "", "1", "", "4"}, "\r")+"\r")
+	// "Saved.", Read (1), dismiss, back (q).
+	s := f.Session(f.mod, strings.Join([]string{"1", "Hello *all*", ".", "", "1", "", "q"}, "\r")+"\r")
 	if err := f.p.run(f.Ctx, s); err != nil {
 		t.Fatalf("run: %v\n%s", err, s.Out)
 	}

@@ -37,13 +37,12 @@ func (p *Plugin) run(ctx context.Context, s plugin.Session) error {
 		} else {
 			items = append(items, tui.MenuItem{Value: "edit", Label: "Write a message of the day"})
 		}
-		items = append(items, tui.MenuItem{Value: "back", Label: "Back"})
 		intro := "There is no message of the day."
 		if m.Body != "" {
 			intro = "Members see the message once after logging in, and again whenever it changes."
 		}
 		choice, err := s.UI().Choose(ctx, tui.Menu{Title: s.Title("Message of the day"), Intro: intro, Items: items})
-		if errors.Is(err, tui.ErrCancelled) || choice == "back" {
+		if errors.Is(err, tui.ErrCancelled) {
 			return nil
 		}
 		if err != nil {

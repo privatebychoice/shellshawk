@@ -88,6 +88,12 @@ removed or locked.
 
 - **Full screen** (default): Tab / Shift-Tab move between fields, Ctrl-S
   submits a form, Esc goes back. Menus accept arrow keys or the item number.
+- **Menus**: numbers choose from the list itself (threads, channels,
+  messages, ...). Fixed actions such as *Start a thread* or *Delete this
+  conference* have a letter instead, shown above the list (`n Start a
+  thread · d Delete this conference · q Back`), so the numbers never shift
+  with what you are allowed to do. `q` goes back in every menu (Esc too in
+  full screen); in the main menu it logs out.
 - **Screen reader mode**: no colours, no screen drawing — every screen starts
   with `Screen: <name>`, fields are asked one at a time, and long pages pause
   every N lines; so do long menus, where you can also type a number at the

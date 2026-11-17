@@ -38,10 +38,9 @@ func (s *session) admin(ctx context.Context) error {
 		addIf(set.Has(perm.PluginSettings), "plugins", "Plugin settings", "Settings of installed plugins")
 		addIf(set.Has(perm.MenuManage), "menu", "Menu editor", "Arrange the member menu")
 		addIf(set.Has(perm.AuditView), "audit", "Audit log", "Recent administrative actions")
-		items = append(items, tui.MenuItem{Value: "back", Label: "Back"})
 
 		choice, err := s.ui.Choose(ctx, tui.Menu{Title: s.Title("Administration"), Items: items})
-		if errors.Is(err, tui.ErrCancelled) || choice == "back" {
+		if errors.Is(err, tui.ErrCancelled) {
 			return nil
 		}
 		if err != nil {
@@ -115,9 +114,8 @@ func (s *session) pendingAccounts(ctx context.Context) error {
 		action, err := s.ui.Choose(ctx, tui.Menu{Title: s.Title("Approvals"), Items: []tui.MenuItem{
 			{Value: "approve", Label: "Approve", Help: "The account can use the BBS"},
 			{Value: "reject", Label: "Reject", Help: "The account and its keys are deleted"},
-			{Value: "back", Label: "Back"},
 		}})
-		if errors.Is(err, tui.ErrCancelled) || action == "back" {
+		if errors.Is(err, tui.ErrCancelled) {
 			continue
 		}
 		if err != nil {

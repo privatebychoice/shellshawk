@@ -212,10 +212,11 @@ func (u *Screen) Show(ctx context.Context, p Page) error {
 
 // ---- Choose ---------------------------------------------------------------
 
-// Choose implements UI.
+// Choose implements UI. Items are numbered; actions are shown on a line of
+// their own above the list and chosen with their letter; q and Esc go back.
 func (u *Screen) Choose(ctx context.Context, m Menu) (string, error) {
-	if len(m.Items) == 0 {
-		return "", ErrCancelled
+	if err := m.check(); err != nil {
+		return "", err
 	}
 	sel, top := 0, 0
 	for {
@@ -229,6 +230,11 @@ func (u *Screen) Choose(ctx context.Context, m Menu) (string, error) {
 			}
 			row++
 		}
+		for _, l := range WrapLine(u.actionLine(m), cols-2) {
+			f.putLine(row, 1, l)
+			row++
+		}
+		row++
 		avail := f.bodyRows() - (row - f.bodyTop()) - 2 // keep room for item help
 		avail = max(avail, 1)
 		if sel < top {
@@ -263,8 +269,10 @@ func (u *Screen) Choose(ctx context.Context, m Menu) (string, error) {
 			}
 			row++
 		}
-		if h := m.Items[sel].Help; h != "" {
-			f.put(f.rows-3, 1, h, theme.Style{FG: theme.Muted}, cols-2)
+		if len(m.Items) > 0 {
+			if h := m.Items[sel].Help; h != "" {
+				f.put(f.rows-3, 1, h, theme.Style{FG: theme.Muted}, cols-2)
+			}
 		}
 		if err := f.flush(); err != nil {
 			return "", err
@@ -274,21 +282,28 @@ func (u *Screen) Choose(ctx context.Context, m Menu) (string, error) {
 		if err != nil {
 			return "", err
 		}
+		n := len(m.Items)
 		switch ev.Key {
 		case term.KeyUp, term.KeyBacktab:
-			sel = (sel - 1 + len(m.Items)) % len(m.Items)
+			if n > 0 {
+				sel = (sel - 1 + n) % n
+			}
 		case term.KeyDown, term.KeyTab:
-			sel = (sel + 1) % len(m.Items)
+			if n > 0 {
+				sel = (sel + 1) % n
+			}
 		case term.KeyPgUp:
 			sel = max(sel-avail, 0)
 		case term.KeyPgDn:
-			sel = min(sel+avail, len(m.Items)-1)
+			sel = max(min(sel+avail, n-1), 0)
 		case term.KeyHome:
 			sel = 0
 		case term.KeyEnd:
-			sel = len(m.Items) - 1
+			sel = max(n-1, 0)
 		case term.KeyEnter:
-			return m.Items[sel].Value, nil
+			if n > 0 {
+				return m.Items[sel].Value, nil
+			}
 		case term.KeyEsc:
 			return "", ErrCancelled
 		case term.KeyCtrl:
@@ -297,15 +312,37 @@ func (u *Screen) Choose(ctx context.Context, m Menu) (string, error) {
 			}
 		case term.KeyRune:
 			if ev.Rune >= '1' && ev.Rune <= '9' {
-				if n := int(ev.Rune - '1'); n < len(m.Items) {
-					return m.Items[n].Value, nil
+				if i := int(ev.Rune - '1'); i < n {
+					return m.Items[i].Value, nil
 				}
 			}
-			if ev.Rune == 'q' {
+			if ev.Rune == BackKey || ev.Rune == 'Q' {
 				return "", ErrCancelled
+			}
+			if a, ok := m.action(string(ev.Rune)); ok {
+				return a.Value, nil
 			}
 		}
 	}
+}
+
+// actionLine lists the menu's letter keys, ending with q to go back:
+// "n Start a thread · d Delete this conference · q Back".
+func (u *Screen) actionLine(m Menu) Line {
+	key := theme.Style{FG: theme.Accent, Bold: true}
+	sep := u.sym("  ·  ", "  |  ")
+	var l Line
+	add := func(k rune, label string) {
+		if len(l) > 0 {
+			l = append(l, Span{Text: sep, Style: theme.Style{FG: theme.Muted}})
+		}
+		l = append(l, Span{Text: string(k), Style: key}, Span{Text: " " + label})
+	}
+	for _, a := range m.Actions {
+		add(a.Key, a.Label)
+	}
+	add(BackKey, m.backLabel())
+	return l
 }
 
 // ---- Form -----------------------------------------------------------------

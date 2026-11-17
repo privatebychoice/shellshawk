@@ -44,14 +44,13 @@ func (p *Plugin) run(ctx context.Context, s plugin.Session) error {
 			}
 			items = append(items, tui.MenuItem{Value: strconv.FormatInt(pl.ID, 10), Label: label})
 		}
-		items = append(items, tui.MenuItem{Value: "closed", Label: "Closed polls and results"})
+		actions := []tui.Action{{Key: 'c', Value: "closed", Label: "Closed polls and results"}}
 		if set.Has(PermCreate) {
-			items = append(items, tui.MenuItem{Value: "new", Label: "Create a poll"})
+			actions = append(actions, tui.Action{Key: 'n', Value: "new", Label: "Create a poll"})
 		}
-		items = append(items, tui.MenuItem{Value: "back", Label: "Back"})
 		intro := fmt.Sprintf("%d open poll(s).", len(open))
-		choice, err := s.UI().Choose(ctx, tui.Menu{Title: s.Title("Polls"), Intro: intro, Items: items})
-		if errors.Is(err, tui.ErrCancelled) || choice == "back" {
+		choice, err := s.UI().Choose(ctx, tui.Menu{Title: s.Title("Polls"), Intro: intro, Items: items, Actions: actions})
+		if errors.Is(err, tui.ErrCancelled) {
 			return nil
 		}
 		if err != nil {
@@ -190,9 +189,8 @@ func (p *Plugin) Run(ctx context.Context, s plugin.Session, id int64) error {
 				items = append(items, tui.MenuItem{Value: "pin", Label: "Pin to the top"})
 			}
 		}
-		items = append(items, tui.MenuItem{Value: "back", Label: "Back"})
 		choice, err := s.UI().Choose(ctx, tui.Menu{Title: s.Title("Poll"), Intro: describe(pl, closed), Items: items})
-		if errors.Is(err, tui.ErrCancelled) || choice == "back" {
+		if errors.Is(err, tui.ErrCancelled) {
 			return nil
 		}
 		if err != nil {

@@ -500,15 +500,15 @@ func TestFindChannelTUI(t *testing.T) {
 	if _, err := f.p.Create(f.Ctx, f.mod, NewChannel{Name: "gardening", Kind: KindPersistent, Topic: "Plants"}); err != nil {
 		t.Fatal(err)
 	}
-	// Chat menu (1 gardening, 2 lobby, 3 Find a channel, 4 Start a private
-	// chat, 5 Back): Find, search "plant", pick the match (1), leave the
-	// channel, Back.
-	s := f.Session(f.alice, strings.Join([]string{"3", "plant", "1", "/quit", "5"}, "\r")+"\r")
+	// Chat menu (1 gardening, 2 lobby; f Find a channel, n Start a private
+	// chat, q Back): Find, search "plant", pick the match (1), leave the
+	// channel, back.
+	s := f.Session(f.alice, strings.Join([]string{"f", "plant", "1", "/quit", "q"}, "\r")+"\r")
 	if err := f.p.run(f.Ctx, s); err != nil {
 		t.Fatalf("run: %v\n%s", err, s.Out)
 	}
 	out := s.Out.String()
-	for _, want := range []string{"3. Find a channel", "Find a channel: 1 match(es)", "1. #gardening [P]", "#gardening, channel."} {
+	for _, want := range []string{"Actions: f Find a channel; n Start a private chat; q Back.", "Find a channel: 1 match(es)", "1. #gardening [P]", "#gardening, channel."} {
 		if !strings.Contains(out, want) {
 			t.Errorf("output missing %q", want)
 		}

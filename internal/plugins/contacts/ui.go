@@ -40,10 +40,9 @@ func (p *Plugin) run(ctx context.Context, s plugin.Session) error {
 				{Value: "list", Label: "My contacts"},
 				{Value: "add", Label: "Add a contact"},
 				{Value: "groups", Label: "Contact groups", Help: "Named groups you can send messages to"},
-				{Value: "back", Label: "Back"},
 			},
 		})
-		if errors.Is(err, tui.ErrCancelled) || choice == "back" {
+		if errors.Is(err, tui.ErrCancelled) {
 			return nil
 		}
 		if err != nil {
@@ -103,10 +102,9 @@ func (p *Plugin) browse(ctx context.Context, s plugin.Session, list []Contact) e
 		Items: []tui.MenuItem{
 			{Value: "note", Label: "Edit note", Help: "Private: only you see it"},
 			{Value: "remove", Label: "Remove from contacts"},
-			{Value: "back", Label: "Back"},
 		},
 	})
-	if err != nil || action == "back" {
+	if err != nil {
 		return err
 	}
 	if action == "remove" {
@@ -163,9 +161,9 @@ func (p *Plugin) groups(ctx context.Context, s plugin.Session) error {
 			byID[id] = g
 			items = append(items, tui.MenuItem{Value: id, Label: g.Name, Help: fmt.Sprintf("%d member(s)", g.Members)})
 		}
-		items = append(items, tui.MenuItem{Value: "new", Label: "Create a group"}, tui.MenuItem{Value: "back", Label: "Back"})
-		choice, err := s.UI().Choose(ctx, tui.Menu{Title: s.Title("Contact groups"), Items: items})
-		if errors.Is(err, tui.ErrCancelled) || choice == "back" {
+		choice, err := s.UI().Choose(ctx, tui.Menu{Title: s.Title("Contact groups"), Items: items,
+			Actions: []tui.Action{{Key: 'n', Value: "new", Label: "Create a group"}}})
+		if errors.Is(err, tui.ErrCancelled) {
 			return nil
 		}
 		if err != nil {
@@ -203,10 +201,9 @@ func (p *Plugin) group(ctx context.Context, s plugin.Session, g Group) error {
 			{Value: "add", Label: "Add a contact to this group"},
 			{Value: "remove", Label: "Remove a member"},
 			{Value: "delete", Label: "Delete this group", Help: "Your contacts are kept"},
-			{Value: "back", Label: "Back"},
 		},
 	})
-	if err != nil || action == "back" {
+	if err != nil {
 		return err
 	}
 	pick := func(title string, from []Contact) (int64, error) {

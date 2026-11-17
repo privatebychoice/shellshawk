@@ -112,10 +112,9 @@ func (s *session) keys(ctx context.Context) error {
 		if len(keys) > 0 {
 			items = append(items, tui.MenuItem{Value: "remove", Label: "Remove a key"})
 		}
-		items = append(items, tui.MenuItem{Value: "back", Label: "Back"})
 
 		choice, err := s.ui.Choose(ctx, tui.Menu{Title: s.Title("SSH keys"), Intro: intro, Items: items})
-		if errors.Is(err, tui.ErrCancelled) || choice == "back" {
+		if errors.Is(err, tui.ErrCancelled) {
 			return nil
 		}
 		if err != nil {

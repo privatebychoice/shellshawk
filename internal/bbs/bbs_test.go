@@ -334,8 +334,8 @@ func TestMarkdownGuideLineMode(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Main menu 5 = Markdown, 1 = guide, Enter to finish reading,
-	// 2 = Try it: type markdown, end with ".", then "no" to stop, 3 = back, 9 = log out.
-	input := strings.Join([]string{"5", "1", "", "2", "# Hi", "[x](javascript:alert(1))", ".", "", "1", "3", "9"}, "\r") + "\r"
+	// 2 = Try it: type markdown, end with ".", then "no" to stop, q = back, 9 = log out.
+	input := strings.Join([]string{"5", "1", "", "2", "# Hi", "[x](javascript:alert(1))", ".", "", "1", "q", "9"}, "\r") + "\r"
 	out := e.session(t, "dave", ssh.PublicKeys(signer), input)
 	for _, want := range []string{
 		"Heading level 2: Emphasis",
@@ -488,18 +488,19 @@ func TestMessagesEndToEnd(t *testing.T) {
 		t.Fatal(err)
 	}
 	// ivy (admin menu: 7 Contacts, 8 Messages, 9 Log out): Messages, Write
-	// (4), To jack, Subject, body in the line editor, finish with ".",
-	// dismiss "Message sent.", Back (5), Log out.
+	// (w), To jack, Subject, body in the line editor, finish with ".",
+	// dismiss "Message sent.", back (q), Log out.
 	out := e.session(t, "ivy", ssh.PublicKeys(ivyKey),
-		strings.Join([]string{"8", "4", "jack", "Hello Jack", "**Welcome** aboard", ".", "", "5", "9"}, "\r")+"\r")
+		strings.Join([]string{"8", "w", "jack", "Hello Jack", "**Welcome** aboard", ".", "", "q", "9"}, "\r")+"\r")
 	if !strings.Contains(out, "Message sent.") {
 		t.Fatalf("send failed:\n%s", out)
 	}
 
 	// jack (member menu: 6 Contacts, 7 Messages, 8 Log out): Messages,
-	// Inbox, first message, dismiss it, Back (3), q, Back (5), Log out.
+	// Inbox, first message, dismiss it, then q out of the message, the
+	// inbox and Messages, and Log out.
 	out = e.session(t, "jack", ssh.PublicKeys(jackKey),
-		strings.Join([]string{"7", "1", "1", "", "3", "q", "5", "8"}, "\r")+"\r")
+		strings.Join([]string{"7", "1", "1", "", "q", "q", "q", "8"}, "\r")+"\r")
 	for _, want := range []string{"Inbox: 1 unread, 0 read.", "1. New: Hello Jack", "From: ivy", "Welcome aboard", "1. Reply"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("output missing %q", want)
@@ -513,14 +514,14 @@ func TestMessagesEndToEnd(t *testing.T) {
 func TestPollEndToEnd(t *testing.T) {
 	e := startBBS(t, polls.New())
 	key := e.accessibleAdmin(t, "kim")
-	// Main menu: 7 Polls, 8 Log out. Polls (no polls yet): 2 Create.
+	// Main menu: 7 Polls, 8 Log out. Polls (no polls yet): n Create.
 	// Form: question; options typed one per line then "."; multi no;
 	// named no; days 7; pinned no. Dismiss "Poll created.". Polls menu now:
 	// 1 the poll. Poll menu: 1 Vote; choose option 2; results page, dismiss;
-	// 6 Back; 4 Back; 7 Log out.
+	// q back from the poll and from Polls; 8 Log out.
 	input := strings.Join([]string{
-		"7", "2", "Lunch?", "Pizza", "Soup", ".", "no", "no", "7", "no", "",
-		"1", "1", "2", "", "6", "4", "8",
+		"7", "n", "Lunch?", "Pizza", "Soup", ".", "no", "no", "7", "no", "",
+		"1", "1", "2", "", "q", "q", "8",
 	}, "\r") + "\r"
 	out := e.session(t, "kim", ssh.PublicKeys(key), input)
 	for _, want := range []string{"Poll created.", "Votes are anonymous.", "Option 2, Soup: 1 vote(s), 100 percent (your vote).", "1 vote(s) from 1 member(s)."} {
@@ -636,12 +637,12 @@ func TestConferenceEndToEnd(t *testing.T) {
 	key := e.accessibleAdmin(t, "nora")
 	// Main menu: 7 Chat, 8 Conferences, 9 Polls, 10 Log out.
 	// Conferences: area 1 (General), conference 1 (General discussion),
-	// 1 Start a thread: title, body in the line editor, "." to post,
+	// n Start a thread: title, body in the line editor, "." to post,
 	// 1 = no poll, read the thread (Enter), 2 Reply: body, ".", no poll,
 	// read again (Enter), then q back out of thread, conference, area and
 	// areas, and 9 log out.
 	input := strings.Join([]string{
-		"8", "1", "1", "1", "Hello all", "Welcome **everyone**", "# Plans", ".", "1", "",
+		"8", "1", "1", "n", "Hello all", "Welcome **everyone**", "# Plans", ".", "1", "",
 		"2", "A reply", ".", "1", "",
 		"q", "q", "q", "q", "10",
 	}, "\r") + "\r"
@@ -651,6 +652,8 @@ func TestConferenceEndToEnd(t *testing.T) {
 		"Welcome everyone",
 		"Heading level 3: Plans", // the member's "#", under the post heading
 		"Heading level 2: Post 2 of 2, by nora",
+		"Actions: n Start a thread; d Delete this conference; q Back.",
+		"1. Hello all", // threads are numbered from 1, after the actions
 		"A reply",
 		"Your post is published. Add a poll to it?",
 	} {

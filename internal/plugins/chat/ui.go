@@ -68,22 +68,27 @@ func (p *Plugin) run(ctx context.Context, s plugin.Session) error {
 				Help:  c.Topic,
 			})
 		}
+		var actions []tui.Action
 		if len(chans) > 0 {
-			items = append(items, tui.MenuItem{Value: "find", Label: "Find a channel", Help: "Search channel names and topics"})
+			actions = append(actions, tui.Action{Key: 'f', Value: "find", Label: "Find a channel"})
 		}
 		if set.Has(PermCreate) {
-			items = append(items, tui.MenuItem{Value: "new", Label: "Start a private chat", Help: "Only people you invite can join"})
+			actions = append(actions, tui.Action{Key: 'n', Value: "new", Label: "Start a private chat"})
 		}
 		if set.Has(PermModerate) {
-			items = append(items, tui.MenuItem{Value: "manage", Label: "Manage channels"})
+			actions = append(actions, tui.Action{Key: 'm', Value: "manage", Label: "Manage channels"})
 		}
-		items = append(items, tui.MenuItem{Value: "back", Label: "Back"})
+		intro := "[P] channel, [A] private chat, [T] conference thread chat."
+		if len(chans) == 0 {
+			intro = "There are no channels you can join."
+		}
 		choice, err := s.UI().Choose(ctx, tui.Menu{
-			Title: s.Title("Chat"),
-			Intro: "[P] channel, [A] private chat, [T] conference thread chat.",
-			Items: items,
+			Title:   s.Title("Chat"),
+			Intro:   intro,
+			Items:   items,
+			Actions: actions,
 		})
-		if errors.Is(err, tui.ErrCancelled) || choice == "back" {
+		if errors.Is(err, tui.ErrCancelled) {
 			return nil
 		}
 		if err != nil {
@@ -261,9 +266,8 @@ func (p *Plugin) find(ctx context.Context, s plugin.Session) error {
 	for _, c := range found {
 		items = append(items, tui.MenuItem{Value: strconv.FormatInt(c.ID, 10), Label: channelLabel(c, p.hub.count(c.ID)), Help: c.Topic})
 	}
-	items = append(items, tui.MenuItem{Value: "back", Label: "Back"})
 	choice, err := s.UI().Choose(ctx, tui.Menu{Title: s.Title(fmt.Sprintf("Find a channel: %d match(es)", len(found))), Items: items})
-	if err != nil || choice == "back" {
+	if err != nil {
 		return err
 	}
 	id, _ := strconv.ParseInt(choice, 10, 64)
@@ -440,9 +444,9 @@ func (p *Plugin) manage(ctx context.Context, s plugin.Session) error {
 		items = append(items, tui.MenuItem{Value: strconv.FormatInt(c.ID, 10), Label: "#" + c.Name + " " + c.Tag(),
 			Help: fmt.Sprintf("Logged for %d day(s)", c.RetentionDays)})
 	}
-	items = append(items, tui.MenuItem{Value: "new", Label: "Create a channel"}, tui.MenuItem{Value: "back", Label: "Back"})
-	choice, err := s.UI().Choose(ctx, tui.Menu{Title: s.Title("Manage channels"), Items: items})
-	if err != nil || choice == "back" {
+	choice, err := s.UI().Choose(ctx, tui.Menu{Title: s.Title("Manage channels"), Items: items,
+		Actions: []tui.Action{{Key: 'n', Value: "new", Label: "Create a channel"}}})
+	if err != nil {
 		return err
 	}
 	if choice == "new" {
@@ -490,9 +494,8 @@ func (p *Plugin) manage(ctx context.Context, s plugin.Session) error {
 	action, err := s.UI().Choose(ctx, tui.Menu{Title: s.Title("#" + c.Name), Intro: banner(c), Items: []tui.MenuItem{
 		{Value: "retention", Label: "Change how long the log is kept"},
 		{Value: "delete", Label: "Delete this channel and its log"},
-		{Value: "back", Label: "Back"},
 	}})
-	if err != nil || action == "back" {
+	if err != nil {
 		return err
 	}
 	if action == "delete" {

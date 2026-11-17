@@ -101,10 +101,9 @@ func (s *session) adminUsers(ctx context.Context) error {
 				tui.MenuItem{Value: "addgroup", Label: "Add to a group"},
 				tui.MenuItem{Value: "rmgroup", Label: "Remove from a group"})
 		}
-		items = append(items, tui.MenuItem{Value: "back", Label: "Back"})
 
 		choice, err := s.ui.Choose(ctx, tui.Menu{Title: s.Title("User " + u.Username), Intro: intro, Items: items})
-		if errors.Is(err, tui.ErrCancelled) || choice == "back" {
+		if errors.Is(err, tui.ErrCancelled) {
 			return nil
 		}
 		if err != nil {
@@ -200,9 +199,9 @@ func (s *session) adminGroups(ctx context.Context) error {
 			}
 			items = append(items, tui.MenuItem{Value: strconv.FormatInt(g.ID, 10), Label: g.Name, Help: help})
 		}
-		items = append(items, tui.MenuItem{Value: "new", Label: "Create a group"}, tui.MenuItem{Value: "back", Label: "Back"})
-		choice, err := s.ui.Choose(ctx, tui.Menu{Title: s.Title("Groups"), Items: items})
-		if errors.Is(err, tui.ErrCancelled) || choice == "back" {
+		choice, err := s.ui.Choose(ctx, tui.Menu{Title: s.Title("Groups"), Items: items,
+			Actions: []tui.Action{{Key: 'n', Value: "new", Label: "Create a group"}}})
+		if errors.Is(err, tui.ErrCancelled) {
 			return nil
 		}
 		if err != nil {
@@ -276,10 +275,9 @@ func (s *session) groupDetail(ctx context.Context, id int64) error {
 		if !g.Builtin {
 			items = append(items, tui.MenuItem{Value: "delete", Label: "Delete this group"})
 		}
-		items = append(items, tui.MenuItem{Value: "back", Label: "Back"})
 		title := "Group " + g.Name
 		choice, err := s.ui.Choose(ctx, tui.Menu{Title: s.Title(title), Intro: intro, Items: items})
-		if errors.Is(err, tui.ErrCancelled) || choice == "back" {
+		if errors.Is(err, tui.ErrCancelled) {
 			return nil
 		}
 		if err != nil {
@@ -448,15 +446,14 @@ func (s *session) menuEditor(ctx context.Context, parent int64, title string) er
 			byID[id] = e
 			items = append(items, tui.MenuItem{Value: id, Label: e.Label, Help: describeEntry(s.h, e)})
 		}
-		items = append(items, tui.MenuItem{Value: "add", Label: "Add an entry"})
+		actions := []tui.Action{{Key: 'a', Value: "add", Label: "Add an entry"}}
 		if parent == 0 {
-			items = append(items, tui.MenuItem{Value: "reset", Label: "Reset to the default menu"})
+			actions = append(actions, tui.Action{Key: 'r', Value: "reset", Label: "Reset to the default menu"})
 		}
-		items = append(items, tui.MenuItem{Value: "back", Label: "Back"})
 		choice, err := s.ui.Choose(ctx, tui.Menu{
-			Title: s.Title("Menu editor: " + title), Intro: "Choose an entry to change it, or add one.", Items: items,
+			Title: s.Title("Menu editor: " + title), Intro: "Choose an entry to change it, or add one.", Items: items, Actions: actions,
 		})
-		if errors.Is(err, tui.ErrCancelled) || choice == "back" {
+		if errors.Is(err, tui.ErrCancelled) {
 			return nil
 		}
 		if err != nil {
@@ -544,9 +541,9 @@ func (s *session) editMenuEntry(ctx context.Context, e menu.Entry) error {
 	if e.Kind == menu.KindSubmenu {
 		items = append(items, tui.MenuItem{Value: "open", Label: "Edit the entries in this submenu"})
 	}
-	items = append(items, tui.MenuItem{Value: "delete", Label: "Delete"}, tui.MenuItem{Value: "back", Label: "Back"})
+	items = append(items, tui.MenuItem{Value: "delete", Label: "Delete"})
 	choice, err := s.ui.Choose(ctx, tui.Menu{Title: s.Title("Menu entry: " + e.Label), Intro: describeEntry(s.h, e), Items: items})
-	if err != nil || choice == "back" {
+	if err != nil {
 		return err
 	}
 	switch choice {

@@ -117,9 +117,8 @@ func (p *Plugin) run(ctx context.Context, s plugin.Session) error {
 			{Value: "online", Label: fmt.Sprintf("Online now (%d)", len(online)), Help: "Members who let you see that they are online"},
 			{Value: "contacts", Label: "My contacts"},
 			{Value: "group", Label: "A contact group"},
-			{Value: "back", Label: "Back"},
 		}})
-		if errors.Is(err, tui.ErrCancelled) || choice == "back" {
+		if errors.Is(err, tui.ErrCancelled) {
 			return nil
 		}
 		if err != nil {
@@ -240,8 +239,9 @@ func (p *Plugin) browse(ctx context.Context, s plugin.Session) error {
 			return tui.Message(ctx, s.UI(), s.Title("Members"), "No members match.")
 		}
 		var items []tui.MenuItem
+		var actions []tui.Action
 		if offset > 0 {
-			items = append(items, tui.MenuItem{Value: "prev", Label: "Previous page"})
+			actions = append(actions, tui.Action{Key: 'p', Value: "prev", Label: "Previous page"})
 		}
 		for _, m := range list {
 			r, err := p.relate(ctx, s.UserID(), m.ID)
@@ -252,10 +252,10 @@ func (p *Plugin) browse(ctx context.Context, s plugin.Session) error {
 				Help: "Member since " + m.Since.UTC().Format("2006-01-02")})
 		}
 		if offset+len(list) < total {
-			items = append(items, tui.MenuItem{Value: "next", Label: "Next page"})
+			actions = append(actions, tui.Action{Key: 'n', Value: "next", Label: "Next page"})
 		}
 		intro := fmt.Sprintf("Members %d to %d of %d.", offset+1, offset+len(list), total)
-		choice, err := s.UI().Choose(ctx, tui.Menu{Title: s.Title("Members"), Intro: intro, Items: items})
+		choice, err := s.UI().Choose(ctx, tui.Menu{Title: s.Title("Members"), Intro: intro, Items: items, Actions: actions})
 		if err != nil {
 			return err
 		}
@@ -320,9 +320,8 @@ func (p *Plugin) profile(ctx context.Context, s plugin.Session, id int64) error 
 		if !r.self && p.messages != nil && p.messages.CanSend(ctx, s.UserID()) {
 			items = append(items, tui.MenuItem{Value: "msg", Label: "Send a message"})
 		}
-		items = append(items, tui.MenuItem{Value: "back", Label: "Back"})
 		choice, err := s.UI().Choose(ctx, tui.Menu{Title: s.Title(u.Username), Intro: strings.Join(facts, " "), Items: items})
-		if errors.Is(err, tui.ErrCancelled) || choice == "back" {
+		if errors.Is(err, tui.ErrCancelled) {
 			return nil
 		}
 		if err != nil {

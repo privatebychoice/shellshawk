@@ -521,15 +521,15 @@ func TestScreenChoosePaging(t *testing.T) {
 		m.Items = append(m.Items, MenuItem{Value: strconv.Itoa(i + 1), Label: "Item " + strconv.Itoa(i+1)})
 	}
 	const pgUp, pgDn, home, end = "\x1b[5~", "\x1b[6~", "\x1b[H", "\x1b[F"
-	// An 80x30 screen shows 24 items at a time.
+	// An 80x30 screen shows 22 items at a time (below the actions line).
 	tests := []struct {
 		name, input, want, wantHelp string
 	}{
-		{"first screen", "\r", "1", "(1-24 of 60, more below)"},
-		{"page down", pgDn + "\r", "25", "(2-25 of 60, more above and below)"},
-		{"two pages down", pgDn + pgDn + "\r", "49", "more above and below"},
-		{"page down stops at the end", pgDn + pgDn + pgDn + pgDn + "\r", "60", "(37-60 of 60, more above)"},
-		{"page up", pgDn + pgDn + pgUp + "\r", "25", ""},
+		{"first screen", "\r", "1", "(1-22 of 60, more below)"},
+		{"page down", pgDn + "\r", "23", "(2-23 of 60, more above and below)"},
+		{"two pages down", pgDn + pgDn + "\r", "45", "more above and below"},
+		{"page down stops at the end", pgDn + pgDn + pgDn + pgDn + "\r", "60", "(39-60 of 60, more above)"},
+		{"page up", pgDn + pgDn + pgUp + "\r", "23", ""},
 		{"page up stops at the start", pgDn + pgUp + pgUp + "\r", "1", ""},
 		{"end and home", end + home + "\r", "1", ""},
 		{"end", end + "\r", "60", ""},
@@ -588,5 +588,83 @@ func TestLinesChoosePaging(t *testing.T) {
 	tm, out := newTestTerm("1\r", true)
 	if _, err := NewLines(tm, 20).Choose(ctxT(t), m); err != nil || strings.Contains(out.String(), "More:") {
 		t.Errorf("short menu paused: %v\n%s", err, out.String())
+	}
+}
+
+func TestMenuActions(t *testing.T) {
+	items := []MenuItem{{"t1", "First thread", ""}, {"t2", "Second thread", ""}}
+	acts := []Action{{'n', "new", "Start a thread"}, {'d', "del", "Delete this conference"}}
+	full := Menu{Title: "Conf", Items: items, Actions: acts}
+	empty := Menu{Title: "Conf", Actions: acts}
+	tests := []struct {
+		name         string
+		m            Menu
+		screen, line string // input for each UI
+		want         string
+		err          error
+	}{
+		{"letter picks an action", full, "n", "n\r", "new", nil},
+		{"capital letter too", full, "D", "D\r", "del", nil},
+		{"numbers are the list only", full, "1", "1\r", "t1", nil},
+		{"unknown letter is ignored or re-asked", full, "x2", "x\r2\r", "t2", nil},
+		{"q goes back", full, "q", "q\r", "", ErrCancelled},
+		{"no items: Enter and arrows do nothing", empty, "\r\x1b[B\x1b[6~\x1b[Fn", "\r1\rn\r", "new", nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ui, _ := newTestScreen(tt.screen)
+			v, err := ui.Choose(ctxT(t), tt.m)
+			if v != tt.want || !errors.Is(err, tt.err) {
+				t.Errorf("screen: Choose = %q, %v; want %q, %v", v, err, tt.want, tt.err)
+			}
+			tm, out := newTestTerm(tt.line, true)
+			if v, err := NewLines(tm, 0).Choose(ctxT(t), tt.m); v != tt.want || !errors.Is(err, tt.err) {
+				t.Errorf("lines: Choose = %q, %v; want %q, %v\n%s", v, err, tt.want, tt.err, out.String())
+			}
+		})
+	}
+
+	t.Run("actions are listed with q, before the list", func(t *testing.T) {
+		tm, out := newTestTerm("q\r", true)
+		NewLines(tm, 0).Choose(ctxT(t), Menu{Title: "Main", Items: items, Actions: acts[:1], Back: "Log out"})
+		o := out.String()
+		if a, c := strings.Index(o, "Actions: n Start a thread; q Log out."), strings.Index(o, "2 choices:"); a < 0 || c < a {
+			t.Errorf("actions not listed before the choices:\n%s", o)
+		}
+		if !strings.Contains(o, "Enter a number from 1 to 2 or an action letter, or q to log out: ") {
+			t.Errorf("prompt:\n%s", o)
+		}
+		tm, out = newTestTerm("1\rq\r", true)
+		NewLines(tm, 0).Choose(ctxT(t), empty)
+		if o := out.String(); strings.Contains(o, "choices:") || !strings.Contains(o, `Error: "1" is not an action letter.`) {
+			t.Errorf("empty menu:\n%s", o)
+		}
+		tm, out = newTestTerm("q\r", true)
+		NewLines(tm, 0).Choose(ctxT(t), Menu{Title: "Plain", Items: items})
+		if o := out.String(); strings.Contains(o, "Actions:") || !strings.Contains(o, "or q to go back: ") {
+			t.Errorf("empty menu:\n%s", o)
+		}
+		ui, sout := newTestScreen("q")
+		ui.Choose(ctxT(t), Menu{Title: "Main", Items: items, Actions: acts})
+		if o := sout.String(); !strings.Contains(o, "Start a thread") || !strings.Contains(o, "Delete this conference") || !strings.Contains(o, "q") || !strings.Contains(o, "Back") {
+			t.Errorf("screen actions line missing:\n%q", o)
+		}
+	})
+
+	for _, bad := range [][]Action{
+		{{'q', "x", "Quit"}},
+		{{'N', "x", "Upper"}},
+		{{'1', "x", "Digit"}},
+		{{'n', "x", "One"}, {'n', "y", "Two"}},
+	} {
+		m := Menu{Title: "Bad", Items: items, Actions: bad}
+		ui, _ := newTestScreen("q")
+		if _, err := ui.Choose(ctxT(t), m); err == nil || errors.Is(err, ErrCancelled) {
+			t.Errorf("screen accepted actions %+v", bad)
+		}
+		tm, _ := newTestTerm("q\r", true)
+		if _, err := NewLines(tm, 0).Choose(ctxT(t), m); err == nil || errors.Is(err, ErrCancelled) {
+			t.Errorf("lines accepted actions %+v", bad)
+		}
 	}
 }

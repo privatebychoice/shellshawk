@@ -23,9 +23,8 @@ func (s *session) privacyMenu(ctx context.Context) error {
 			{Value: "visibility", Label: "Who can see what", Help: "Choose who sees each detail and who can message you"},
 			{Value: "export", Label: "Download my data", Help: "Everything stored about you, over SFTP"},
 			{Value: "erase", Label: "Erase my account"},
-			{Value: "back", Label: "Back"},
 		}})
-		if errors.Is(err, tui.ErrCancelled) || choice == "back" {
+		if errors.Is(err, tui.ErrCancelled) {
 			return nil
 		}
 		if err != nil {

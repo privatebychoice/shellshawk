@@ -101,9 +101,9 @@ func (p *Plugin) run(ctx context.Context, s plugin.Session) error {
 		if set.Has(perm.Admin) {
 			items = append(items, tui.MenuItem{Value: "access", Label: "Choose who can write and moderate", Help: "Groups allowed to write lines and to remove any line"})
 		}
-		items = append(items, tui.MenuItem{Value: "show", Label: "Show the wall again"}, tui.MenuItem{Value: "back", Label: "Back"})
+		items = append(items, tui.MenuItem{Value: "show", Label: "Show the wall again"})
 		choice, err := s.UI().Choose(ctx, tui.Menu{Title: s.Title("Wall"), Intro: intro, Items: items})
-		if errors.Is(err, tui.ErrCancelled) || choice == "back" {
+		if errors.Is(err, tui.ErrCancelled) {
 			return nil
 		}
 		if err != nil {
@@ -205,9 +205,8 @@ func (p *Plugin) moderate(ctx context.Context, s plugin.Session) error {
 	for _, e := range found {
 		items = append(items, tui.MenuItem{Value: strconv.FormatInt(e.UserID, 10), Label: e.Username + ": " + Plain(e.Text)})
 	}
-	items = append(items, tui.MenuItem{Value: "back", Label: "Back"})
 	choice, err := s.UI().Choose(ctx, tui.Menu{Title: s.Title("Remove a member's line"), Items: items})
-	if err != nil || choice == "back" {
+	if err != nil {
 		return err
 	}
 	owner, _ := strconv.ParseInt(choice, 10, 64)

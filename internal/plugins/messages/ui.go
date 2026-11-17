@@ -30,16 +30,17 @@ func (p *Plugin) run(ctx context.Context, s plugin.Session) error {
 			{Value: Sent, Label: "Sent messages"},
 			{Value: Deleted, Label: fmt.Sprintf("Deleted messages (%d)", c.Deleted)},
 		}
+		var actions []tui.Action
 		if set.Has(PermSend) {
-			items = append(items, tui.MenuItem{Value: "write", Label: "Write a message"})
+			actions = append(actions, tui.Action{Key: 'w', Value: "write", Label: "Write a message"})
 		}
-		items = append(items, tui.MenuItem{Value: "back", Label: "Back"})
 		choice, err := s.UI().Choose(ctx, tui.Menu{
-			Title: s.Title("Messages"),
-			Intro: fmt.Sprintf("Inbox: %d unread, %d read. Deleted: %d.", c.Unread, c.Read, c.Deleted),
-			Items: items,
+			Title:   s.Title("Messages"),
+			Intro:   fmt.Sprintf("Inbox: %d unread, %d read. Deleted: %d.", c.Unread, c.Read, c.Deleted),
+			Items:   items,
+			Actions: actions,
 		})
-		if errors.Is(err, tui.ErrCancelled) || choice == "back" {
+		if errors.Is(err, tui.ErrCancelled) {
 			return nil
 		}
 		if err != nil {
@@ -67,11 +68,11 @@ func (p *Plugin) folder(ctx context.Context, s plugin.Session, folder string) er
 			return tui.Message(ctx, s.UI(), s.Title(titles[folder]), "There are no messages here.")
 		}
 		var items []tui.MenuItem
+		var actions []tui.Action
 		intro := ""
 		if folder == Deleted {
 			intro = fmt.Sprintf("Messages here are removed permanently after %d days. You can move them back to the inbox until then.", p.DeletedDays(ctx))
-			items = append(items, tui.MenuItem{Value: "empty", Label: fmt.Sprintf("Empty the Deleted folder (%d)", len(list)),
-				Help: "Remove every message here permanently"})
+			actions = append(actions, tui.Action{Key: 'e', Value: "empty", Label: "Empty the Deleted folder"})
 		}
 		for _, m := range list {
 			label := m.Subject
@@ -84,7 +85,7 @@ func (p *Plugin) folder(ctx context.Context, s plugin.Session, folder string) er
 			}
 			items = append(items, tui.MenuItem{Value: strconv.FormatInt(m.ID, 10), Label: label, Help: who + ", " + fmtTime(m)})
 		}
-		choice, err := s.UI().Choose(ctx, tui.Menu{Title: s.Title(titles[folder]), Intro: intro, Items: items})
+		choice, err := s.UI().Choose(ctx, tui.Menu{Title: s.Title(titles[folder]), Intro: intro, Items: items, Actions: actions})
 		if errors.Is(err, tui.ErrCancelled) {
 			return nil
 		}
@@ -150,9 +151,8 @@ func (p *Plugin) view(ctx context.Context, s plugin.Session, id int64, folder st
 	default:
 		items = append(items, tui.MenuItem{Value: "delete", Label: "Delete"})
 	}
-	items = append(items, tui.MenuItem{Value: "back", Label: "Back"})
 	action, err := s.UI().Choose(ctx, tui.Menu{Title: s.Title("Message"), Intro: m.Subject, Items: items})
-	if err != nil || action == "back" {
+	if err != nil {
 		return err
 	}
 	switch action {

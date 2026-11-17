@@ -11,6 +11,7 @@ package tui
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 
 	"go.privatebychoice.com/shellshawk/internal/form"
@@ -61,11 +62,60 @@ type MenuItem struct {
 	Help  string
 }
 
-// Menu is a list of choices.
+// Action is a fixed command in a menu (start a thread, delete this
+// conference, ...), chosen with a letter so the numbers belong to the list
+// alone and do not shift with the member's permissions.
+type Action struct {
+	Key   rune   // a lowercase letter; q is reserved for going back
+	Value string // returned by Choose
+	Label string
+}
+
+// Menu is a numbered list of choices plus lettered actions. q (and Esc in
+// full screen) always goes back: Choose returns ErrCancelled.
 type Menu struct {
-	Title string
-	Intro string
-	Items []MenuItem
+	Title   string
+	Intro   string
+	Items   []MenuItem
+	Actions []Action
+	// Back labels the q key; "" means "Back".
+	Back string
+}
+
+// BackKey is the key that leaves every menu.
+const BackKey = 'q'
+
+// check rejects action keys that are not lowercase letters, are q, or are
+// used twice. These are programming errors; tests catch them.
+func (m Menu) check() error {
+	seen := map[rune]bool{}
+	for _, a := range m.Actions {
+		if a.Key < 'a' || a.Key > 'z' || a.Key == BackKey || seen[a.Key] {
+			return fmt.Errorf("tui: menu %q: action %q has key %q: want a unique lowercase letter other than q", m.Title, a.Label, a.Key)
+		}
+		seen[a.Key] = true
+	}
+	return nil
+}
+
+// backLabel is what the q key is called in this menu.
+func (m Menu) backLabel() string {
+	if m.Back != "" {
+		return m.Back
+	}
+	return "Back"
+}
+
+// action returns the action for key (either case), if any.
+func (m Menu) action(key string) (Action, bool) {
+	if r := []rune(key); len(r) == 1 {
+		for _, a := range m.Actions {
+			if a.Key == r[0] || strings.ToLower(string(r[0])) == string(a.Key) {
+				return a, true
+			}
+		}
+	}
+	return Action{}, false
 }
 
 // EditRequest configures the text editor.

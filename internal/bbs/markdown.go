@@ -34,9 +34,8 @@ func (s *session) markdownGuide(ctx context.Context) error {
 		choice, err := s.ui.Choose(ctx, tui.Menu{Title: s.Title("Markdown"), Items: []tui.MenuItem{
 			{Value: "guide", Label: "Markdown guide", Help: "Every supported style, rendered"},
 			{Value: "try", Label: "Try it", Help: "Type some markdown and see how it looks"},
-			{Value: "back", Label: "Back"},
 		}})
-		if errors.Is(err, tui.ErrCancelled) || choice == "back" {
+		if errors.Is(err, tui.ErrCancelled) {
 			return nil
 		}
 		if err != nil {

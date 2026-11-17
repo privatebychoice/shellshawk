@@ -148,28 +148,68 @@ func (u *Lines) Show(ctx context.Context, p Page) error {
 	return err
 }
 
-// Choose implements UI. Long menus pause every page, as Show does; at a
-// pause the member can also choose straight away.
+// Choose implements UI. The actions are read out first, then the numbered
+// list; long lists pause every page, as Show does, and at a pause the
+// member can also choose straight away.
 func (u *Lines) Choose(ctx context.Context, m Menu) (string, error) {
+	if err := m.check(); err != nil {
+		return "", err
+	}
 	u.heading(m.Title)
 	if m.Intro != "" {
 		u.println(m.Intro)
 	}
-	u.println(fmt.Sprintf("%d choices:", len(m.Items)))
-	// answer interprets a reply: a choice, q, or (at a pause) Enter.
+	if len(m.Actions) > 0 {
+		acts := make([]string, 0, len(m.Actions)+1)
+		for _, a := range m.Actions {
+			acts = append(acts, string(a.Key)+" "+a.Label)
+		}
+		acts = append(acts, string(BackKey)+" "+m.backLabel())
+		u.println("Actions: " + strings.Join(acts, "; ") + ".")
+	}
+	// q is always offered in the prompt: "or q to go back", "or q to log out".
+	qTo := "or q to go back"
+	if m.Back != "" {
+		qTo = "or q to " + strings.ToLower(m.Back[:1]) + m.Back[1:]
+	}
+	n := len(m.Items)
+	if n > 0 {
+		u.println(fmt.Sprintf("%d choices:", n))
+	}
+	// what describes the accepted answers, for prompts and errors.
+	var what []string
+	if n > 0 {
+		what = append(what, fmt.Sprintf("a number from 1 to %d", n))
+	}
+	if len(m.Actions) > 0 {
+		what = append(what, "an action letter")
+	}
+	accepted := strings.Join(what, " or ")
+	// answer interprets a reply: a choice, an action, q, or (at a pause) Enter.
 	answer := func(ans string, pause bool) (value string, done, more bool, err error) {
 		ans = strings.TrimSpace(ans)
 		switch {
 		case pause && ans == "":
 			return "", false, true, nil
-		case strings.EqualFold(ans, "q"):
+		case strings.EqualFold(ans, string(BackKey)):
 			return "", true, false, ErrCancelled
 		}
-		if n, err := strconv.Atoi(ans); err == nil && n >= 1 && n <= len(m.Items) {
-			return m.Items[n-1].Value, true, false, nil
+		if i, err := strconv.Atoi(ans); err == nil && i >= 1 && i <= n {
+			return m.Items[i-1].Value, true, false, nil
 		}
-		u.println(fmt.Sprintf("Error: %q is not a number from 1 to %d.", ans, len(m.Items)))
+		if a, ok := m.action(ans); ok {
+			return a.Value, true, false, nil
+		}
+		if accepted == "" {
+			u.println(fmt.Sprintf("Error: %q: there is nothing to choose here.", ans))
+		} else {
+			u.println(fmt.Sprintf("Error: %q is not %s.", ans, accepted))
+		}
 		return "", false, false, nil
+	}
+	choose := "Enter q" + strings.TrimPrefix(qTo, "or q") + ": "
+	if accepted != "" {
+		choose = "Enter " + accepted + ", " + qTo + ": "
 	}
 	for i, it := range m.Items {
 		line := fmt.Sprintf("%d. %s", i+1, it.Label)
@@ -177,11 +217,11 @@ func (u *Lines) Choose(ctx context.Context, m Menu) (string, error) {
 			line += ". " + it.Help
 		}
 		u.println(line)
-		if (i+1)%u.pageSize != 0 || i == len(m.Items)-1 {
+		if (i+1)%u.pageSize != 0 || i == n-1 {
 			continue
 		}
 		for {
-			ans, err := u.readLine(ctx, fmt.Sprintf("More: press Enter for more choices, or enter a number from 1 to %d to choose now, or q to go back: ", len(m.Items)), false)
+			ans, err := u.readLine(ctx, "More: press Enter for more choices, or enter "+accepted+" to choose now, "+qTo+": ", false)
 			if err != nil {
 				return "", err
 			}
@@ -195,7 +235,7 @@ func (u *Lines) Choose(ctx context.Context, m Menu) (string, error) {
 		}
 	}
 	for {
-		ans, err := u.readLine(ctx, fmt.Sprintf("Enter a number from 1 to %d, or q to go back: ", len(m.Items)), false)
+		ans, err := u.readLine(ctx, choose, false)
 		if err != nil {
 			return "", err
 		}

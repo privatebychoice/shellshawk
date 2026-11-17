@@ -49,12 +49,16 @@ func (p *Plugin) run(ctx context.Context, s plugin.Session) error {
 		for _, a := range areas {
 			items = append(items, tui.MenuItem{Value: strconv.FormatInt(a.ID, 10), Label: a.Name, Help: a.Description})
 		}
+		var actions []tui.Action
 		if set.Has(PermModerate) {
-			items = append(items, tui.MenuItem{Value: "newarea", Label: "Create an area"})
+			actions = append(actions, tui.Action{Key: 'a', Value: "newarea", Label: "Create an area"})
 		}
-		items = append(items, tui.MenuItem{Value: "back", Label: "Back"})
-		choice, err := s.UI().Choose(ctx, tui.Menu{Title: s.Title("Conferences"), Intro: "Choose an area.", Items: items})
-		if errors.Is(err, tui.ErrCancelled) || choice == "back" {
+		intro := "Choose an area."
+		if len(areas) == 0 {
+			intro = "There are no areas yet."
+		}
+		choice, err := s.UI().Choose(ctx, tui.Menu{Title: s.Title("Conferences"), Intro: intro, Items: items, Actions: actions})
+		if errors.Is(err, tui.ErrCancelled) {
 			return nil
 		}
 		if err != nil {
@@ -108,15 +112,19 @@ func (p *Plugin) area(ctx context.Context, s plugin.Session, a Area) error {
 		for _, c := range confs {
 			items = append(items, tui.MenuItem{Value: strconv.FormatInt(c.ID, 10), Label: c.Name, Help: c.Description})
 		}
+		var actions []tui.Action
 		if set.Has(PermModerate) {
-			items = append(items, tui.MenuItem{Value: "newconf", Label: "Create a conference"})
+			actions = append(actions, tui.Action{Key: 'n', Value: "newconf", Label: "Create a conference"})
 			if len(confs) == 0 {
-				items = append(items, tui.MenuItem{Value: "delarea", Label: "Delete this area"})
+				actions = append(actions, tui.Action{Key: 'd', Value: "delarea", Label: "Delete this area"})
 			}
 		}
-		items = append(items, tui.MenuItem{Value: "back", Label: "Back"})
-		choice, err := s.UI().Choose(ctx, tui.Menu{Title: s.Title(a.Name), Intro: a.Description, Items: items})
-		if errors.Is(err, tui.ErrCancelled) || choice == "back" {
+		intro := a.Description
+		if len(confs) == 0 {
+			intro = strings.TrimSpace(intro + " There are no conferences here that you can read.")
+		}
+		choice, err := s.UI().Choose(ctx, tui.Menu{Title: s.Title(a.Name), Intro: intro, Items: items, Actions: actions})
+		if errors.Is(err, tui.ErrCancelled) {
 			return nil
 		}
 		if err != nil {
@@ -186,8 +194,9 @@ func (p *Plugin) conference(ctx context.Context, s plugin.Session, id int64) err
 			return err
 		}
 		var items []tui.MenuItem
+		var actions []tui.Action
 		if canPost(set, c) {
-			items = append(items, tui.MenuItem{Value: "new", Label: "Start a thread"})
+			actions = append(actions, tui.Action{Key: 'n', Value: "new", Label: "Start a thread"})
 		}
 		for _, t := range threads {
 			label := t.Title
@@ -200,12 +209,11 @@ func (p *Plugin) conference(ctx context.Context, s plugin.Session, id int64) err
 			})
 		}
 		if set.Has(PermModerate) {
-			items = append(items, tui.MenuItem{Value: "delconf", Label: "Delete this conference"})
+			actions = append(actions, tui.Action{Key: 'd', Value: "delconf", Label: "Delete this conference"})
 		}
-		items = append(items, tui.MenuItem{Value: "back", Label: "Back"})
 		intro := fmt.Sprintf("%s %d thread(s).", c.Description, len(threads))
-		choice, err := s.UI().Choose(ctx, tui.Menu{Title: s.Title(c.Name), Intro: strings.TrimSpace(intro), Items: items})
-		if errors.Is(err, tui.ErrCancelled) || choice == "back" {
+		choice, err := s.UI().Choose(ctx, tui.Menu{Title: s.Title(c.Name), Intro: strings.TrimSpace(intro), Items: items, Actions: actions})
+		if errors.Is(err, tui.ErrCancelled) {
 			return nil
 		}
 		if err != nil {
@@ -388,9 +396,8 @@ func (p *Plugin) thread(ctx context.Context, s plugin.Session, id int64) error {
 			}
 			items = append(items, tui.MenuItem{Value: "delthread", Label: "Delete thread"})
 		}
-		items = append(items, tui.MenuItem{Value: "back", Label: "Back"})
 		choice, err := s.UI().Choose(ctx, tui.Menu{Title: s.Title(t.Title), Intro: fmt.Sprintf("%d post(s) in %s.", len(posts), c.Name), Items: items})
-		if errors.Is(err, tui.ErrCancelled) || choice == "back" {
+		if errors.Is(err, tui.ErrCancelled) {
 			return nil
 		}
 		if err != nil {

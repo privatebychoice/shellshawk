@@ -152,9 +152,8 @@ func TestPrivacy(t *testing.T) {
 func TestTUI(t *testing.T) {
 	f := setup(t)
 	f.p.Set(f.Ctx, f.bob, "Hi from **bob**")
-	// Show the wall, Write my line (1), the line, show again, Back (5 of:
-	// Edit, Remove, Find, Show again, Back).
-	s := f.Session(f.alice, strings.Join([]string{"", "1", "Out *today*", "", "5"}, "\r")+"\r")
+	// Show the wall, Write my line (1), the line, show again, back (q).
+	s := f.Session(f.alice, strings.Join([]string{"", "1", "Out *today*", "", "q"}, "\r")+"\r")
 	if err := f.p.run(f.Ctx, s); err != nil {
 		t.Fatalf("run: %v\n%s", err, s.Out)
 	}
@@ -225,9 +224,9 @@ func TestModeratorRemovesBySearch(t *testing.T) {
 	f.p.Set(f.Ctx, f.alice, "alice's line")
 	f.p.Set(f.Ctx, f.bob, "bob's line")
 	// Show the wall, Remove a member's line (3 of: Write, Find, Remove,
-	// Show again, Back), search "bo", pick the match (1), Yes (2), show the
-	// wall again, Back (5).
-	s := f.Session(f.mod, strings.Join([]string{"", "3", "bo", "1", "2", "", "5"}, "\r")+"\r")
+	// Show again), search "bo", pick the match (1), Yes (2), show the
+	// wall again, back (q).
+	s := f.Session(f.mod, strings.Join([]string{"", "3", "bo", "1", "2", "", "q"}, "\r")+"\r")
 	if err := f.p.run(f.Ctx, s); err != nil {
 		t.Fatalf("run: %v\n%s", err, s.Out)
 	}
@@ -300,9 +299,9 @@ func TestAccessFormTUI(t *testing.T) {
 	memberG, _ := f.Perms.GroupByName(f.Ctx, perm.GroupMember)
 	modG, _ := f.Perms.GroupByName(f.Ctx, perm.GroupModerator)
 	// Administrator: show the (empty) wall, Choose who can write and
-	// moderate (2 of: Write, Choose, Show again, Back), write: moderator
-	// (2), moderate: member (1), dismiss "Saved.", show the wall, Back (4).
-	s := f.Session(f.Admin, strings.Join([]string{"", "2", "2", "1", "", "", "4"}, "\r")+"\r")
+	// moderate (2 of: Write, Choose, Show again), write: moderator (2),
+	// moderate: member (1), dismiss "Saved.", show the wall, back (q).
+	s := f.Session(f.Admin, strings.Join([]string{"", "2", "2", "1", "", "", "q"}, "\r")+"\r")
 	if err := f.p.run(f.Ctx, s); err != nil {
 		t.Fatalf("run: %v\n%s", err, s.Out)
 	}

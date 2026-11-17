@@ -296,7 +296,7 @@ full-screen redraws poorly. Accessible mode therefore changes more than colours:
 
 - **Line mode**: no alternate screen, no cursor positioning, no redraws. Output
   is appended like a chat log; menus are numbered lists with a prompt
-  (`Choose 1-6, or ? for help:`).
+  (`Enter a number from 1 to 6 or an action letter, or q to go back:`).
 - No colour-only meaning, no box-drawing, no spinners/animation, ASCII only
   (optional).
 - Every screen starts with a one-line title: `Screen: Conferences > General`.
@@ -304,6 +304,14 @@ full-screen redraws poorly. Accessible mode therefore changes more than colours:
   (Home/End to the first/last item) and the help bar starts with the
   visible range and whether there is more above or below; line mode pauses
   every page like long pages, and accepts a choice number at the pause.
+- Menus separate the list from its fixed actions. Only the list is
+  numbered; actions (start a thread, create a group, find a channel,
+  delete this conference, next page, ...) have a lowercase letter and are
+  shown, and read out, before the list: `Actions: n Start a thread; d
+  Delete this conference; q Back.` `q` (and Esc in full screen) always
+  goes back, so there is no Back item; the main menu labels it *Log out*.
+  Menus made only of actions (the thread or message menus) stay numbered.
+  `tui.Menu` rejects a reused letter, `q`, or anything but a-z.
 - Spoken-friendly markers instead of decoration (see §8).
 - Separately toggleable: **high contrast theme**, **reduce motion**,
   **ASCII only**, **verbose markers**, **page size** (lines before `--More--`).
