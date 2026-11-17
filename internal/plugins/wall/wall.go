@@ -279,3 +279,101 @@ func (p *Plugin) export(ctx context.Context, user int64) ([]export.File, error) 
 	f, err := export.JSON("wall.json", out)
 	return []export.File{f}, err
 }
+
+// Find returns the current lines of members whose username starts with
+// query (case-insensitive; a leading @ is ignored).
+func (p *Plugin) Find(ctx context.Context, query string) ([]Entry, error) {
+	q := strings.ToLower(strings.TrimPrefix(strings.TrimSpace(query), "@"))
+	if q == "" {
+		return nil, fmt.Errorf("%w: type a username, or the start of one", ErrInvalid)
+	}
+	all, err := p.Entries(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var out []Entry
+	for _, e := range all {
+		if strings.HasPrefix(strings.ToLower(e.Username), q) {
+			out = append(out, e)
+		}
+	}
+	return out, nil
+}
+
+// Access is which groups may write on the wall and which may remove any
+// line: the groups holding wall.write and wall.moderate. Groups holding
+// core.admin are left out, since administrators can always do both.
+type Access struct {
+	Groups          []perm.Group // the groups that can be chosen
+	Write, Moderate map[int64]bool
+}
+
+// Access returns the current wall access.
+func (p *Plugin) Access(ctx context.Context) (Access, error) {
+	groups, err := p.h.Perms.Groups(ctx)
+	if err != nil {
+		return Access{}, err
+	}
+	a := Access{Write: map[int64]bool{}, Moderate: map[int64]bool{}}
+	for _, g := range groups {
+		held := map[string]bool{}
+		for _, pm := range g.Permissions {
+			held[pm] = true
+		}
+		if held[perm.Admin] {
+			continue
+		}
+		a.Groups = append(a.Groups, g)
+		a.Write[g.ID], a.Moderate[g.ID] = held[PermWrite], held[PermModerate]
+	}
+	return a, nil
+}
+
+// SetAccess makes exactly the given groups able to write on the wall and
+// to remove any line (administrators only). Changes go through the group
+// permissions, so they are audited and shown on the Groups page too.
+func (p *Plugin) SetAccess(ctx context.Context, actor int64, write, moderate []int64) error {
+	if err := p.h.Perms.Require(ctx, actor, perm.Admin); err != nil {
+		return err
+	}
+	cur, err := p.Access(ctx)
+	if err != nil {
+		return err
+	}
+	want := func(ids []int64) (map[int64]bool, error) {
+		m := map[int64]bool{}
+		for _, id := range ids {
+			if _, ok := cur.Write[id]; !ok {
+				return nil, fmt.Errorf("%w: group %d cannot be chosen", ErrInvalid, id)
+			}
+			m[id] = true
+		}
+		return m, nil
+	}
+	w, err := want(write)
+	if err != nil {
+		return err
+	}
+	m, err := want(moderate)
+	if err != nil {
+		return err
+	}
+	for _, g := range cur.Groups {
+		for _, c := range []struct {
+			perm      string
+			have, set bool
+		}{{PermWrite, cur.Write[g.ID], w[g.ID]}, {PermModerate, cur.Moderate[g.ID], m[g.ID]}} {
+			switch {
+			case c.set && !c.have:
+				err = p.h.Perms.Grant(ctx, actor, g.ID, c.perm)
+			case !c.set && c.have:
+				err = p.h.Perms.Revoke(ctx, actor, g.ID, c.perm)
+			}
+			if err != nil {
+				return fmt.Errorf("wall: %s for group %s: %w", c.perm, g.Name, err)
+			}
+		}
+	}
+	p.h.Log.Info("wall access changed", "actor", actor, "write_groups", len(w), "moderate_groups", len(m))
+	return nil
+}

@@ -285,7 +285,11 @@ func (u *Lines) readRaw(ctx context.Context, f *form.Field, current string, secr
 		}
 		prompt := fmt.Sprintf("Enter a number from 1 to %d: ", len(f.Options))
 		if f.Multi {
-			prompt = "Enter numbers separated by commas: "
+			prompt = "Enter numbers separated by commas"
+			if !f.Required {
+				prompt += ", or none to choose nothing"
+			}
+			prompt += ": "
 		}
 		ans, err := u.readLine(ctx, prompt, false)
 		if err != nil {
@@ -293,6 +297,11 @@ func (u *Lines) readRaw(ctx context.Context, f *form.Field, current string, secr
 		}
 		if strings.TrimSpace(ans) == "" {
 			return current, nil, nil
+		}
+		// An empty answer keeps the current choice, so "none" is how a
+		// multiple choice is cleared (validation still applies Required).
+		if f.Multi && strings.EqualFold(strings.TrimSpace(ans), "none") {
+			return "", nil, nil
 		}
 		var picked []string
 		for _, p := range strings.Split(ans, ",") {

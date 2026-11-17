@@ -92,8 +92,14 @@ func (p *Plugin) run(ctx context.Context, s plugin.Session) error {
 					tui.MenuItem{Value: "remove", Label: "Remove my line"})
 			}
 		}
+		if len(entries) > 0 {
+			items = append(items, tui.MenuItem{Value: "find", Label: "Find a member's line", Help: "Search by username"})
+		}
 		if set.Has(PermModerate) && len(entries) > 0 {
-			items = append(items, tui.MenuItem{Value: "moderate", Label: "Remove a member's line"})
+			items = append(items, tui.MenuItem{Value: "moderate", Label: "Remove a member's line", Help: "Search by username"})
+		}
+		if set.Has(perm.Admin) {
+			items = append(items, tui.MenuItem{Value: "access", Label: "Choose who can write and moderate", Help: "Groups allowed to write lines and to remove any line"})
 		}
 		items = append(items, tui.MenuItem{Value: "show", Label: "Show the wall again"}, tui.MenuItem{Value: "back", Label: "Back"})
 		choice, err := s.UI().Choose(ctx, tui.Menu{Title: s.Title("Wall"), Intro: intro, Items: items})
@@ -113,13 +119,17 @@ func (p *Plugin) run(ctx context.Context, s plugin.Session) error {
 				break
 			}
 			err = p.Remove(ctx, s.UserID(), s.UserID())
+		case "find":
+			err = p.find(ctx, s)
 		case "moderate":
-			err = p.moderate(ctx, s, entries)
+			err = p.moderate(ctx, s)
+		case "access":
+			err = p.accessForm(ctx, s)
 		}
 		if errors.Is(err, tui.ErrCancelled) {
 			err = nil
 		}
-		if errors.Is(err, perm.ErrForbidden) || errors.Is(err, ErrNotFound) {
+		if errors.Is(err, perm.ErrForbidden) || errors.Is(err, ErrNotFound) || errors.Is(err, ErrInvalid) {
 			err = tui.Message(ctx, s.UI(), s.Title("Wall"), "That could not be done: "+err.Error()+".")
 		}
 		if err != nil {
@@ -154,10 +164,45 @@ func (p *Plugin) writeForm(ctx context.Context, s plugin.Session, mine *Entry) e
 	}
 }
 
-// moderate lets a moderator remove someone's line.
-func (p *Plugin) moderate(ctx context.Context, s plugin.Session, entries []Entry) error {
+// search asks for a username (or the start of one) and returns the
+// matching lines, telling the member if there are none.
+func (p *Plugin) search(ctx context.Context, s plugin.Session, title string) ([]Entry, error) {
+	fm := &form.Form{Title: title, Fields: []form.Field{{
+		Name: "name", Label: "Username, or the start of one", Kind: form.SingleLine, Required: true, MaxLen: 32,
+	}}}
+	v, err := s.Form(ctx, fm, nil, nil)
+	if err != nil {
+		return nil, err
+	}
+	found, err := p.Find(ctx, v["name"])
+	if err != nil {
+		return nil, err
+	}
+	if len(found) == 0 {
+		return nil, tui.Message(ctx, s.UI(), s.Title(title), "No member whose username starts with \""+strings.TrimSpace(v["name"])+"\" has a line on the wall.")
+	}
+	return found, nil
+}
+
+// find shows the lines of members matching a username search.
+func (p *Plugin) find(ctx context.Context, s plugin.Session) error {
+	found, err := p.search(ctx, s, "Find a member's line")
+	if err != nil || len(found) == 0 {
+		return err
+	}
+	pg := p.wallPage(s, found)
+	pg.Title = s.Title(fmt.Sprintf("Wall: %d match(es)", len(found)))
+	return s.UI().Show(ctx, pg)
+}
+
+// moderate lets a moderator find a member's line by username and remove it.
+func (p *Plugin) moderate(ctx context.Context, s plugin.Session) error {
+	found, err := p.search(ctx, s, "Remove a member's line")
+	if err != nil || len(found) == 0 {
+		return err
+	}
 	var items []tui.MenuItem
-	for _, e := range entries {
+	for _, e := range found {
 		items = append(items, tui.MenuItem{Value: strconv.FormatInt(e.UserID, 10), Label: e.Username + ": " + Plain(e.Text)})
 	}
 	items = append(items, tui.MenuItem{Value: "back", Label: "Back"})
@@ -171,4 +216,55 @@ func (p *Plugin) moderate(ctx context.Context, s plugin.Session, entries []Entry
 		return err
 	}
 	return p.Remove(ctx, s.UserID(), owner)
+}
+
+// accessForm lets an administrator choose the groups that can write on the
+// wall and remove any line.
+func (p *Plugin) accessForm(ctx context.Context, s plugin.Session) error {
+	a, err := p.Access(ctx)
+	if err != nil {
+		return err
+	}
+	var opts []form.Option
+	var write, moderate []string
+	for _, g := range a.Groups {
+		label := g.Name
+		if g.Description != "" {
+			label += ": " + g.Description
+		}
+		id := strconv.FormatInt(g.ID, 10)
+		opts = append(opts, form.Option{Value: id, Label: label})
+		if a.Write[g.ID] {
+			write = append(write, id)
+		}
+		if a.Moderate[g.ID] {
+			moderate = append(moderate, id)
+		}
+	}
+	fm := &form.Form{
+		Title: "Who can write and moderate",
+		Intro: "Everyone can read the wall. Administrators can always write and remove lines. " +
+			"These are the wall.write and wall.moderate permissions, so the Groups page in Administration shows the same choices.",
+		Fields: []form.Field{
+			{Name: "write", Label: "Groups that can write a line", Kind: form.Choice, Multi: true, Options: opts},
+			{Name: "moderate", Label: "Groups that can remove any member's line", Kind: form.Choice, Multi: true, Options: opts},
+		},
+	}
+	v, err := s.Form(ctx, fm, form.Values{"write": strings.Join(write, ","), "moderate": strings.Join(moderate, ",")}, nil)
+	if err != nil {
+		return err
+	}
+	ids := func(list string) []int64 {
+		var out []int64
+		for _, x := range strings.Split(list, ",") {
+			if id, err := strconv.ParseInt(x, 10, 64); err == nil {
+				out = append(out, id)
+			}
+		}
+		return out
+	}
+	if err := p.SetAccess(ctx, s.UserID(), ids(v["write"]), ids(v["moderate"])); err != nil {
+		return err
+	}
+	return tui.Message(ctx, s.UI(), s.Title("Wall"), "Saved.")
 }

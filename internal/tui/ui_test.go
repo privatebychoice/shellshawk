@@ -478,3 +478,38 @@ func TestLiveEndsWhenIncomingCloses(t *testing.T) {
 		t.Fatal("Live did not end when Incoming closed")
 	}
 }
+
+func TestLinesMultiChoiceNone(t *testing.T) {
+	opts := []form.Option{{Value: "a", Label: "Alpha"}, {Value: "b", Label: "Bravo"}}
+	tests := []struct {
+		name, input string
+		required    bool
+		want        string
+		wantOut     string
+	}{
+		{"none clears", "none\r", false, "", "or none to choose nothing"},
+		{"none in any case", " NONE \r", false, "", ""},
+		{"enter keeps the current choice", "\r", false, "a,b", ""},
+		{"numbers pick", "2\r", false, "b", ""},
+		{"required: none is refused, then a pick", "none\r1\r", true, "a", "Error:"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fm := &form.Form{Title: "Groups", Fields: []form.Field{{Name: "g", Label: "Groups", Kind: form.Choice, Multi: true, Required: tt.required, Options: opts}}}
+			tm, out := newTestTerm(tt.input, true)
+			v, err := NewLines(tm, 0).Form(ctxT(t), fm, form.Values{"g": "a,b"}, nil)
+			if err != nil {
+				t.Fatalf("Form: %v\n%s", err, out.String())
+			}
+			if v["g"] != tt.want {
+				t.Errorf("value = %q, want %q\n%s", v["g"], tt.want, out.String())
+			}
+			if !strings.Contains(out.String(), tt.wantOut) {
+				t.Errorf("output missing %q:\n%s", tt.wantOut, out.String())
+			}
+			if tt.required && strings.Contains(out.String(), "or none to choose nothing") {
+				t.Error("none offered for a required choice")
+			}
+		})
+	}
+}

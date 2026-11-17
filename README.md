@@ -90,7 +90,9 @@ removed or locked.
   submits a form, Esc goes back. Menus accept arrow keys or the item number.
 - **Screen reader mode**: no colours, no screen drawing — every screen starts
   with `Screen: <name>`, fields are asked one at a time, and long pages pause
-  every N lines. Choose it at registration (type `s`), or later under
+  every N lines. Where several choices are allowed, type their numbers
+  separated by commas; press Enter to keep the current choice, or type
+  `none` to choose nothing. Choose it at registration (type `s`), or later under
   *Display settings → Terminal type*. Clients that do not request a terminal
   (e.g. `ssh -T`) always get this mode.
 - **Terminal types**: Modern (24-bit colour), PuTTY (256 colours, italic as a
@@ -219,8 +221,12 @@ every request, so locking an account takes effect immediately.
   age. Use `**bold**` and `*italic*` (or `_italic_`); nothing else is
   formatted. Edit or remove your line any time; it disappears 7 days after
   your last edit (administrators can change this under the Wall settings,
-  1 hour to 365 days) and is then deleted. `wall.write` goes to members,
-  `wall.moderate` (remove anyone's line) to moderators.
+  1 hour to 365 days) and is then deleted. *Find a member's line*
+  searches by username (or the start of one); moderators use the same
+  search to remove a line. `wall.write` goes to members and
+  `wall.moderate` (remove anyone's line) to moderators by default;
+  administrators choose the groups for each under *Choose who can write
+  and moderate* in the Wall menu.
 - **Editor**: full screen it works like nano — Ctrl-O save, Ctrl-X exit,
   Ctrl-K cut line, Ctrl-U paste, Ctrl-W find, Ctrl-P preview, Ctrl-G help.
   In screen reader mode, type lines and finish with `.` on its own line
