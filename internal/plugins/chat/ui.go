@@ -410,29 +410,39 @@ func (p *Plugin) manage(ctx context.Context, s plugin.Session) error {
 	if err != nil || choice == "back" {
 		return err
 	}
-	permOpts := []form.Option{{Value: "none", Label: "Anyone who can chat"}}
-	for _, pm := range p.h.Perms.Registry().All() {
-		permOpts = append(permOpts, form.Option{Value: pm.Name, Label: pm.Name + ": " + pm.Description})
-	}
 	if choice == "new" {
-		fm := &form.Form{Title: "Create a channel", Fields: []form.Field{
-			{Name: "name", Label: "Name", Kind: form.SingleLine, Required: true, MaxLen: 32},
-			{Name: "topic", Label: "Topic", Kind: form.SingleLine, MaxLen: MaxTopic},
-			{Name: "perm", Label: "Who can join", Kind: form.Choice, Required: true, Options: permOpts,
-				Help: "Members also need this permission. Grant it to a group to make a group channel."},
-			{Name: "days", Label: "Keep the log for this many days (0 = do not log)", Kind: form.SingleLine, Subtype: form.Int,
-				Required: true, Min: form.Bound(0), Max: form.Bound(MaxRetention)},
-		}}
-		v, err := s.Form(ctx, fm, form.Values{"perm": "none", "days": strconv.Itoa(DefaultRetention)}, nil)
+		groups, err := p.h.Perms.Groups(ctx)
 		if err != nil {
 			return err
 		}
-		pm := v["perm"]
-		if pm == "none" {
-			pm = ""
+		var groupOpts []form.Option
+		for _, g := range groups {
+			label := g.Name
+			if g.Description != "" {
+				label += ": " + g.Description
+			}
+			groupOpts = append(groupOpts, form.Option{Value: strconv.FormatInt(g.ID, 10), Label: label})
+		}
+		fm := &form.Form{Title: "Create a channel", Fields: []form.Field{
+			{Name: "name", Label: "Name", Kind: form.SingleLine, Required: true, MaxLen: 32},
+			{Name: "topic", Label: "Topic", Kind: form.SingleLine, MaxLen: MaxTopic},
+			{Name: "groups", Label: "Only these groups can join", Kind: form.Choice, Multi: true, Options: groupOpts,
+				Help: "Choose none to open it to everyone who can chat. Choose one or more groups to make it members-only: anyone in any chosen group can join. Administrators can always join."},
+			{Name: "days", Label: "Keep the log for this many days (0 = do not log)", Kind: form.SingleLine, Subtype: form.Int,
+				Required: true, Min: form.Bound(0), Max: form.Bound(MaxRetention)},
+		}}
+		v, err := s.Form(ctx, fm, form.Values{"days": strconv.Itoa(DefaultRetention)}, nil)
+		if err != nil {
+			return err
+		}
+		var ids []int64
+		for _, g := range strings.Split(v["groups"], ",") {
+			if id, err := strconv.ParseInt(g, 10, 64); err == nil {
+				ids = append(ids, id)
+			}
 		}
 		days, _ := strconv.Atoi(v["days"])
-		if _, err := p.Create(ctx, s.UserID(), NewChannel{Name: v["name"], Kind: KindPersistent, Topic: v["topic"], Permission: pm, RetentionDays: days}); err != nil {
+		if _, err := p.Create(ctx, s.UserID(), NewChannel{Name: v["name"], Kind: KindPersistent, Topic: v["topic"], Groups: ids, RetentionDays: days}); err != nil {
 			return err
 		}
 		return tui.Message(ctx, s.UI(), s.Title("Manage channels"), "Channel created.")

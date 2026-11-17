@@ -500,7 +500,11 @@ menu so it can be enabled again.
 | **User list** | All users (respecting privacy), my contacts, contact groups, online now. Stage 8: shows usernames and join dates only; online status (in-memory presence of open BBS sessions) only between friends until the privacy settings define it. |
 | **Chat** | Channel types shown as a tag: `[P]` persistent, `[T]` thread (conference), `[A]` ad hoc, `[D]` direct. Commands `/who /channels /join /part /topic /kick /invite /createchat /destroychat`. Logging on by default, stored in SQLite, downloadable over SFTP by permitted users. Retention **90 days** default, overridable per channel (0 = logging off). Web uses SSE (no third-party websocket libraries). |
 
-Each channel's join banner states whether it is logged and for how long. Implemented (stage 8): channel kinds persistent/adhoc/thread; ad hoc
+Each channel's join banner states whether it is logged and for how long. A
+persistent channel is open to everyone who can chat or limited to one or
+more groups (members of any of them, plus administrators; it stays closed
+if all its groups are deleted); chat schema version 2 converted the
+original single per-channel permission to the groups holding it. Implemented (stage 8): channel kinds persistent/adhoc/thread; ad hoc
 chats are invite-only (creator, invitees, chat moderators); kick removes
 the member now and, in ad hoc chats, withdraws the invitation; join/leave
 events are broadcast but not logged (only messages and topic changes are);

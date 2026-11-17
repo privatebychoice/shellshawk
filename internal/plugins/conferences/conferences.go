@@ -921,7 +921,7 @@ func (p *Plugin) EnableChat(ctx context.Context, user, thread int64) (int64, err
 	// Access follows the conference's groups through chatAccess.
 	var id int64
 	for _, name := range chatNames(c.Slug, t.Title, thread) {
-		id, err = p.chat.EnsureThreadChannel(ctx, threadChatContext(thread), name, t.Title, "")
+		id, err = p.chat.EnsureThreadChannel(ctx, threadChatContext(thread), name, t.Title)
 		if !errors.Is(err, chat.ErrExists) {
 			break
 		}

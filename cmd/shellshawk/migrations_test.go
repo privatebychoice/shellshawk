@@ -17,6 +17,7 @@ import (
 // version instead, then add its checksum here.
 var releasedMigrations = map[string]string{
 	"chat/1":                        "7f5d4611b2ae7751835b0d6c98686c6c149eadf0fa3b49656db8a432c102f8a1",
+	"chat/2":                        "2ef871e6eec171036507f2ec33c5f8b0ef34f7f6873271d9e2600565ef4ff2af",
 	"conferences/1":                 "647a386701537f4c3af107735db298a5bb154a7a0c5dd6d8b0e33a61e0c8b043",
 	"conferences/2":                 "e71189ff9d07a954e81f32ed87cd8deeafe283a6e039c5c7aacb46a9abf617c9",
 	"contacts/1":                    "7b06afb0e44bfa2368f93e2f8e8a0526f92d478598575d62656c89a4eb29d3f8",

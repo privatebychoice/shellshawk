@@ -1,8 +1,11 @@
 package chat
 
 import (
+	"context"
 	"errors"
 	"log/slog"
+	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -12,6 +15,7 @@ import (
 	"go.privatebychoice.com/shellshawk/internal/plugin"
 	"go.privatebychoice.com/shellshawk/internal/plugins/plugintest"
 	"go.privatebychoice.com/shellshawk/internal/sftpd"
+	"go.privatebychoice.com/shellshawk/internal/store"
 	"go.privatebychoice.com/shellshawk/internal/tui"
 )
 
@@ -43,7 +47,11 @@ func TestAccessRules(t *testing.T) {
 		t.Fatalf("seeded lobby = %+v, %v", lobby, err)
 	}
 	f.Perms.Registry().Register("club.member", "Club")
-	staff, err := f.p.Create(f.Ctx, f.mod, NewChannel{Name: "staff", Kind: KindPersistent, Permission: perm.UsersApprove, RetentionDays: 30})
+	modGroup, err := f.Perms.GroupByName(f.Ctx, perm.GroupModerator)
+	if err != nil {
+		t.Fatal(err)
+	}
+	staff, err := f.p.Create(f.Ctx, f.mod, NewChannel{Name: "staff", Kind: KindPersistent, Groups: []int64{modGroup.ID}, RetentionDays: 30})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -278,11 +286,11 @@ func TestRetentionAndSFTP(t *testing.T) {
 
 func TestThreadChannel(t *testing.T) {
 	f := setup(t)
-	id, err := f.p.EnsureThreadChannel(f.Ctx, "conferences:thread:7", "t-7-hello", "Hello", "")
+	id, err := f.p.EnsureThreadChannel(f.Ctx, "conferences:thread:7", "t-7-hello", "Hello")
 	if err != nil {
 		t.Fatal(err)
 	}
-	again, err := f.p.EnsureThreadChannel(f.Ctx, "conferences:thread:7", "t-7-hello", "Hello", "")
+	again, err := f.p.EnsureThreadChannel(f.Ctx, "conferences:thread:7", "t-7-hello", "Hello")
 	if err != nil || again != id {
 		t.Errorf("second ensure = %d, %v; want %d", again, err, id)
 	}
@@ -296,3 +304,119 @@ func TestThreadChannel(t *testing.T) {
 type fakeSession struct{ plugin.Session }
 
 func (fakeSession) Log() *slog.Logger { return slog.New(slog.DiscardHandler) }
+
+func TestChannelGroups(t *testing.T) {
+	f := setup(t)
+	staffID, err := f.Perms.CreateGroup(f.Ctx, f.Admin, "staff", "Staff")
+	if err != nil {
+		t.Fatal(err)
+	}
+	modGroup, _ := f.Perms.GroupByName(f.Ctx, perm.GroupModerator)
+	dave := f.User("dave", perm.GroupMember, "staff")
+	both, err := f.p.Create(f.Ctx, f.mod, NewChannel{Name: "ops", Kind: KindPersistent, Groups: []int64{staffID, modGroup.ID}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	staffOnly, err := f.p.Create(f.Ctx, f.mod, NewChannel{Name: "staffroom", Kind: KindPersistent, Groups: []int64{staffID}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.p.Create(f.Ctx, f.mod, NewChannel{Name: "ghost", Kind: KindPersistent, Groups: []int64{99999}}); !errors.Is(err, ErrInvalid) {
+		t.Errorf("unknown group err = %v, want ErrInvalid", err)
+	}
+	adhoc, err := f.p.Create(f.Ctx, f.alice, NewChannel{Name: "mine", Kind: KindAdHoc, Groups: []int64{staffID}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c, _ := f.p.Get(f.Ctx, adhoc); c.Restricted || len(c.Groups) != 0 {
+		t.Errorf("private chat kept groups: %+v (it is invite-only)", c)
+	}
+
+	tests := []struct {
+		name    string
+		user    int64
+		channel int64
+		want    bool
+	}{
+		{"member, not in any group", f.alice, both, false},
+		{"in the first group", dave, both, true},
+		{"in the second group", f.mod, both, true},
+		{"administrator", f.Admin, both, true},
+		{"in the only group", dave, staffOnly, true},
+		{"moderator outside the group", f.mod, staffOnly, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c, _ := f.p.Get(f.Ctx, tt.channel)
+			if got, err := f.p.CanAccess(f.Ctx, tt.user, c); got != tt.want || err != nil {
+				t.Errorf("CanAccess = %v (err %v), want %v", got, err, tt.want)
+			}
+		})
+	}
+
+	// Deleting the only group must leave the channel closed, not open.
+	if err := f.Perms.DeleteGroup(f.Ctx, f.Admin, staffID); err != nil {
+		t.Fatal(err)
+	}
+	c, _ := f.p.Get(f.Ctx, staffOnly)
+	if ok, _ := f.p.CanAccess(f.Ctx, f.alice, c); ok {
+		t.Error("after its group was deleted, any member can join the channel")
+	}
+	if ok, _ := f.p.CanAccess(f.Ctx, f.Admin, c); !ok {
+		t.Error("administrator lost access")
+	}
+}
+
+// TestMigrationConvertsPermission checks that version 2 turns a version 1
+// channel permission into the groups that held it, leaving private chats
+// invite-only.
+func TestMigrationConvertsPermission(t *testing.T) {
+	ctx := context.Background()
+	log := slog.New(slog.DiscardHandler)
+	db, err := store.Open(ctx, filepath.Join(t.TempDir(), "m.db"), log)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	migs := New().Manifest().Migrations
+	if err := store.Migrate(ctx, db, "chat", migs[:1], log); err != nil {
+		t.Fatal(err)
+	}
+	var modGroup int64
+	if err := db.QueryRowContext(ctx, `SELECT id FROM access_groups WHERE name = ?`, perm.GroupModerator).Scan(&modGroup); err != nil {
+		t.Fatal(err)
+	}
+	for _, q := range []string{
+		`INSERT INTO access_group_permissions (group_id, permission) VALUES (` + strconv.FormatInt(modGroup, 10) + `, 'test.secret')`,
+		`INSERT INTO chat_channels (name, kind, permission, created_at) VALUES ('secret', 'persistent', 'test.secret', '2026-01-01T00:00:00Z')`,
+		`INSERT INTO chat_channels (name, kind, permission, created_at) VALUES ('dm', 'adhoc', 'test.secret', '2026-01-01T00:00:00Z')`,
+	} {
+		if _, err := db.ExecContext(ctx, q); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := store.Migrate(ctx, db, "chat", migs, log); err != nil {
+		t.Fatal(err)
+	}
+	tests := []struct {
+		name           string
+		wantRestricted bool
+		wantGroups     string
+	}{
+		{"lobby", false, ""},
+		{"secret", true, strconv.FormatInt(modGroup, 10)},
+		{"dm", false, ""},
+	}
+	for _, tt := range tests {
+		var restricted bool
+		var groups string
+		err := db.QueryRowContext(ctx, `SELECT c.restricted, COALESCE((SELECT group_concat(group_id) FROM chat_channel_groups WHERE channel_id = c.id), '')
+			FROM chat_channels c WHERE c.name = ?`, tt.name).Scan(&restricted, &groups)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if restricted != tt.wantRestricted || groups != tt.wantGroups {
+			t.Errorf("%s: restricted=%v groups=%q, want %v %q", tt.name, restricted, groups, tt.wantRestricted, tt.wantGroups)
+		}
+	}
+}

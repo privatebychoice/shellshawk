@@ -195,8 +195,9 @@ every request, so locking an account takes effect immediately.
   contacts* and *Send a message*. Until privacy settings exist, online
   status is shown only between friends (mutual contacts).
 - **Chat**: live channels. `[P]` persistent channels are run by chat
-  moderators (who can restrict them by permission and set how long the log
-  is kept, 0 = not logged); `[A]` private chats are invite-only and can be
+  moderators (who can limit them to one or more groups — members of any
+  chosen group, plus administrators — and set how long the log is kept,
+  0 = not logged); `[A]` private chats are invite-only and can be
   started by any member; `[T]` thread chats belong to conference threads.
   Commands: `/help`, `/who`, `/channels`, `/join`, `/topic`, `/invite`,
   `/kick`, `/createchat`, `/destroychat`, `/quit`. Logging is on by default

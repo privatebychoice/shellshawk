@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"go.privatebychoice.com/shellshawk/internal/events"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -72,7 +73,7 @@ type Plugin struct {
 type ThreadAccessFunc func(ctx context.Context, user int64, context string) (bool, error)
 
 // SetThreadAccess makes fn decide access to thread channels whose context
-// starts with prefix, instead of the channel's permission, so the chat
+// starts with prefix, instead of the channel's groups, so the chat
 // follows the owning feature's rules (e.g. a conference's groups). Call it
 // before the server starts.
 func (p *Plugin) SetThreadAccess(prefix string, fn ThreadAccessFunc) {
@@ -133,7 +134,28 @@ func (p *Plugin) Manifest() plugin.Manifest {
 			CREATE INDEX chat_messages_channel ON chat_messages (channel_id, created_at);
 
 			INSERT INTO chat_channels (name, kind, topic, created_at)
-				VALUES ('lobby', 'persistent', 'General chat', strftime('%Y-%m-%dT%H:%M:%SZ', 'now'));`}},
+				VALUES ('lobby', 'persistent', 'General chat', strftime('%Y-%m-%dT%H:%M:%SZ', 'now'));`}, {Version: 2, Name: "channel groups", SQL: `
+			-- Group channels: a restricted channel is open to members of any
+			-- listed group (and administrators). A restricted channel whose
+			-- groups were all deleted stays closed rather than opening to
+			-- everyone. Thread channels follow their owner (SetThreadAccess).
+			CREATE TABLE chat_channel_groups (
+				channel_id INTEGER NOT NULL REFERENCES chat_channels (id) ON DELETE CASCADE,
+				group_id   INTEGER NOT NULL REFERENCES access_groups (id) ON DELETE CASCADE,
+				PRIMARY KEY (channel_id, group_id)
+			) STRICT, WITHOUT ROWID;
+			CREATE INDEX chat_channel_groups_group ON chat_channel_groups (group_id);
+
+			ALTER TABLE chat_channels ADD COLUMN restricted INTEGER NOT NULL DEFAULT 0 CHECK (restricted IN (0, 1));
+
+			-- Version 1 restricted a channel by one permission: convert it to
+			-- the groups that held that permission.
+			UPDATE chat_channels SET restricted = 1 WHERE permission <> '' AND kind <> 'adhoc';
+			INSERT INTO chat_channel_groups (channel_id, group_id)
+				SELECT c.id, gp.group_id FROM chat_channels c
+				JOIN access_group_permissions gp ON gp.permission = c.permission
+				WHERE c.permission <> '' AND c.kind <> 'adhoc';
+			ALTER TABLE chat_channels DROP COLUMN permission;`}},
 		MenuItems: []plugin.MenuItem{{Key: "main", Label: "Chat", Help: "Live chat channels", AnyOf: []string{PermUse}, Run: p.run}},
 		Web:       p.webRoutes(),
 		SFTP:      []sftpd.Mount{{Name: "chat", AnyOf: []string{PermUse}, FS: &logFS{p: p}}},
@@ -169,11 +191,14 @@ func (p *Plugin) Init(ctx context.Context, h *plugin.Host) error {
 
 // Channel is a chat channel.
 type Channel struct {
-	ID            int64
-	Name          string
-	Kind          string
-	Topic         string
-	Permission    string
+	ID    int64
+	Name  string
+	Kind  string
+	Topic string
+	// Restricted persistent channels are open only to members of Groups
+	// (group IDs) and administrators.
+	Restricted    bool
+	Groups        []int64
 	CreatorID     int64
 	RetentionDays int
 	Context       string
@@ -202,11 +227,19 @@ func (c Channel) KindName() string {
 	return "channel"
 }
 
-const channelCols = `id, name, kind, topic, permission, COALESCE(creator_id, 0), retention_days, context`
+const channelCols = `id, name, kind, topic, restricted,
+	COALESCE((SELECT group_concat(group_id) FROM chat_channel_groups WHERE channel_id = chat_channels.id), ''),
+	COALESCE(creator_id, 0), retention_days, context`
 
 func scanChannel(row interface{ Scan(...any) error }) (Channel, error) {
 	var c Channel
-	err := row.Scan(&c.ID, &c.Name, &c.Kind, &c.Topic, &c.Permission, &c.CreatorID, &c.RetentionDays, &c.Context)
+	var groups string
+	err := row.Scan(&c.ID, &c.Name, &c.Kind, &c.Topic, &c.Restricted, &groups, &c.CreatorID, &c.RetentionDays, &c.Context)
+	for _, g := range strings.Split(groups, ",") {
+		if id, perr := strconv.ParseInt(g, 10, 64); perr == nil {
+			c.Groups = append(c.Groups, id)
+		}
+	}
 	return c, err
 }
 
@@ -249,7 +282,19 @@ func (p *Plugin) CanAccess(ctx context.Context, user int64, c Channel) (bool, er
 			}
 		}
 	}
-	return c.Permission == "" || set.Has(c.Permission), nil
+	if !c.Restricted || set.Has(perm.Admin) {
+		return true, nil
+	}
+	mine, err := p.h.Perms.UserGroupIDs(ctx, user)
+	if err != nil {
+		return false, err
+	}
+	for _, g := range c.Groups {
+		if mine[g] {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // canModerate reports whether user may kick, change the topic or close c.
@@ -309,10 +354,12 @@ func cleanTopic(t string) (string, error) {
 
 // NewChannel describes a channel to create.
 type NewChannel struct {
-	Name          string
-	Kind          string
-	Topic         string
-	Permission    string // persistent/thread: extra permission to join
+	Name  string
+	Kind  string
+	Topic string
+	// Groups, for persistent channels: only members of one of them (and
+	// administrators) may join. None means anyone who can chat.
+	Groups        []int64
 	RetentionDays int
 	Context       string
 }
@@ -334,7 +381,7 @@ func (p *Plugin) Create(ctx context.Context, actor int64, n NewChannel) (int64, 
 		if !set.Has(PermCreate) {
 			return 0, perm.ErrForbidden
 		}
-		n.Permission = ""
+		n.Groups = nil
 	default:
 		return 0, fmt.Errorf("%w: kind", ErrInvalid)
 	}
@@ -350,8 +397,10 @@ func (p *Plugin) insert(ctx context.Context, creator int64, n NewChannel) (int64
 	if err != nil {
 		return 0, err
 	}
-	if n.Permission != "" && !p.h.Perms.Registry().Known(n.Permission) {
-		return 0, fmt.Errorf("%w: unknown permission %q", ErrInvalid, n.Permission)
+	for _, g := range n.Groups {
+		if _, err := p.h.Perms.GroupByID(ctx, g); err != nil {
+			return 0, fmt.Errorf("%w: unknown group %d", ErrInvalid, g)
+		}
 	}
 	if n.RetentionDays < 0 || n.RetentionDays > MaxRetention {
 		return 0, fmt.Errorf("%w: retention must be 0 to %d days", ErrInvalid, MaxRetention)
@@ -360,24 +409,36 @@ func (p *Plugin) insert(ctx context.Context, creator int64, n NewChannel) (int64
 	if creator != 0 {
 		creatorArg = creator
 	}
-	res, err := p.h.DB.ExecContext(ctx, `INSERT INTO chat_channels (name, kind, topic, permission, creator_id, retention_days, context, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (name) DO NOTHING`,
-		name, n.Kind, topic, n.Permission, creatorArg, n.RetentionDays, n.Context, store.FormatTime(p.now()))
+	var id int64
+	err = store.WithTx(ctx, p.h.DB, func(tx *sql.Tx) error {
+		res, err := tx.ExecContext(ctx, `INSERT INTO chat_channels (name, kind, topic, restricted, creator_id, retention_days, context, created_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (name) DO NOTHING`,
+			name, n.Kind, topic, len(n.Groups) > 0, creatorArg, n.RetentionDays, n.Context, store.FormatTime(p.now()))
+		if err != nil {
+			return fmt.Errorf("chat: create: %w", err)
+		}
+		if rows, _ := res.RowsAffected(); rows == 0 {
+			return ErrExists
+		}
+		id, _ = res.LastInsertId()
+		for _, g := range n.Groups {
+			if _, err := tx.ExecContext(ctx, `INSERT OR IGNORE INTO chat_channel_groups (channel_id, group_id) VALUES (?, ?)`, id, g); err != nil {
+				return fmt.Errorf("chat: create: %w", err)
+			}
+		}
+		return nil
+	})
 	if err != nil {
-		return 0, fmt.Errorf("chat: create: %w", err)
+		return 0, err
 	}
-	if rows, _ := res.RowsAffected(); rows == 0 {
-		return 0, ErrExists
-	}
-	id, _ := res.LastInsertId()
-	p.h.Log.Info("channel created", "channel_id", id, "kind", n.Kind, "creator", creator)
+	p.h.Log.Info("channel created", "channel_id", id, "kind", n.Kind, "creator", creator, "groups", len(n.Groups))
 	return id, nil
 }
 
 // EnsureThreadChannel returns the thread channel for context, creating it
-// if needed. permission is the extra permission needed to join (the
-// conference's), or "". For use by other plugins.
-func (p *Plugin) EnsureThreadChannel(ctx context.Context, context, name, topic, permission string) (int64, error) {
+// if needed. For use by other plugins, which decide who may join through
+// SetThreadAccess.
+func (p *Plugin) EnsureThreadChannel(ctx context.Context, context, name, topic string) (int64, error) {
 	var id int64
 	err := p.h.DB.QueryRowContext(ctx, `SELECT id FROM chat_channels WHERE kind = 'thread' AND context = ?`, context).Scan(&id)
 	if err == nil {
@@ -386,7 +447,7 @@ func (p *Plugin) EnsureThreadChannel(ctx context.Context, context, name, topic, 
 	if !errors.Is(err, sql.ErrNoRows) {
 		return 0, err
 	}
-	return p.insert(ctx, 0, NewChannel{Name: name, Kind: KindThread, Topic: topic, Permission: permission, RetentionDays: DefaultRetention, Context: context})
+	return p.insert(ctx, 0, NewChannel{Name: name, Kind: KindThread, Topic: topic, RetentionDays: DefaultRetention, Context: context})
 }
 
 // Destroy deletes a channel and its log, removing anyone inside. Ad hoc
