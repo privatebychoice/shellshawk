@@ -228,27 +228,7 @@ func (p *Plugin) Run(ctx context.Context, s plugin.Session, id int64) error {
 }
 
 func describe(pl Poll, closed bool) string {
-	var b strings.Builder
-	b.WriteString(pl.Question)
-	if pl.Multi {
-		b.WriteString(" You may choose more than one option.")
-	}
-	if pl.Anonymous {
-		b.WriteString(" Votes are anonymous.")
-	} else {
-		b.WriteString(" Votes are not anonymous: everyone can see who voted for what.")
-	}
-	switch {
-	case closed:
-		b.WriteString(" This poll is closed.")
-	case pl.ClosesAt != nil:
-		b.WriteString(" Closes " + pl.ClosesAt.UTC().Format("2006-01-02 15:04 UTC") + ".")
-	}
-	if len(pl.MyVotes) > 0 {
-		b.WriteString(" You have voted.")
-	}
-	fmt.Fprintf(&b, " Created by %s.", pl.Creator)
-	return b.String()
+	return pl.Question + " " + about(pl, closed)
 }
 
 func (p *Plugin) voteForm(ctx context.Context, s plugin.Session, pl Poll) error {

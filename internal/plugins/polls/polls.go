@@ -106,6 +106,7 @@ func (p *Plugin) Manifest() plugin.Manifest {
 			) STRICT;
 			CREATE INDEX polls_votes_poll_user ON polls_votes (poll_id, user_id);`}},
 		MenuItems: []plugin.MenuItem{{Key: "main", Label: "Polls", Help: "Vote and see results", Run: p.run}},
+		Web:       p.webRoutes(),
 		Export:    p.export,
 	}
 }

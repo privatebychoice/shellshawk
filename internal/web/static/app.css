@@ -52,3 +52,12 @@ header button { background: var(--title-fg); color: var(--title-bg); }
 .live form input[type=text] { font: inherit; width: 100%; max-width: 40rem; padding: .4rem; background: var(--input-bg); color: var(--input-fg); border: 2px solid var(--muted); box-sizing: border-box; }
 .motd { border: 2px solid var(--rule); padding: .5rem 1rem; margin: 1rem 0; }
 .motd h2 { margin-top: 0; }
+.poll { border: 2px solid var(--rule); padding: .5rem 1rem; margin: 1rem 0; }
+.poll h2, .poll h3 { margin-top: 0; }
+.poll fieldset { border: 2px solid var(--muted); margin: .5rem 0; max-width: 40rem; }
+.poll legend { font-weight: 600; padding: 0 .3rem; }
+.poll fieldset p { margin: .35rem 0; }
+.poll input[type=radio], .poll input[type=checkbox] { width: 1.1rem; height: 1.1rem; vertical-align: middle; accent-color: var(--focus-bg); }
+.results { list-style: none; padding: 0; }
+.results li { margin: .6rem 0; }
+.results meter { width: 100%; max-width: 24rem; height: 1rem; }

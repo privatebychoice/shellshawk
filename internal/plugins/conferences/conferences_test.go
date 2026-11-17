@@ -3,7 +3,9 @@ package conferences
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
+	"net/url"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -458,6 +460,69 @@ func TestThreadChatNamesAndClosing(t *testing.T) {
 	again, err := f.p.EnableChat(f.Ctx, f.mod, tid)
 	if err != nil || again == cid {
 		t.Errorf("re-enabling: id %d (old %d), err %v", again, cid, err)
+	}
+}
+
+func TestWebThreadPolls(t *testing.T) {
+	f := setup(t)
+	tid, _, _ := f.p.StartThread(f.Ctx, f.alice, f.general, "Lunch", "Where?")
+	reply, _ := f.p.Reply(f.Ctx, f.bob, tid, "Let us vote")
+	pollID, err := f.polls.Create(f.Ctx, polls.Spec{Question: "Pizza <or> soup?", Options: []string{"Pizza", "Soup"}, CreatorID: f.bob, Context: pollContext(reply)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	otherTid, _, _ := f.p.StartThread(f.Ctx, f.alice, f.general, "Other", "x")
+	staffTid, staffPost, _ := f.p.StartThread(f.Ctx, f.mod, f.staffCnf, "Staff", "x")
+	staffPoll, _ := f.polls.Create(f.Ctx, polls.Spec{Question: "Secret?", Options: []string{"a", "b"}, CreatorID: f.mod, Context: pollContext(staffPost)})
+	pl, _ := f.polls.Get(f.Ctx, f.alice, pollID)
+	soup := strconv.FormatInt(pl.Options[1].ID, 10)
+	ids := func(thread, poll int64) map[string]string {
+		return map[string]string{"id": strconv.FormatInt(thread, 10), "poll": strconv.FormatInt(poll, 10)}
+	}
+
+	page, err := f.WebGet(f.p, "/t/{id}", map[string]string{"id": strconv.FormatInt(tid, 10)}, f.alice)
+	b := string(page.Body)
+	action := fmt.Sprintf(`action="/p/conferences/t/%d/poll/%d"`, tid, pollID)
+	if err != nil || !strings.Contains(b, fmt.Sprintf(`<h3 id="poll-%d-q">Pizza &lt;or&gt; soup?</h3>`, pollID)) || !strings.Contains(b, action) ||
+		strings.Index(b, "Post 2 by bob") > strings.Index(b, "Pizza &lt;or&gt;") || strings.Contains(b, "vote over SSH") {
+		t.Fatalf("thread page = %s, %v", b, err)
+	}
+
+	tests := []struct {
+		name         string
+		user         int64
+		thread, poll int64
+		notFound     bool
+	}{
+		{"poll on a post in this thread", f.alice, tid, pollID, false},
+		{"poll from another thread", f.alice, otherTid, pollID, true},
+		{"thread in a conference the member cannot read", f.alice, staffTid, staffPoll, true},
+		{"unknown poll", f.alice, tid, 9999, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			res, err := f.WebPost(f.p, "/t/{id}/poll/{poll}", ids(tt.thread, tt.poll), url.Values{"option": {soup}}, tt.user)
+			if tt.notFound {
+				if !errors.Is(err, plugin.ErrWebNotFound) {
+					t.Errorf("err = %v, want not found", err)
+				}
+				return
+			}
+			if want := fmt.Sprintf("/p/conferences/t/%d#poll-%d", tt.thread, tt.poll); err != nil || res.Redirect != want {
+				t.Errorf("vote = %+v, %v; want redirect %s", res, err, want)
+			}
+		})
+	}
+	if got, _ := f.polls.Get(f.Ctx, f.alice, pollID); len(got.MyVotes) != 1 || got.MyVotes[0] != pl.Options[1].ID {
+		t.Errorf("recorded votes = %v", got.MyVotes)
+	}
+	if got, _ := f.polls.Get(f.Ctx, f.mod, staffPoll); got.Voters != 0 {
+		t.Error("a vote reached a poll in a conference the member cannot read")
+	}
+	page, _ = f.WebGet(f.p, "/t/{id}", map[string]string{"id": strconv.FormatInt(tid, 10)}, f.alice)
+	if b := string(page.Body); !strings.Contains(b, "Option 2, Soup: 1 vote(s), 100 percent (your vote).") ||
+		!strings.Contains(b, fmt.Sprintf(`<h4 id="poll-%d-results">Results</h4>`, pollID)) {
+		t.Errorf("after voting:\n%s", b)
 	}
 }
 

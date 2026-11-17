@@ -206,7 +206,9 @@ every request, so locking an account takes effect immediately.
   automatic closing, changeable votes while open. Results appear after you
   vote or when the poll closes, with counts and percentages written out.
   Pinned polls are listed first. `polls.vote`/`polls.create` go to
-  members, `polls.manage` (pin, close, delete any) to moderators.
+  members, `polls.manage` (pin, close, delete any) to moderators. On the
+  web you can vote (native radio buttons or checkboxes) and read results;
+  polls are created, closed, pinned and deleted over SSH.
 - **Members**: browse and search members (username and join date only),
   your contacts and contact groups, and a member's profile with *Add to my
   contacts* and *Send a message*. Until privacy settings exist, online
@@ -247,15 +249,17 @@ every request, so locking an account takes effect immediately.
 
 Optional (`SHELLSHAWK_HTTP_ADDR`); serve it behind a TLS-terminating
 reverse proxy. Mostly read-only: you can take part in a conference thread's
-live chat; posting, other chats and settings stay in the SSH interface.
+live chat and vote in polls; posting, creating polls, other chats and
+settings stay in the SSH interface.
 
 | Path | Description |
 |------|-------------|
 | `/` | Start page: how to connect, the SSH host key fingerprint, how to join |
 | `/login` | Log in with your username and a one-time code from **Web login code** in the BBS main menu (single use, 5 minutes) |
 | `/home` | Your start page once logged in |
-| `/p/conferences/` | Areas, conferences and threads you may read; a thread with a chat shows it live, and you can send messages |
+| `/p/conferences/` | Areas, conferences and threads you may read; polls on posts can be voted in, and a thread with a chat shows it live, and you can send messages |
 | `/p/messages/` | Your inbox; opening a message marks it read |
+| `/p/polls/` | Open polls (pinned first) and closed polls; vote or change your vote, and see results under the same rules as over SSH |
 | `/p/wall/` | The wall (read-only); the message of the day is on `/home` |
 | `/privacy` | Privacy policy (built in, or `SHELLSHAWK_PRIVACY_POLICY_FILE`) |
 | `/.well-known/gpc.json` | Global Privacy Control declaration |
