@@ -28,7 +28,9 @@ import (
 	"go.privatebychoice.com/shellshawk/internal/plugins/conferences"
 	"go.privatebychoice.com/shellshawk/internal/plugins/contacts"
 	"go.privatebychoice.com/shellshawk/internal/plugins/messages"
+	"go.privatebychoice.com/shellshawk/internal/plugins/motd"
 	"go.privatebychoice.com/shellshawk/internal/plugins/polls"
+	"go.privatebychoice.com/shellshawk/internal/plugins/wall"
 	"go.privatebychoice.com/shellshawk/internal/prefs"
 	"go.privatebychoice.com/shellshawk/internal/privacy"
 	"go.privatebychoice.com/shellshawk/internal/settings"
@@ -713,5 +715,46 @@ func TestWebLoginCodeItem(t *testing.T) {
 	}
 	if uid, err := e.handler.WebLogin.Redeem(context.Background(), "quinn", code); err != nil || uid == 0 {
 		t.Errorf("shown code does not work: %v", err)
+	}
+}
+
+// panicLoginPlugin's login hook panics, to prove a plugin bug cannot stop
+// members logging in or later hooks running.
+type panicLoginPlugin struct{}
+
+func (panicLoginPlugin) Manifest() plugin.Manifest {
+	return plugin.Manifest{ID: "brokenlogin", Name: "Broken login", Version: "0.0.1",
+		OnLogin: func(context.Context, plugin.Session) error { panic("login hook bug") }}
+}
+func (panicLoginPlugin) Init(context.Context, *plugin.Host) error { return nil }
+
+func TestMOTDAfterLogin(t *testing.T) {
+	m := motd.New()
+	e := startBBS(t, panicLoginPlugin{}, m, wall.New())
+	signer := e.accessibleAdmin(t, "erin")
+	erin, _ := e.auth.UserByUsername(context.Background(), "erin")
+	if err := m.Set(context.Background(), erin.ID, "**Welcome** to the test BBS"); err != nil {
+		t.Fatal(err)
+	}
+	// First login: the message, dismissed with Enter, then the main menu
+	// (7 Message of the day, 8 Wall, 9 Log out): Log out.
+	out := e.session(t, "erin", ssh.PublicKeys(signer), "\r9\r")
+	for _, want := range []string{"Screen: shellshawk - Message of the day", "Welcome to the test BBS", "7. Message of the day", "8. Wall", "9. Log out"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("first login missing %q", want)
+		}
+	}
+	if strings.Contains(out, "login hook bug") {
+		t.Error("panic detail leaked to the member")
+	}
+	if strings.Index(out, "Welcome to the test BBS") > strings.Index(out, "Main menu") {
+		t.Error("message of the day shown after the main menu, not before")
+	}
+	if t.Failed() {
+		t.Logf("output:\n%s", out)
+	}
+	// Second login: already seen, straight to the menu.
+	if out := e.session(t, "erin", ssh.PublicKeys(signer), "9\r"); strings.Contains(out, "Welcome to the test BBS") {
+		t.Errorf("message shown again:\n%s", out)
 	}
 }

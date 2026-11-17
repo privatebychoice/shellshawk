@@ -196,3 +196,12 @@ func TestStreamOutlivesServerTimeouts(t *testing.T) {
 		t.Fatal("stream did not end on CloseStreams")
 	}
 }
+
+func TestHomePanels(t *testing.T) {
+	e := setup(t, false)
+	cookie := e.login(t, e.alice, "alice")
+	rec := e.do(req{method: "GET", path: "/home", cookie: cookie})
+	if rec.Code != 200 || !strings.Contains(rec.Body.String(), `<section class="notes-panel">Notes for you</section>`) {
+		t.Errorf("home = %d, missing the plugin panel:\n%s", rec.Code, rec.Body)
+	}
+}

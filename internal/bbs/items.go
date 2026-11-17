@@ -130,6 +130,9 @@ func (s *session) visible(ctx context.Context, e menu.Entry, set perm.Set, depth
 
 // home runs the member menu until the member logs out.
 func (s *session) home(ctx context.Context) error {
+	if err := s.loginHooks(ctx); err != nil {
+		return err
+	}
 	err := s.menuLoop(ctx, 0, "Main menu")
 	if errors.Is(err, errLogout) {
 		return nil
@@ -196,6 +199,31 @@ func (s *session) menuLoop(ctx context.Context, parent int64, title string) erro
 // sessionEnded reports errors that mean the connection is gone.
 func sessionEnded(err error) bool {
 	return errors.Is(err, io.EOF) || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)
+}
+
+// loginHooks runs each plugin's OnLogin (e.g. the message of the day).
+// Failures are logged and skipped so a broken plugin cannot block logins;
+// only the session itself ending stops the login.
+func (s *session) loginHooks(ctx context.Context) error {
+	if s.h.Plugins == nil {
+		return nil
+	}
+	for _, p := range s.h.Plugins.Plugins() {
+		hook := p.Manifest.OnLogin
+		if hook == nil {
+			continue
+		}
+		ps := &pluginSession{session: s, log: s.log.With("plugin", p.Manifest.ID, "hook", "login")}
+		err := safeRun(func() error { return hook(ctx, ps) })
+		switch {
+		case err == nil, errors.Is(err, tui.ErrCancelled):
+		case sessionEnded(err):
+			return err
+		default:
+			ps.log.Error("plugin login hook failed", "err", err)
+		}
+	}
+	return nil
 }
 
 // runItem runs a core or plugin menu item. Plugin failures (errors or

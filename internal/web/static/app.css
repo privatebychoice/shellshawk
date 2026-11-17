@@ -50,3 +50,5 @@ header button { background: var(--title-fg); color: var(--title-bg); }
 .chat-log:focus-visible { outline: 3px solid var(--focus-bg); outline-offset: 2px; }
 .live form label { display: block; font-weight: 600; margin-top: .5rem; }
 .live form input[type=text] { font: inherit; width: 100%; max-width: 40rem; padding: .4rem; background: var(--input-bg); color: var(--input-fg); border: 2px solid var(--muted); box-sizing: border-box; }
+.motd { border: 2px solid var(--rule); padding: .5rem 1rem; margin: 1rem 0; }
+.motd h2 { margin-top: 0; }

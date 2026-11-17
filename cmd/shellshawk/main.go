@@ -38,8 +38,10 @@ import (
 	"go.privatebychoice.com/shellshawk/internal/plugins/conferences"
 	"go.privatebychoice.com/shellshawk/internal/plugins/contacts"
 	"go.privatebychoice.com/shellshawk/internal/plugins/messages"
+	"go.privatebychoice.com/shellshawk/internal/plugins/motd"
 	"go.privatebychoice.com/shellshawk/internal/plugins/polls"
 	"go.privatebychoice.com/shellshawk/internal/plugins/userlist"
+	"go.privatebychoice.com/shellshawk/internal/plugins/wall"
 	"go.privatebychoice.com/shellshawk/internal/prefs"
 	"go.privatebychoice.com/shellshawk/internal/presence"
 	"go.privatebychoice.com/shellshawk/internal/privacy"
@@ -88,7 +90,7 @@ func installedPlugins() []plugin.Plugin {
 	m := messages.New(c)
 	pl := polls.New()
 	ch := chat.New()
-	return []plugin.Plugin{c, m, pl, userlist.New(c, m), ch, conferences.New(pl, ch)}
+	return []plugin.Plugin{c, m, pl, userlist.New(c, m), ch, conferences.New(pl, ch), motd.New(), wall.New()}
 }
 
 func run(args []string) error {

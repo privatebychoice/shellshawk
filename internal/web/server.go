@@ -558,7 +558,64 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	d := s.layout(r, "Home", "")
-	s.render(w, r, http.StatusOK, "Home", "dashboard", map[string]any{"User": d.User, "Nav": d.Nav})
+	s.render(w, r, http.StatusOK, "Home", "dashboard", map[string]any{"User": d.User, "Nav": d.Nav, "Panels": s.homePanels(r, sess)})
+}
+
+// homePanels collects plugin panels for the home page (WebHome). A failing
+// plugin is logged and left out rather than breaking the page.
+func (s *Server) homePanels(r *http.Request, sess *websess.Session) []template.HTML {
+	if s.cfg.Plugins == nil {
+		return nil
+	}
+	set, err := s.cfg.Perms.Permissions(r.Context(), sess.UserID)
+	if err != nil {
+		LoggerFrom(r.Context()).Error("home panels: permissions", "err", err)
+		return nil
+	}
+	var out []template.HTML
+	for _, p := range s.cfg.Plugins.Plugins() {
+		if p.Manifest.WebHome == nil || !pluginVisible(set, p.Manifest) {
+			continue
+		}
+		ws := webSession{s: s, user: sess.UserID, plugin: p.Manifest.ID, csrf: sess.CSRF}
+		html, err := safeHome(p.Manifest.WebHome, r, ws)
+		if err != nil {
+			LoggerFrom(r.Context()).Error("home panel failed", "plugin", p.Manifest.ID, "err", err)
+			continue
+		}
+		if html != "" {
+			out = append(out, html)
+		}
+	}
+	return out
+}
+
+// pluginVisible: a home panel is shown to members who may use at least one
+// of the plugin's menu items or pages (or any member if it has neither).
+func pluginVisible(set perm.Set, m plugin.Manifest) bool {
+	gated := false
+	for _, it := range m.MenuItems {
+		gated = true
+		if allowed(set, it.AnyOf) {
+			return true
+		}
+	}
+	for _, r := range m.Web {
+		gated = true
+		if allowed(set, r.AnyOf) {
+			return true
+		}
+	}
+	return !gated
+}
+
+func safeHome(fn func(*http.Request, plugin.WebSession) (template.HTML, error), r *http.Request, ws plugin.WebSession) (html template.HTML, err error) {
+	defer func() {
+		if rec := recover(); rec != nil {
+			err = fmt.Errorf("panic: %v", rec)
+		}
+	}()
+	return fn(r, ws)
 }
 
 // webSession is the member as seen by plugin pages.

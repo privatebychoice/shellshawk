@@ -11,7 +11,9 @@ package plugin
 import (
 	"context"
 	"database/sql"
+	"html/template"
 	"log/slog"
+	"net/http"
 
 	"go.privatebychoice.com/shellshawk/internal/auth"
 	"go.privatebychoice.com/shellshawk/internal/events"
@@ -66,6 +68,13 @@ type Manifest struct {
 	// data export at /me/export/<id>/ (right of access). Plugins that store
 	// member data must provide it, and must also handle events.UserErased.
 	Export func(ctx context.Context, userID int64) ([]export.File, error)
+	// OnLogin, if set, runs after a member logs in over SSH and before the
+	// main menu (e.g. a message of the day). Errors and panics are logged
+	// and never stop the login.
+	OnLogin func(ctx context.Context, s Session) error
+	// WebHome, if set, adds a panel to the logged-in web home page; ""
+	// shows nothing. The HTML must be built with html/template.
+	WebHome func(r *http.Request, s WebSession) (template.HTML, error)
 }
 
 // Permission is a permission a plugin defines.

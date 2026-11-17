@@ -46,6 +46,9 @@ func (notesPlugin) Manifest() plugin.Manifest {
 	}
 	return plugin.Manifest{
 		ID: "notes", Name: "Notes", Version: "1",
+		WebHome: func(r *http.Request, s plugin.WebSession) (template.HTML, error) {
+			return template.HTML(`<section class="notes-panel">Notes for you</section>`), nil
+		},
 		Permissions: []plugin.Permission{{Name: "notes.secret", Description: "secret"}},
 		Web: []plugin.WebRoute{
 			{Path: "/", Nav: "Notes", Handle: page("Notes")},

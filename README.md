@@ -211,6 +211,16 @@ every request, so locking an account takes effect immediately.
   over SFTP at `/chat/<channel>/<YYYYMMDD>.log` by members who can enter
   the channel. Joins and leaves are shown live but never logged. Flood
   control allows 5 messages per 5 seconds.
+- **Message of the day**: a markdown message shown once after you log in,
+  and again whenever it changes; read it any time from the main menu.
+  Setting or removing it needs `motd.edit` (moderators by default;
+  administrators always). It also appears on the web home page.
+- **Wall**: one line per member, shown to everyone with its author and
+  age. Use `**bold**` and `*italic*` (or `_italic_`); nothing else is
+  formatted. Edit or remove your line any time; it disappears 7 days after
+  your last edit (administrators can change this under the Wall settings,
+  1 hour to 365 days) and is then deleted. `wall.write` goes to members,
+  `wall.moderate` (remove anyone's line) to moderators.
 - **Editor**: full screen it works like nano — Ctrl-O save, Ctrl-X exit,
   Ctrl-K cut line, Ctrl-U paste, Ctrl-W find, Ctrl-P preview, Ctrl-G help.
   In screen reader mode, type lines and finish with `.` on its own line
@@ -229,6 +239,7 @@ live chat; posting, other chats and settings stay in the SSH interface.
 | `/home` | Your start page once logged in |
 | `/p/conferences/` | Areas, conferences and threads you may read; a thread with a chat shows it live, and you can send messages |
 | `/p/messages/` | Your inbox; opening a message marks it read |
+| `/p/wall/` | The wall (read-only); the message of the day is on `/home` |
 | `/privacy` | Privacy policy (built in, or `SHELLSHAWK_PRIVACY_POLICY_FILE`) |
 | `/.well-known/gpc.json` | Global Privacy Control declaration |
 | `/version` | `{"version","commit","buildDate"}` to confirm a deploy |

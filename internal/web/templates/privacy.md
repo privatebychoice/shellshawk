@@ -33,6 +33,9 @@ never treated as consent. Support is declared at
   period set by the administrator (30 days unless changed; the Deleted
   folder shows the current period). A message's text is removed as soon as
   nobody holds a copy.
+- **Wall lines** are deleted automatically a set time after your last
+  edit (7 days unless the administrator changes it). Which message of the
+  day you have already seen is recorded so it is shown only once.
 - **Logs**: chat channels say when they are logged and for how long (the
   default is {{.ChatDays}} days). Server logs never contain IP addresses.
   Administrative actions are kept in an audit log for {{.AuditDays}} days.

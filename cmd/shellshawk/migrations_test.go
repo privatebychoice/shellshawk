@@ -28,7 +28,9 @@ var releasedMigrations = map[string]string{
 	"core/0005_privacy.sql":         "abdf24d6be4bf57784fe486039e395b46880bb335da1892bf355f61bda3248d5",
 	"core/0006_web.sql":             "eddb1fe1c4553ef33730955923e2d30765a2b42d9887af0f1935235c712e0f78",
 	"messages/1":                    "707e773939df8ae3387875601608315023fdc67b84e8407c570b069d69a9ea46",
+	"motd/1":                        "22a08fd572c12f6134c500c0eac866db860218e7d65e0f3843d725bf5e837ff2",
 	"polls/1":                       "167f6165706151b216eaaca7367bd83b06eb3fbed2bc9927c4b97217ef4831c8",
+	"wall/1":                        "b310db47ff17c2a50c1c93ebebf8aa225693c1a1326439af3760b697f87664ff",
 }
 
 func migrationSums(t *testing.T) map[string]string {

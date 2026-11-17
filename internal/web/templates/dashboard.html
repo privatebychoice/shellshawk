@@ -1,6 +1,7 @@
 {{define "dashboard"}}
 <p>Welcome, {{.User}}.</p>
-{{if .Nav}}<ul class="links">
+{{range .Panels}}{{.}}
+{{end}}{{if .Nav}}<ul class="links">
 {{range .Nav}}<li><a href="{{.Href}}">{{.Label}}</a></li>
 {{end}}</ul>{{end}}
 <p>The full BBS, including posting, chat and your settings, is available over SSH.</p>
