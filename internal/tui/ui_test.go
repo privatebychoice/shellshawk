@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -511,5 +512,81 @@ func TestLinesMultiChoiceNone(t *testing.T) {
 				t.Error("none offered for a required choice")
 			}
 		})
+	}
+}
+
+func TestScreenChoosePaging(t *testing.T) {
+	m := Menu{Title: "Long"}
+	for i := range 60 {
+		m.Items = append(m.Items, MenuItem{Value: strconv.Itoa(i + 1), Label: "Item " + strconv.Itoa(i+1)})
+	}
+	const pgUp, pgDn, home, end = "\x1b[5~", "\x1b[6~", "\x1b[H", "\x1b[F"
+	// An 80x30 screen shows 24 items at a time.
+	tests := []struct {
+		name, input, want, wantHelp string
+	}{
+		{"first screen", "\r", "1", "(1-24 of 60, more below)"},
+		{"page down", pgDn + "\r", "25", "(2-25 of 60, more above and below)"},
+		{"two pages down", pgDn + pgDn + "\r", "49", "more above and below"},
+		{"page down stops at the end", pgDn + pgDn + pgDn + pgDn + "\r", "60", "(37-60 of 60, more above)"},
+		{"page up", pgDn + pgDn + pgUp + "\r", "25", ""},
+		{"page up stops at the start", pgDn + pgUp + pgUp + "\r", "1", ""},
+		{"end and home", end + home + "\r", "1", ""},
+		{"end", end + "\r", "60", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ui, out := newTestScreen(tt.input)
+			v, err := ui.Choose(ctxT(t), m)
+			if err != nil || v != tt.want {
+				t.Errorf("Choose = %q, %v; want %q", v, err, tt.want)
+			}
+			if !strings.Contains(out.String(), tt.wantHelp) {
+				t.Errorf("help bar missing %q", tt.wantHelp)
+			}
+		})
+	}
+	ui, out := newTestScreen("\r")
+	if _, err := ui.Choose(ctxT(t), Menu{Title: "Short", Items: m.Items[:3]}); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(out.String(), "PgUp/PgDn page") {
+		t.Error("a menu that fits shows page keys")
+	}
+}
+
+func TestLinesChoosePaging(t *testing.T) {
+	m := Menu{Title: "Long"}
+	for i := range 5 {
+		m.Items = append(m.Items, MenuItem{Value: strconv.Itoa(i + 1), Label: "Item " + strconv.Itoa(i+1)})
+	}
+	// Page size 2: pauses after items 2 and 4.
+	tests := []struct {
+		name, input, want string
+		err               error
+		pauses            int
+	}{
+		{"read everything, then choose", "\r\r4\r", "4", nil, 2},
+		{"choose at the first pause", "3\r", "3", nil, 1},
+		{"choose an item not listed yet", "5\r", "5", nil, 1},
+		{"bad answer at a pause asks again", "9\r\r\r1\r", "1", nil, 3},
+		{"q at a pause goes back", "q\r", "", ErrCancelled, 1},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tm, out := newTestTerm(tt.input, true)
+			v, err := NewLines(tm, 2).Choose(ctxT(t), m)
+			if v != tt.want || !errors.Is(err, tt.err) {
+				t.Errorf("Choose = %q, %v; want %q, %v\n%s", v, err, tt.want, tt.err, out.String())
+			}
+			if n := strings.Count(out.String(), "More: press Enter for more choices"); n != tt.pauses {
+				t.Errorf("%d pauses, want %d\n%s", n, tt.pauses, out.String())
+			}
+		})
+	}
+	// A menu that fits in a page does not pause.
+	tm, out := newTestTerm("1\r", true)
+	if _, err := NewLines(tm, 20).Choose(ctxT(t), m); err != nil || strings.Contains(out.String(), "More:") {
+		t.Errorf("short menu paused: %v\n%s", err, out.String())
 	}
 }

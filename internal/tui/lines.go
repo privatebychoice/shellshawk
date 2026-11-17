@@ -148,33 +148,60 @@ func (u *Lines) Show(ctx context.Context, p Page) error {
 	return err
 }
 
-// Choose implements UI.
+// Choose implements UI. Long menus pause every page, as Show does; at a
+// pause the member can also choose straight away.
 func (u *Lines) Choose(ctx context.Context, m Menu) (string, error) {
 	u.heading(m.Title)
 	if m.Intro != "" {
 		u.println(m.Intro)
 	}
 	u.println(fmt.Sprintf("%d choices:", len(m.Items)))
+	// answer interprets a reply: a choice, q, or (at a pause) Enter.
+	answer := func(ans string, pause bool) (value string, done, more bool, err error) {
+		ans = strings.TrimSpace(ans)
+		switch {
+		case pause && ans == "":
+			return "", false, true, nil
+		case strings.EqualFold(ans, "q"):
+			return "", true, false, ErrCancelled
+		}
+		if n, err := strconv.Atoi(ans); err == nil && n >= 1 && n <= len(m.Items) {
+			return m.Items[n-1].Value, true, false, nil
+		}
+		u.println(fmt.Sprintf("Error: %q is not a number from 1 to %d.", ans, len(m.Items)))
+		return "", false, false, nil
+	}
 	for i, it := range m.Items {
 		line := fmt.Sprintf("%d. %s", i+1, it.Label)
 		if it.Help != "" {
 			line += ". " + it.Help
 		}
 		u.println(line)
+		if (i+1)%u.pageSize != 0 || i == len(m.Items)-1 {
+			continue
+		}
+		for {
+			ans, err := u.readLine(ctx, fmt.Sprintf("More: press Enter for more choices, or enter a number from 1 to %d to choose now, or q to go back: ", len(m.Items)), false)
+			if err != nil {
+				return "", err
+			}
+			v, done, more, err := answer(ans, true)
+			if done {
+				return v, err
+			}
+			if more {
+				break
+			}
+		}
 	}
 	for {
 		ans, err := u.readLine(ctx, fmt.Sprintf("Enter a number from 1 to %d, or q to go back: ", len(m.Items)), false)
 		if err != nil {
 			return "", err
 		}
-		ans = strings.TrimSpace(ans)
-		if strings.EqualFold(ans, "q") {
-			return "", ErrCancelled
+		if v, done, _, err := answer(ans, false); done {
+			return v, err
 		}
-		if n, err := strconv.Atoi(ans); err == nil && n >= 1 && n <= len(m.Items) {
-			return m.Items[n-1].Value, nil
-		}
-		u.println(fmt.Sprintf("Error: %q is not a number from 1 to %d.", ans, len(m.Items)))
 	}
 }
 

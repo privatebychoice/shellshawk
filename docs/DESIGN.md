@@ -300,6 +300,10 @@ full-screen redraws poorly. Accessible mode therefore changes more than colours:
 - No colour-only meaning, no box-drawing, no spinners/animation, ASCII only
   (optional).
 - Every screen starts with a one-line title: `Screen: Conferences > General`.
+- Menus longer than the screen: full screen, PgUp/PgDn move a screenful
+  (Home/End to the first/last item) and the help bar starts with the
+  visible range and whether there is more above or below; line mode pauses
+  every page like long pages, and accepts a choice number at the pause.
 - Spoken-friendly markers instead of decoration (see §8).
 - Separately toggleable: **high contrast theme**, **reduce motion**,
   **ASCII only**, **verbose markers**, **page size** (lines before `--More--`).

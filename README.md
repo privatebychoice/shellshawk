@@ -90,7 +90,8 @@ removed or locked.
   submits a form, Esc goes back. Menus accept arrow keys or the item number.
 - **Screen reader mode**: no colours, no screen drawing — every screen starts
   with `Screen: <name>`, fields are asked one at a time, and long pages pause
-  every N lines. Where several choices are allowed, type their numbers
+  every N lines; so do long menus, where you can also type a number at the
+  pause to choose straight away. Where several choices are allowed, type their numbers
   separated by commas; press Enter to keep the current choice, or type
   `none` to choose nothing. Choose it at registration (type `s`), or later under
   *Display settings → Terminal type*. Clients that do not request a terminal
@@ -207,6 +208,8 @@ every request, so locking an account takes effect immediately.
   chosen group, plus administrators — and set how long the log is kept,
   0 = not logged); `[A]` private chats are invite-only and can be
   started by any member; `[T]` thread chats belong to conference threads.
+  *Find a channel* searches the names and topics of the channels you can
+  join.
   Commands: `/help`, `/who`, `/channels`, `/join`, `/topic`, `/invite`,
   `/kick`, `/createchat`, `/destroychat`, `/quit`. Logging is on by default
   (90 days) and every channel says so when you join; logs are downloadable

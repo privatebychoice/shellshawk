@@ -420,3 +420,100 @@ func TestMigrationConvertsPermission(t *testing.T) {
 		}
 	}
 }
+
+func TestFindAndAccessibleMatchCanAccess(t *testing.T) {
+	f := setup(t)
+	modG, _ := f.Perms.GroupByName(f.Ctx, perm.GroupModerator)
+	if _, err := f.p.Create(f.Ctx, f.mod, NewChannel{Name: "gardening", Kind: KindPersistent, Topic: "Plants and seeds"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.p.Create(f.Ctx, f.mod, NewChannel{Name: "staff-garden", Kind: KindPersistent, Groups: []int64{modG.ID}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.p.createAdHoc(f.Ctx, f.alice, "plans", "Garden party", "bob"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.p.createAdHoc(f.Ctx, f.carol, "secret", "", ""); err != nil {
+		t.Fatal(err)
+	}
+
+	names := func(cs []Channel) string {
+		var n []string
+		for _, c := range cs {
+			n = append(n, c.Name)
+		}
+		return strings.Join(n, ",")
+	}
+	tests := []struct {
+		name  string
+		user  int64
+		query string
+		want  string
+		err   error
+	}{
+		{"name part", f.alice, "garden", "gardening,plans", nil}, // plans by its topic
+		{"topic, any case", f.bob, "SEEDS", "gardening", nil},
+		{"leading #", f.bob, "#lob", "lobby", nil},
+		{"group channel for its group", f.mod, "staff", "staff-garden", nil},
+		{"group channel hidden from others", f.alice, "staff", "", nil},
+		{"private chat hidden from the uninvited", f.carol, "plans", "", nil},
+		{"empty", f.alice, "  ", "", ErrInvalid},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := f.p.FindAccessible(f.Ctx, tt.user, tt.query)
+			if !errors.Is(err, tt.err) || names(got) != tt.want {
+				t.Errorf("FindAccessible(%q) = %q, %v; want %q, %v", tt.query, names(got), err, tt.want, tt.err)
+			}
+		})
+	}
+
+	// The batched listing must agree with checking each channel alone.
+	var all []Channel
+	rows, _ := f.DB.Query(`SELECT id FROM chat_channels`)
+	for rows.Next() {
+		var id int64
+		rows.Scan(&id)
+		c, _ := f.p.Get(f.Ctx, id)
+		all = append(all, c)
+	}
+	rows.Close()
+	for _, u := range []int64{f.alice, f.bob, f.carol, f.mod, f.Admin} {
+		listed, err := f.p.Accessible(f.Ctx, u)
+		if err != nil {
+			t.Fatal(err)
+		}
+		in := map[int64]bool{}
+		for _, c := range listed {
+			in[c.ID] = true
+		}
+		for _, c := range all {
+			if ok, _ := f.p.CanAccess(f.Ctx, u, c); ok != in[c.ID] {
+				t.Errorf("user %d, #%s: listed %v, CanAccess %v", u, c.Name, in[c.ID], ok)
+			}
+		}
+	}
+}
+
+func TestFindChannelTUI(t *testing.T) {
+	f := setup(t)
+	if _, err := f.p.Create(f.Ctx, f.mod, NewChannel{Name: "gardening", Kind: KindPersistent, Topic: "Plants"}); err != nil {
+		t.Fatal(err)
+	}
+	// Chat menu (1 gardening, 2 lobby, 3 Find a channel, 4 Start a private
+	// chat, 5 Back): Find, search "plant", pick the match (1), leave the
+	// channel, Back.
+	s := f.Session(f.alice, strings.Join([]string{"3", "plant", "1", "/quit", "5"}, "\r")+"\r")
+	if err := f.p.run(f.Ctx, s); err != nil {
+		t.Fatalf("run: %v\n%s", err, s.Out)
+	}
+	out := s.Out.String()
+	for _, want := range []string{"3. Find a channel", "Find a channel: 1 match(es)", "1. #gardening [P]", "#gardening, channel."} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q", want)
+		}
+	}
+	if t.Failed() {
+		t.Logf("output:\n%s", out)
+	}
+}

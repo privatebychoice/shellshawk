@@ -263,38 +263,91 @@ func (p *Plugin) ByName(ctx context.Context, name string) (Channel, error) {
 
 // CanAccess reports whether user may enter c.
 func (p *Plugin) CanAccess(ctx context.Context, user int64, c Channel) (bool, error) {
-	set, err := p.h.Perms.Permissions(ctx, user)
-	if err != nil || !set.Has(PermUse) {
-		return false, err
-	}
-	switch c.Kind {
-	case KindAdHoc:
-		if c.CreatorID == user || set.Has(PermModerate) {
-			return true, nil
-		}
-		var invited bool
-		err := p.h.DB.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM chat_invites WHERE channel_id = ? AND user_id = ?)`, c.ID, user).Scan(&invited)
-		return invited, err
-	case KindThread:
-		for prefix, fn := range p.threadAccess {
-			if strings.HasPrefix(c.Context, prefix) {
-				return fn(ctx, user, c.Context)
-			}
-		}
-	}
-	if !c.Restricted || set.Has(perm.Admin) {
-		return true, nil
-	}
-	mine, err := p.h.Perms.UserGroupIDs(ctx, user)
+	v, err := p.newViewer(ctx, user)
 	if err != nil {
 		return false, err
 	}
+	return v.canAccess(ctx, c)
+}
+
+// viewer is what access checks need to know about one member. Groups and
+// private-chat invitations are loaded on first use and then reused, so
+// checking a whole channel list costs a few queries, not a few per
+// channel.
+type viewer struct {
+	p       *Plugin
+	user    int64
+	set     perm.Set
+	groups  map[int64]bool
+	invited map[int64]bool
+}
+
+func (p *Plugin) newViewer(ctx context.Context, user int64) (*viewer, error) {
+	set, err := p.h.Perms.Permissions(ctx, user)
+	if err != nil {
+		return nil, err
+	}
+	return &viewer{p: p, user: user, set: set}, nil
+}
+
+func (v *viewer) canAccess(ctx context.Context, c Channel) (bool, error) {
+	if !v.set.Has(PermUse) {
+		return false, nil
+	}
+	switch c.Kind {
+	case KindAdHoc:
+		if c.CreatorID == v.user || v.set.Has(PermModerate) {
+			return true, nil
+		}
+		if v.invited == nil {
+			inv, err := v.p.invitedChannels(ctx, v.user)
+			if err != nil {
+				return false, err
+			}
+			v.invited = inv
+		}
+		return v.invited[c.ID], nil
+	case KindThread:
+		for prefix, fn := range v.p.threadAccess {
+			if strings.HasPrefix(c.Context, prefix) {
+				return fn(ctx, v.user, c.Context)
+			}
+		}
+	}
+	if !c.Restricted || v.set.Has(perm.Admin) {
+		return true, nil
+	}
+	if v.groups == nil {
+		g, err := v.p.h.Perms.UserGroupIDs(ctx, v.user)
+		if err != nil {
+			return false, err
+		}
+		v.groups = g
+	}
 	for _, g := range c.Groups {
-		if mine[g] {
+		if v.groups[g] {
 			return true, nil
 		}
 	}
 	return false, nil
+}
+
+// invitedChannels returns the private chats user has been invited to.
+func (p *Plugin) invitedChannels(ctx context.Context, user int64) (map[int64]bool, error) {
+	rows, err := p.h.DB.QueryContext(ctx, `SELECT channel_id FROM chat_invites WHERE user_id = ?`, user)
+	if err != nil {
+		return nil, fmt.Errorf("chat: invitations: %w", err)
+	}
+	defer rows.Close()
+	out := map[int64]bool{}
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		out[id] = true
+	}
+	return out, rows.Err()
 }
 
 // canModerate reports whether user may kick, change the topic or close c.
@@ -304,6 +357,26 @@ func (p *Plugin) canModerate(ctx context.Context, user int64, c Channel) (bool, 
 		return false, err
 	}
 	return set.Has(PermModerate) || (c.Kind == KindAdHoc && c.CreatorID == user && user != 0), nil
+}
+
+// FindAccessible returns the channels user may enter whose name or topic
+// contains query (case-insensitive; a leading # is ignored).
+func (p *Plugin) FindAccessible(ctx context.Context, user int64, query string) ([]Channel, error) {
+	q := strings.ToLower(strings.TrimPrefix(strings.TrimSpace(query), "#"))
+	if q == "" {
+		return nil, fmt.Errorf("%w: type a channel name, or part of one", ErrInvalid)
+	}
+	all, err := p.Accessible(ctx, user)
+	if err != nil {
+		return nil, err
+	}
+	var out []Channel
+	for _, c := range all {
+		if strings.Contains(strings.ToLower(c.Name), q) || strings.Contains(strings.ToLower(c.Topic), q) {
+			out = append(out, c)
+		}
+	}
+	return out, nil
 }
 
 // Accessible lists the channels user may enter: persistent and thread
@@ -323,9 +396,13 @@ func (p *Plugin) Accessible(ctx context.Context, user int64) ([]Channel, error) 
 		all = append(all, c)
 	}
 	rows.Close()
+	v, err := p.newViewer(ctx, user)
+	if err != nil {
+		return nil, err
+	}
 	var out []Channel
 	for _, c := range all {
-		ok, err := p.CanAccess(ctx, user, c)
+		ok, err := v.canAccess(ctx, c)
 		if err != nil {
 			return nil, err
 		}

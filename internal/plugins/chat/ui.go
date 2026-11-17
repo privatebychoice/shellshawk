@@ -68,6 +68,9 @@ func (p *Plugin) run(ctx context.Context, s plugin.Session) error {
 				Help:  c.Topic,
 			})
 		}
+		if len(chans) > 0 {
+			items = append(items, tui.MenuItem{Value: "find", Label: "Find a channel", Help: "Search channel names and topics"})
+		}
 		if set.Has(PermCreate) {
 			items = append(items, tui.MenuItem{Value: "new", Label: "Start a private chat", Help: "Only people you invite can join"})
 		}
@@ -94,6 +97,8 @@ func (p *Plugin) run(ctx context.Context, s plugin.Session) error {
 			}
 		case "manage":
 			err = p.manage(ctx, s)
+		case "find":
+			err = p.find(ctx, s)
 		default:
 			id, _ := strconv.ParseInt(choice, 10, 64)
 			err = p.Enter(ctx, s, id)
@@ -233,6 +238,36 @@ func (p *Plugin) enterOne(ctx context.Context, s plugin.Session, id int64) (int6
 		},
 	})
 	return next, err
+}
+
+// find searches the channels the member can enter and opens the one they
+// pick.
+func (p *Plugin) find(ctx context.Context, s plugin.Session) error {
+	fm := &form.Form{Title: "Find a channel", Fields: []form.Field{{
+		Name: "q", Label: "Channel name or topic, or part of one", Kind: form.SingleLine, Required: true, MaxLen: MaxTopic,
+	}}}
+	v, err := s.Form(ctx, fm, nil, nil)
+	if err != nil {
+		return err
+	}
+	found, err := p.FindAccessible(ctx, s.UserID(), v["q"])
+	if err != nil {
+		return err
+	}
+	if len(found) == 0 {
+		return tui.Message(ctx, s.UI(), s.Title("Find a channel"), "No channel you can join matches \""+strings.TrimSpace(v["q"])+"\".")
+	}
+	var items []tui.MenuItem
+	for _, c := range found {
+		items = append(items, tui.MenuItem{Value: strconv.FormatInt(c.ID, 10), Label: channelLabel(c, p.hub.count(c.ID)), Help: c.Topic})
+	}
+	items = append(items, tui.MenuItem{Value: "back", Label: "Back"})
+	choice, err := s.UI().Choose(ctx, tui.Menu{Title: s.Title(fmt.Sprintf("Find a channel: %d match(es)", len(found))), Items: items})
+	if err != nil || choice == "back" {
+		return err
+	}
+	id, _ := strconv.ParseInt(choice, 10, 64)
+	return p.Enter(ctx, s, id)
 }
 
 // channelLabel is a channel's line in the chat list. Thread chats also show

@@ -237,6 +237,22 @@ func (u *Screen) Choose(ctx context.Context, m Menu) (string, error) {
 		if sel >= top+avail {
 			top = sel - avail + 1
 		}
+		if len(m.Items) > avail {
+			// Longer than the screen: page keys and where the view is.
+			end := min(top+avail, len(m.Items))
+			where := fmt.Sprintf("(%d-%d of %d", top+1, end, len(m.Items))
+			switch {
+			case top > 0 && end < len(m.Items):
+				where += ", more above and below)"
+			case top > 0:
+				where += ", more above)"
+			default:
+				where += ", more below)"
+			}
+			// Position first: on a narrow screen the bar is cut at the end.
+			help := fmt.Sprintf("%s  %s/%s move  PgUp/PgDn page  Enter select  1-9 shortcut  Esc back", where, u.sym("↑", "Up"), u.sym("↓", "Down"))
+			f.put(f.rows-1, 0, " "+help, theme.Style{FG: theme.TitleFG, BG: theme.TitleBG}, f.cols)
+		}
 		marker := u.sym("▶ ", "> ")
 		for i := top; i < len(m.Items) && i < top+avail; i++ {
 			label := fmt.Sprintf("%d. %s", i+1, m.Items[i].Label)
@@ -263,9 +279,13 @@ func (u *Screen) Choose(ctx context.Context, m Menu) (string, error) {
 			sel = (sel - 1 + len(m.Items)) % len(m.Items)
 		case term.KeyDown, term.KeyTab:
 			sel = (sel + 1) % len(m.Items)
-		case term.KeyHome, term.KeyPgUp:
+		case term.KeyPgUp:
+			sel = max(sel-avail, 0)
+		case term.KeyPgDn:
+			sel = min(sel+avail, len(m.Items)-1)
+		case term.KeyHome:
 			sel = 0
-		case term.KeyEnd, term.KeyPgDn:
+		case term.KeyEnd:
 			sel = len(m.Items) - 1
 		case term.KeyEnter:
 			return m.Items[sel].Value, nil
