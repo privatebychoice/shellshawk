@@ -15,7 +15,6 @@ import (
 var defaults = []Default{
 	{"core:settings", "Display settings"},
 	{"core:admin", "Administration"},
-	{TargetLogout, "Log out"},
 }
 
 func known(t string) bool {
@@ -64,16 +63,16 @@ func targets(t *testing.T, s *Service, ctx context.Context, parent int64) []stri
 	return out
 }
 
-func TestSeedPlacesNewItemsBeforeLogout(t *testing.T) {
+func TestSeedAddsNewItemsAtTheEnd(t *testing.T) {
 	s, ctx := setup(t)
-	if got := targets(t, s, ctx, 0); !slices.Equal(got, []string{"core:settings", "core:admin", TargetLogout}) {
+	if got := targets(t, s, ctx, 0); !slices.Equal(got, []string{"core:settings", "core:admin"}) {
 		t.Fatalf("seeded = %v", got)
 	}
-	// A plugin appears later: it goes before Log out.
+	// A plugin appears later: it goes at the end.
 	if err := s.Seed(ctx, append(defaults, Default{"notes:main", "Notes"})); err != nil {
 		t.Fatal(err)
 	}
-	if got := targets(t, s, ctx, 0); !slices.Equal(got, []string{"core:settings", "core:admin", "notes:main", TargetLogout}) {
+	if got := targets(t, s, ctx, 0); !slices.Equal(got, []string{"core:settings", "core:admin", "notes:main"}) {
 		t.Errorf("after plugin = %v", got)
 	}
 	// Removed by an admin: not re-added on the next start.
@@ -100,7 +99,7 @@ func TestEditing(t *testing.T) {
 		t.Errorf("submenu = %v", got)
 	}
 	es, _ := s.Children(ctx, 0)
-	logout, admin := es[2], es[1]
+	item, admin := es[0], es[1]
 
 	tests := []struct {
 		name string
@@ -112,17 +111,16 @@ func TestEditing(t *testing.T) {
 			_, err := s.Add(ctx, 1, Entry{Kind: KindItem, Label: "x", Target: "gone:main"}, known)
 			return err
 		}, ErrInvalid},
-		{"unknown permission", func() error { return s.Update(ctx, 1, logout.ID, "Bye", "no.such") }, ErrInvalid},
-		{"empty label", func() error { return s.Update(ctx, 1, logout.ID, "  ", "") }, ErrInvalid},
-		{"escape in label", func() error { return s.Update(ctx, 1, logout.ID, "Bye\x1b[2J", "") }, ErrInvalid},
+		{"unknown permission", func() error { return s.Update(ctx, 1, item.ID, "Bye", "no.such") }, ErrInvalid},
+		{"empty label", func() error { return s.Update(ctx, 1, item.ID, "  ", "") }, ErrInvalid},
+		{"escape in label", func() error { return s.Update(ctx, 1, item.ID, "Bye\x1b[2J", "") }, ErrInvalid},
 		{"item as parent", func() error {
-			_, err := s.Add(ctx, 1, Entry{ParentID: logout.ID, Kind: KindSubmenu, Label: "x"}, known)
+			_, err := s.Add(ctx, 1, Entry{ParentID: item.ID, Kind: KindSubmenu, Label: "x"}, known)
 			return err
 		}, ErrInvalid},
-		{"logout protected", func() error { return s.Delete(ctx, 1, logout.ID) }, ErrProtected},
 		{"admin protected", func() error { return s.Delete(ctx, 1, admin.ID) }, ErrProtected},
 		{"non-empty submenu", func() error { return s.Delete(ctx, 1, sub) }, ErrNotEmpty},
-		{"rename protected item is fine", func() error { return s.Update(ctx, 1, logout.ID, "Goodbye", "") }, nil},
+		{"rename protected item is fine", func() error { return s.Update(ctx, 1, admin.ID, "Admin", "") }, nil},
 		{"missing entry", func() error { return s.Delete(ctx, 1, 9999) }, ErrNotFound},
 	}
 	for _, tt := range tests {
@@ -133,11 +131,11 @@ func TestEditing(t *testing.T) {
 		})
 	}
 
-	// Move "More" (last) up past Log out.
+	// Move "More" (last) up past Administration.
 	if err := s.Move(ctx, 1, sub, -1); err != nil {
 		t.Fatal(err)
 	}
-	if got := targets(t, s, ctx, 0); !slices.Equal(got, []string{"core:settings", "core:admin", "sub:More", TargetLogout}) {
+	if got := targets(t, s, ctx, 0); !slices.Equal(got, []string{"core:settings", "sub:More", "core:admin"}) {
 		t.Errorf("after move = %v", got)
 	}
 	s.Move(ctx, 1, es[0].ID, -1) // already first: no-op
@@ -148,7 +146,7 @@ func TestEditing(t *testing.T) {
 	if err := s.Reset(ctx, 1, defaults); err != nil {
 		t.Fatal(err)
 	}
-	if got := targets(t, s, ctx, 0); !slices.Equal(got, []string{"core:settings", "core:admin", TargetLogout}) {
+	if got := targets(t, s, ctx, 0); !slices.Equal(got, []string{"core:settings", "core:admin"}) {
 		t.Errorf("after reset = %v", got)
 	}
 }

@@ -135,9 +135,10 @@ and 7.
 
 Menus are stored in SQLite (editable from the admin menu: rename, move,
 extra permission, submenus, reset) as a tree of entries. New menu items
-(core or plugin) are placed before *Log out* the first time they are seen;
-removed items are not re-added. *Administration* and *Log out* cannot be
-deleted. Entries whose item no longer exists are hidden from members and
+(core or plugin) are added at the end of the main menu the first time they
+are seen; removed items are not re-added. *Administration* cannot be
+deleted. Logging out is not an entry but `q` (or Esc) in the main menu;
+core migration 7 removed the earlier *Log out* entry. Entries whose item no longer exists are hidden from members and
 flagged in the editor. Previously sketched as:
 `{key, label, target(plugin:item | submenu), required_permission, order}`. A
 default menu is seeded on first run. Users only see entries they are permitted

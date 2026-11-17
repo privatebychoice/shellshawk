@@ -178,3 +178,43 @@ func TestLoadMigrations(t *testing.T) {
 		})
 	}
 }
+
+// TestLogoutEntryRemoved upgrades a database from before migration 7: the
+// Log out menu entry goes (q logs out instead), wherever it was moved,
+// other entries stay, and it stays marked as seeded so it is not re-added.
+func TestLogoutEntryRemoved(t *testing.T) {
+	ctx := context.Background()
+	db, err := sql.Open("sqlite", dsn(filepath.Join(t.TempDir(), "up.db")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { db.Close() })
+	migs, err := LoadMigrations(coreMigrationFS, "migrations")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := Migrate(ctx, db, CoreOwner, migs[:6], discard()); err != nil {
+		t.Fatal(err)
+	}
+	for _, q := range []string{
+		`INSERT INTO menu_entries (id, parent_id, position, label, kind, target, created_at) VALUES
+			(1, NULL, 1, 'Administration', 'item', 'core:admin', '2026-01-01T00:00:00Z'),
+			(2, NULL, 2, 'Log out', 'item', 'core:logout', '2026-01-01T00:00:00Z'),
+			(3, NULL, 3, 'More', 'submenu', '', '2026-01-01T00:00:00Z'),
+			(4, 3, 1, 'Bye', 'item', 'core:logout', '2026-01-01T00:00:00Z')`,
+		`INSERT INTO menu_seeded (target) VALUES ('core:admin'), ('core:logout')`,
+	} {
+		if _, err := db.ExecContext(ctx, q); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := Migrate(ctx, db, CoreOwner, migs, discard()); err != nil {
+		t.Fatal(err)
+	}
+	var entries, logouts, seeded int
+	db.QueryRowContext(ctx, `SELECT count(*), count(*) FILTER (WHERE target = 'core:logout') FROM menu_entries`).Scan(&entries, &logouts)
+	db.QueryRowContext(ctx, `SELECT count(*) FROM menu_seeded WHERE target = 'core:logout'`).Scan(&seeded)
+	if entries != 2 || logouts != 0 || seeded != 1 {
+		t.Errorf("entries = %d, logout entries = %d, logout seeded = %d; want 2, 0, 1", entries, logouts, seeded)
+	}
+}

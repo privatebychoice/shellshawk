@@ -483,7 +483,7 @@ func (s *session) menuEditor(ctx context.Context, parent int64, title string) er
 func (s *session) menuError(ctx context.Context, err error) error {
 	switch {
 	case errors.Is(err, menu.ErrProtected):
-		return tui.Message(ctx, s.ui, s.Title("Menu editor"), "Administration and Log out cannot be deleted, so nobody is ever locked out. You can rename or move them.")
+		return tui.Message(ctx, s.ui, s.Title("Menu editor"), "Administration cannot be deleted, so nobody is ever locked out of it. You can rename or move it.")
 	case errors.Is(err, menu.ErrNotEmpty), errors.Is(err, menu.ErrInvalid):
 		return tui.Message(ctx, s.ui, s.Title("Menu editor"), err.Error()+".")
 	}

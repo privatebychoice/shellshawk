@@ -14,7 +14,8 @@ import (
 	"go.privatebychoice.com/shellshawk/internal/tui"
 )
 
-// errLogout unwinds nested menus when the member chooses Log out.
+// errLogout ends the session when the member presses q (or Esc) in the
+// main menu, labelled "Log out" there.
 var errLogout = errors.New("log out")
 
 // adminPermissions: holding any of these shows the Administration item.
@@ -45,7 +46,6 @@ func coreItems() []coreItem {
 		{key: "weblogin", label: "Web login code", help: "A one-time code to log in to the website", run: (*session).webLoginCode,
 			enabled: func(h *Handler) bool { return h.WebLogin != nil }},
 		{key: "admin", label: "Administration", help: "Users, groups, approvals, invites and system settings", anyOf: adminPermissions, run: (*session).admin},
-		{key: "logout", label: "Log out", run: func(*session, context.Context) error { return errLogout }},
 	}
 }
 

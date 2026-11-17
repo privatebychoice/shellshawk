@@ -27,6 +27,7 @@ var releasedMigrations = map[string]string{
 	"core/0004_menus_plugins.sql":   "50dc21d0cb07816377b29222e6371bb49e040be64e640c8742216c3107d3e08c",
 	"core/0005_privacy.sql":         "abdf24d6be4bf57784fe486039e395b46880bb335da1892bf355f61bda3248d5",
 	"core/0006_web.sql":             "eddb1fe1c4553ef33730955923e2d30765a2b42d9887af0f1935235c712e0f78",
+	"core/0007_logout_entry.sql":    "78190a52e5a186521dead9d741ade38c7fd039fddb35fde4cfeab93c671236d0",
 	"messages/1":                    "707e773939df8ae3387875601608315023fdc67b84e8407c570b069d69a9ea46",
 	"motd/1":                        "22a08fd572c12f6134c500c0eac866db860218e7d65e0f3843d725bf5e837ff2",
 	"polls/1":                       "167f6165706151b216eaaca7367bd83b06eb3fbed2bc9927c4b97217ef4831c8",

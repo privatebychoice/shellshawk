@@ -143,8 +143,9 @@ main menu, showing only the sections they may use:
 | Audit log | `core.audit.view` |
 
 `admin` has every permission. The member menu can be rearranged, renamed,
-split into submenus and restricted by permission; *Administration* and *Log
-out* can be moved or renamed but never deleted.
+split into submenus and restricted by permission; *Administration* can be
+moved or renamed but never deleted. There is no Log out entry: `q` (or Esc)
+in the main menu logs out.
 
 ## Plugins
 

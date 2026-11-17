@@ -26,13 +26,10 @@ const (
 	KindSubmenu = "submenu"
 )
 
-// Protected targets can be moved and renamed but never deleted, so an
+// TargetAdmin can be moved and renamed but never deleted, so an
 // administrator cannot lock everyone (including themselves) out of the
-// admin menu or of logging out.
-const (
-	TargetAdmin  = "core:admin"
-	TargetLogout = "core:logout"
-)
+// admin menu. Logging out is not an entry: it is q in the main menu.
+const TargetAdmin = "core:admin"
 
 // MaxLabelLen bounds menu labels.
 const MaxLabelLen = 40
@@ -263,7 +260,7 @@ func (s *Service) Delete(ctx context.Context, actor, id int64) error {
 		if err != nil {
 			return err
 		}
-		if e.Target == TargetAdmin || e.Target == TargetLogout {
+		if e.Target == TargetAdmin {
 			return ErrProtected
 		}
 		var children int
@@ -296,9 +293,8 @@ func (s *Service) change(ctx context.Context, actor int64, detail string, fn fun
 	return err
 }
 
-// Seed adds each default item to the main menu the first time it is seen,
-// placing new items just before Log out. Items an administrator later
-// removes are not added again.
+// Seed adds each default item to the end of the main menu the first time
+// it is seen. Items an administrator later removes are not added again.
 func (s *Service) Seed(ctx context.Context, defaults []Default) error {
 	return store.WithTx(ctx, s.db, func(tx *sql.Tx) error { return seed(ctx, tx, s.now(), defaults, s.log) })
 }
@@ -315,18 +311,6 @@ func seed(ctx context.Context, tx *sql.Tx, now time.Time, defaults []Default, lo
 		pos, err := nextPosition(ctx, tx, 0)
 		if err != nil {
 			return err
-		}
-		if d.Target != TargetLogout {
-			var logoutPos int
-			err := tx.QueryRowContext(ctx, `SELECT position FROM menu_entries WHERE parent_id IS NULL AND target = ?`, TargetLogout).Scan(&logoutPos)
-			if err == nil {
-				pos = logoutPos
-				if _, err := tx.ExecContext(ctx, `UPDATE menu_entries SET position = position + 1 WHERE parent_id IS NULL AND position >= ?`, pos); err != nil {
-					return fmt.Errorf("menu: seed: %w", err)
-				}
-			} else if !errors.Is(err, sql.ErrNoRows) {
-				return err
-			}
 		}
 		if _, err := tx.ExecContext(ctx, `INSERT INTO menu_entries (parent_id, position, label, kind, target, created_at)
 			VALUES (NULL, ?, ?, ?, ?, ?)`, pos, d.Label, KindItem, d.Target, store.FormatTime(now)); err != nil {
