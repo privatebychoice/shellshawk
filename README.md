@@ -164,8 +164,9 @@ every request, so locking an account takes effect immediately.
 
 ## Contacts and messages
 
-- **Conferences**: areas of conferences, each optionally limited to a
-  permission (grant it to a group for a group-only conference). Threads of
+- **Conferences**: areas of conferences, each open to every member or
+  limited to one or more groups (members of any chosen group, plus
+  administrators). Threads of
   markdown posts written in the editor; authors edit (marked *edited*) or
   delete their posts; moderators lock threads, edit or delete anything,
   manage areas and conferences, and can enable a live chat for a thread.

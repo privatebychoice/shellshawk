@@ -160,7 +160,8 @@ to use.
 - First administrator: `shellshawk bootstrap-invite` (operator CLI) prints a
   single-use admin invite, only while no active administrator exists.
 - Resource-level checks (e.g. "conference X requires group Y") are stored on the
-  resource and checked through `perm.CanAccess(user, resource)`.
+  resource by the plugin that owns it and checked against the member's groups
+  (`perm.Service.UserGroupIDs`).
 - **Invites**: codes are random 128-bit Crockford base32 in dash-separated
   groups, stored as SHA-256 hashes, with optional expiry, max uses, the inviting user,
   and default groups to assign.
@@ -473,8 +474,8 @@ are left for a later version.
 
 | Plugin | Notes |
 |--------|-------|
-| **Conferences** | Areas → conferences → threads → posts. Permission group per conference. Optional polls (uses the Polls API). Optional per-thread chat channel created through the Chat API, enabled by an admin/moderator. SFTP thread export. |
-| | *Implemented (stage 8):* SFTP file names include the thread ID (`YYYYMMDD-<id>-<slug>.md`) so names stay unique; deleting a post, thread or conference also deletes its polls and thread chat; a thread chat inherits the conference's permission; authors can edit/delete their posts until a thread is locked; deleting the first post deletes the thread. |
+| **Conferences** | Areas → conferences → threads → posts. Each conference is open to all readers or limited to one or more groups. Optional polls (uses the Polls API). Optional per-thread chat channel created through the Chat API, enabled by an admin/moderator. SFTP thread export. |
+| | *Implemented (stage 8):* SFTP file names include the thread ID (`YYYYMMDD-<id>-<slug>.md`) so names stay unique; deleting a post, thread or conference also deletes its polls and thread chat; a restricted conference is open to members of any of its groups and to administrators, and stays closed if all its groups are deleted; a thread chat admits exactly the members who can read its thread (`chat.SetThreadAccess`); schema version 2 converted the original single per-conference permission to the groups holding it; authors can edit/delete their posts until a thread is locked; deleting the first post deletes the thread. |
 | **Polls** | Single/multi choice, open/close dates, **anonymous by default** (creator may make a poll named; voters are told before voting), pinned polls, results view (bar rendering in TUI, a table in accessible mode and as the web fallback). |
 | **Contacts** | Personal lists and user-defined contact groups. Exposes `IsContact`, `IsMutual` (→ "friend"), `ListGroup` to other plugins. |
 | **Messages** | Subject + markdown body, threaded replies, per-user unread/read/deleted counters (computed, with a restorable Deleted folder), recipients by username or contact group, admin-set limits (recipients, per hour, length), read-only SFTP `/messages/{inbox,sent}`. Honouring the recipient's DM privacy setting arrives with the privacy settings (stage 9). |

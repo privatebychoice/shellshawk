@@ -255,6 +255,25 @@ func (s *Service) UserGroups(ctx context.Context, userID int64) ([]string, error
 	return out, rows.Err()
 }
 
+// UserGroupIDs returns the IDs of userID's groups, for features that grant
+// access by group rather than by permission (e.g. group-only conferences).
+func (s *Service) UserGroupIDs(ctx context.Context, userID int64) (map[int64]bool, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT group_id FROM user_access_groups WHERE user_id = ?`, userID)
+	if err != nil {
+		return nil, fmt.Errorf("perm: user group ids: %w", err)
+	}
+	defer rows.Close()
+	out := map[int64]bool{}
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		out[id] = true
+	}
+	return out, rows.Err()
+}
+
 // holdsAll reports whether actor's permissions cover every permission in
 // perms. This stops an actor granting access they do not have themselves.
 func holdsAll(actor Set, perms []string) bool {

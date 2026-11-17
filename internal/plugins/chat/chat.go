@@ -60,6 +60,24 @@ type Plugin struct {
 	h   *plugin.Host
 	hub *hub
 	now func() time.Time
+	// threadAccess decides who may enter thread channels, by the context
+	// prefix of the plugin that owns them (see SetThreadAccess).
+	threadAccess map[string]ThreadAccessFunc
+}
+
+// ThreadAccessFunc reports whether user may enter the thread channel with
+// the given context.
+type ThreadAccessFunc func(ctx context.Context, user int64, context string) (bool, error)
+
+// SetThreadAccess makes fn decide access to thread channels whose context
+// starts with prefix, instead of the channel's permission, so the chat
+// follows the owning feature's rules (e.g. a conference's groups). Call it
+// before the server starts.
+func (p *Plugin) SetThreadAccess(prefix string, fn ThreadAccessFunc) {
+	if p.threadAccess == nil {
+		p.threadAccess = map[string]ThreadAccessFunc{}
+	}
+	p.threadAccess[prefix] = fn
 }
 
 // New returns the Chat plugin.
@@ -221,9 +239,14 @@ func (p *Plugin) CanAccess(ctx context.Context, user int64, c Channel) (bool, er
 		var invited bool
 		err := p.h.DB.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM chat_invites WHERE channel_id = ? AND user_id = ?)`, c.ID, user).Scan(&invited)
 		return invited, err
-	default:
-		return c.Permission == "" || set.Has(c.Permission), nil
+	case KindThread:
+		for prefix, fn := range p.threadAccess {
+			if strings.HasPrefix(c.Context, prefix) {
+				return fn(ctx, user, c.Context)
+			}
+		}
 	}
+	return c.Permission == "" || set.Has(c.Permission), nil
 }
 
 // canModerate reports whether user may kick, change the topic or close c.

@@ -145,23 +145,33 @@ func (p *Plugin) area(ctx context.Context, s plugin.Session, a Area) error {
 }
 
 func (p *Plugin) conferenceForm(ctx context.Context, s plugin.Session, a Area) error {
-	opts := []form.Option{{Value: "none", Label: "Everyone who can read conferences"}}
-	for _, pm := range p.h.Perms.Registry().All() {
-		opts = append(opts, form.Option{Value: pm.Name, Label: pm.Name + ": " + pm.Description})
-	}
-	fields := append(slugFields("Conference"), form.Field{
-		Name: "perm", Label: "Who can read and post", Kind: form.Choice, Required: true, Options: opts,
-		Help: "Members also need this permission. Grant it to a group to make a group-only conference.",
-	})
-	v, err := s.Form(ctx, &form.Form{Title: "Create a conference in " + a.Name, Fields: fields}, form.Values{"perm": "none"}, nil)
+	groups, err := p.h.Perms.Groups(ctx)
 	if err != nil {
 		return err
 	}
-	pm := v["perm"]
-	if pm == "none" {
-		pm = ""
+	var opts []form.Option
+	for _, g := range groups {
+		label := g.Name
+		if g.Description != "" {
+			label += ": " + g.Description
+		}
+		opts = append(opts, form.Option{Value: strconv.FormatInt(g.ID, 10), Label: label})
 	}
-	_, err = p.CreateConference(ctx, s.UserID(), a.ID, v["slug"], v["name"], v["desc"], pm)
+	fields := append(slugFields("Conference"), form.Field{
+		Name: "groups", Label: "Only these groups can read and post", Kind: form.Choice, Multi: true, Options: opts,
+		Help: "Choose none to open it to everyone who can read conferences. Choose one or more groups to make it members-only: anyone in any chosen group can use it. Administrators can always see it.",
+	})
+	v, err := s.Form(ctx, &form.Form{Title: "Create a conference in " + a.Name, Fields: fields}, nil, nil)
+	if err != nil {
+		return err
+	}
+	var ids []int64
+	for _, g := range strings.Split(v["groups"], ",") {
+		if id, err := strconv.ParseInt(g, 10, 64); err == nil {
+			ids = append(ids, id)
+		}
+	}
+	_, err = p.CreateConference(ctx, s.UserID(), a.ID, v["slug"], v["name"], v["desc"], ids)
 	return err
 }
 

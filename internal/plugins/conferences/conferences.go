@@ -64,7 +64,11 @@ type Plugin struct {
 // New returns the Conferences plugin. pollsPlugin and chatPlugin may be nil
 // to build without polls on posts or thread chats.
 func New(pollsPlugin *polls.Plugin, chatPlugin *chat.Plugin) *Plugin {
-	return &Plugin{polls: pollsPlugin, chat: chatPlugin, now: time.Now}
+	p := &Plugin{polls: pollsPlugin, chat: chatPlugin, now: time.Now}
+	if chatPlugin != nil {
+		chatPlugin.SetThreadAccess(threadChatPrefix, p.chatAccess)
+	}
+	return p
 }
 
 var _ plugin.Plugin = (*Plugin)(nil)
@@ -95,8 +99,7 @@ func (p *Plugin) Manifest() plugin.Manifest {
 				created_at  TEXT    NOT NULL
 			) STRICT;
 
-			-- permission: extra permission needed to read and post here
-			-- (the per-conference group check), or ''.
+			-- permission: replaced by groups in version 2.
 			CREATE TABLE conferences_conferences (
 				id          INTEGER PRIMARY KEY,
 				area_id     INTEGER NOT NULL REFERENCES conferences_areas (id) ON DELETE CASCADE,
@@ -135,7 +138,28 @@ func (p *Plugin) Manifest() plugin.Manifest {
 				VALUES ('general', 'General', 'Everything else', 1, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'));
 			INSERT INTO conferences_conferences (area_id, slug, name, description, position, created_at)
 				SELECT id, 'general', 'General discussion', 'Introduce yourself and talk about anything', 1, created_at
-				FROM conferences_areas WHERE slug = 'general';`}},
+				FROM conferences_areas WHERE slug = 'general';`}, {Version: 2, Name: "conference groups", SQL: `
+			-- Group-only conferences: restricted conferences are open to
+			-- members of any listed group (and administrators). A restricted
+			-- conference whose groups were all deleted stays closed rather
+			-- than opening to everyone.
+			CREATE TABLE conferences_conference_groups (
+				conference_id INTEGER NOT NULL REFERENCES conferences_conferences (id) ON DELETE CASCADE,
+				group_id      INTEGER NOT NULL REFERENCES access_groups (id) ON DELETE CASCADE,
+				PRIMARY KEY (conference_id, group_id)
+			) STRICT, WITHOUT ROWID;
+			CREATE INDEX conferences_conference_groups_group ON conferences_conference_groups (group_id);
+
+			ALTER TABLE conferences_conferences ADD COLUMN restricted INTEGER NOT NULL DEFAULT 0 CHECK (restricted IN (0, 1));
+
+			-- Version 1 restricted a conference by one permission: convert it
+			-- to the groups that held that permission.
+			UPDATE conferences_conferences SET restricted = 1 WHERE permission <> '';
+			INSERT INTO conferences_conference_groups (conference_id, group_id)
+				SELECT c.id, gp.group_id FROM conferences_conferences c
+				JOIN access_group_permissions gp ON gp.permission = c.permission
+				WHERE c.permission <> '';
+			ALTER TABLE conferences_conferences DROP COLUMN permission;`}},
 		MenuItems: []plugin.MenuItem{{Key: "main", Label: "Conferences", Help: "Discussion areas and threads", AnyOf: []string{PermRead}, Run: p.run}},
 		SFTP:      []sftpd.Mount{{Name: "conferences", AnyOf: []string{PermRead}, FS: &threadFS{p: p}}},
 		Export:    p.export,
@@ -165,7 +189,10 @@ type Conference struct {
 	AreaSlug    string
 	Slug, Name  string
 	Description string
-	Permission  string
+	// Restricted conferences are open only to members of Groups (group
+	// IDs) and administrators.
+	Restricted bool
+	Groups     []int64
 }
 
 // Thread is a discussion.
@@ -238,12 +265,21 @@ func (p *Plugin) Areas(ctx context.Context) ([]Area, error) {
 	return out, rows.Err()
 }
 
-const confCols = `c.id, c.area_id, a.slug, c.slug, c.name, c.description, c.permission`
+const confCols = `c.id, c.area_id, a.slug, c.slug, c.name, c.description, c.restricted,
+	COALESCE((SELECT group_concat(group_id) FROM conferences_conference_groups WHERE conference_id = c.id), '')`
 
 func scanConf(row interface{ Scan(...any) error }) (Conference, error) {
 	var c Conference
-	err := row.Scan(&c.ID, &c.AreaID, &c.AreaSlug, &c.Slug, &c.Name, &c.Description, &c.Permission)
-	return c, err
+	var groups string
+	if err := row.Scan(&c.ID, &c.AreaID, &c.AreaSlug, &c.Slug, &c.Name, &c.Description, &c.Restricted, &groups); err != nil {
+		return c, err
+	}
+	for _, g := range strings.Split(groups, ",") {
+		if id, err := strconv.ParseInt(g, 10, 64); err == nil {
+			c.Groups = append(c.Groups, id)
+		}
+	}
+	return c, nil
 }
 
 // Conferences lists an area's conferences the member may read.
@@ -263,13 +299,13 @@ func (p *Plugin) Conferences(ctx context.Context, user, area int64) ([]Conferenc
 		all = append(all, c)
 	}
 	rows.Close()
-	set, err := p.h.Perms.Permissions(ctx, user)
+	set, groups, err := p.viewer(ctx, user)
 	if err != nil {
 		return nil, err
 	}
 	var out []Conference
 	for _, c := range all {
-		if canRead(set, c) {
+		if canRead(set, groups, c) {
 			out = append(out, c)
 		}
 	}
@@ -286,11 +322,35 @@ func (p *Plugin) Conference(ctx context.Context, id int64) (Conference, error) {
 	return c, err
 }
 
-func canRead(set perm.Set, c Conference) bool {
-	return set.Has(PermRead) && (c.Permission == "" || set.Has(c.Permission))
+// viewer loads what canRead needs about user: permissions and group IDs.
+func (p *Plugin) viewer(ctx context.Context, user int64) (perm.Set, map[int64]bool, error) {
+	set, err := p.h.Perms.Permissions(ctx, user)
+	if err != nil {
+		return nil, nil, err
+	}
+	groups, err := p.h.Perms.UserGroupIDs(ctx, user)
+	return set, groups, err
 }
 
-func canPost(set perm.Set, c Conference) bool { return canRead(set, c) && set.Has(PermPost) }
+// canRead: conferences.read, and for a restricted conference membership of
+// one of its groups. Administrators can read every conference.
+func canRead(set perm.Set, groups map[int64]bool, c Conference) bool {
+	if !set.Has(PermRead) {
+		return false
+	}
+	if !c.Restricted || set.Has(perm.Admin) {
+		return true
+	}
+	for _, g := range c.Groups {
+		if groups[g] {
+			return true
+		}
+	}
+	return false
+}
+
+// canPost requires c to come from access, which has checked read access.
+func canPost(set perm.Set, _ Conference) bool { return set.Has(PermPost) }
 
 // access loads the conference and the member's permissions, requiring read
 // access. Conferences the member cannot read are reported as not found.
@@ -299,11 +359,11 @@ func (p *Plugin) access(ctx context.Context, user, conf int64) (Conference, perm
 	if err != nil {
 		return Conference{}, nil, err
 	}
-	set, err := p.h.Perms.Permissions(ctx, user)
+	set, groups, err := p.viewer(ctx, user)
 	if err != nil {
 		return Conference{}, nil, err
 	}
-	if !canRead(set, c) {
+	if !canRead(set, groups, c) {
 		return Conference{}, nil, ErrNotFound
 	}
 	return c, set, nil
@@ -336,9 +396,10 @@ func (p *Plugin) CreateArea(ctx context.Context, actor int64, slug, name, desc s
 	return id, nil
 }
 
-// CreateConference adds a conference to an area (moderators). permission
-// may be "" or a registered permission members also need.
-func (p *Plugin) CreateConference(ctx context.Context, actor, area int64, slug, name, desc, permission string) (int64, error) {
+// CreateConference adds a conference to an area (moderators). With no
+// groups every member who can read conferences may use it; otherwise only
+// members of one of the groups (and administrators).
+func (p *Plugin) CreateConference(ctx context.Context, actor, area int64, slug, name, desc string, groups []int64) (int64, error) {
 	if err := p.h.Perms.Require(ctx, actor, PermModerate); err != nil {
 		return 0, err
 	}
@@ -348,19 +409,34 @@ func (p *Plugin) CreateConference(ctx context.Context, actor, area int64, slug, 
 	if !slugPattern.MatchString(slug) || !okN || !okD {
 		return 0, fmt.Errorf("%w: short name 2-32 lowercase letters, digits or '-'; name 1-%d and description up to %d printable characters", ErrInvalid, MaxName, MaxDescription)
 	}
-	if permission != "" && !p.h.Perms.Registry().Known(permission) {
-		return 0, fmt.Errorf("%w: unknown permission %q", ErrInvalid, permission)
+	for _, g := range groups {
+		if _, err := p.h.Perms.GroupByID(ctx, g); err != nil {
+			return 0, fmt.Errorf("%w: unknown group %d", ErrInvalid, g)
+		}
 	}
-	res, err := p.h.DB.ExecContext(ctx, `INSERT INTO conferences_conferences (area_id, slug, name, description, permission, position, created_at)
-		SELECT ?, ?, ?, ?, ?, COALESCE(MAX(position), 0) + 1, ? FROM conferences_conferences WHERE area_id = ?
-		ON CONFLICT DO NOTHING`, area, slug, name, desc, permission, store.FormatTime(p.now()), area)
+	var id int64
+	err := store.WithTx(ctx, p.h.DB, func(tx *sql.Tx) error {
+		res, err := tx.ExecContext(ctx, `INSERT INTO conferences_conferences (area_id, slug, name, description, restricted, position, created_at)
+			SELECT ?, ?, ?, ?, ?, COALESCE(MAX(position), 0) + 1, ? FROM conferences_conferences WHERE area_id = ?
+			ON CONFLICT DO NOTHING`, area, slug, name, desc, len(groups) > 0, store.FormatTime(p.now()), area)
+		if err != nil {
+			return fmt.Errorf("conferences: create conference: %w", err)
+		}
+		if n, _ := res.RowsAffected(); n == 0 {
+			return ErrExists
+		}
+		id, _ = res.LastInsertId()
+		for _, g := range groups {
+			if _, err := tx.ExecContext(ctx, `INSERT OR IGNORE INTO conferences_conference_groups (conference_id, group_id) VALUES (?, ?)`, id, g); err != nil {
+				return fmt.Errorf("conferences: create conference: %w", err)
+			}
+		}
+		return nil
+	})
 	if err != nil {
-		return 0, fmt.Errorf("conferences: create conference: %w", err)
+		return 0, err
 	}
-	if n, _ := res.RowsAffected(); n == 0 {
-		return 0, ErrExists
-	}
-	id, _ := res.LastInsertId()
+	p.h.Log.Info("conference created", "conference_id", id, "area_id", area, "actor", actor, "groups", len(groups))
 	return id, nil
 }
 
@@ -737,8 +813,24 @@ func (p *Plugin) cleanupThread(ctx context.Context, thread int64) error {
 	return nil
 }
 
+const threadChatPrefix = "conferences:thread:"
+
 func threadChatContext(thread int64) string {
-	return "conferences:thread:" + strconv.FormatInt(thread, 10)
+	return threadChatPrefix + strconv.FormatInt(thread, 10)
+}
+
+// chatAccess lets into a thread's chat exactly the members who can read the
+// thread, so the chat follows the conference's groups.
+func (p *Plugin) chatAccess(ctx context.Context, user int64, context string) (bool, error) {
+	thread, err := strconv.ParseInt(strings.TrimPrefix(context, threadChatPrefix), 10, 64)
+	if err != nil {
+		return false, nil
+	}
+	_, _, _, err = p.Thread(ctx, user, thread)
+	if errors.Is(err, ErrNotFound) {
+		return false, nil
+	}
+	return err == nil, err
 }
 
 // SetLocked locks or unlocks a thread (moderators).
@@ -758,7 +850,7 @@ func (p *Plugin) EnableChat(ctx context.Context, user, thread int64) (int64, err
 	if p.chat == nil {
 		return 0, fmt.Errorf("%w: chat is not installed", ErrInvalid)
 	}
-	t, c, set, err := p.Thread(ctx, user, thread)
+	t, _, set, err := p.Thread(ctx, user, thread)
 	if err != nil {
 		return 0, err
 	}
@@ -770,7 +862,8 @@ func (p *Plugin) EnableChat(ctx context.Context, user, thread int64) (int64, err
 	}
 	name := fmt.Sprintf("thread-%d", thread)
 	// Titles (MaxTitle) fit the chat topic limit (chat.MaxTopic).
-	id, err := p.chat.EnsureThreadChannel(ctx, threadChatContext(thread), name, t.Title, c.Permission)
+	// Access follows the conference's groups through chatAccess.
+	id, err := p.chat.EnsureThreadChannel(ctx, threadChatContext(thread), name, t.Title, "")
 	if err != nil {
 		return 0, err
 	}
