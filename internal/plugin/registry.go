@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"regexp"
 	"slices"
 	"strings"
@@ -112,7 +113,9 @@ func Validate(m Manifest) error {
 		}
 	}
 	for _, wr := range m.Web {
-		if !strings.HasPrefix(wr.Path, "/") || wr.Handle == nil || strings.ContainsAny(wr.Path, " ?#") {
+		validKind := (wr.Handle != nil) != (wr.Stream != nil) &&
+			(wr.Method == "" || wr.Method == http.MethodGet || (wr.Method == http.MethodPost && wr.Handle != nil))
+		if !strings.HasPrefix(wr.Path, "/") || !validKind || strings.ContainsAny(wr.Path, " ?#") {
 			return fmt.Errorf("plugin %s: invalid web route %q", m.ID, wr.Path)
 		}
 	}

@@ -6,7 +6,7 @@ interface. See [docs/DESIGN.md](docs/DESIGN.md) for the full design.
 > **Status:** all ten stages of the design are implemented: SSH server,
 > accounts, TUI (full-screen and screen-reader), markdown with graded links,
 > plugins and menus, administration, SFTP, the core plugins, privacy and
-> erasure, and a read-only web interface.
+> erasure, and a web interface for reading and for live thread chat.
 
 ## Build
 
@@ -212,31 +212,35 @@ every request, so locking an account takes effect immediately.
 ## Web interface
 
 Optional (`SHELLSHAWK_HTTP_ADDR`); serve it behind a TLS-terminating
-reverse proxy. Read-only in this version: posting, chat and settings stay in
-the SSH interface.
+reverse proxy. Mostly read-only: you can take part in a conference thread's
+live chat; posting, other chats and settings stay in the SSH interface.
 
 | Path | Description |
 |------|-------------|
 | `/` | Start page: how to connect, the SSH host key fingerprint, how to join |
 | `/login` | Log in with your username and a one-time code from **Web login code** in the BBS main menu (single use, 5 minutes) |
 | `/home` | Your start page once logged in |
-| `/p/conferences/` | Areas, conferences and threads you may read |
+| `/p/conferences/` | Areas, conferences and threads you may read; a thread with a chat shows it live, and you can send messages |
 | `/p/messages/` | Your inbox; opening a message marks it read |
 | `/privacy` | Privacy policy (built in, or `SHELLSHAWK_PRIVACY_POLICY_FILE`) |
 | `/.well-known/gpc.json` | Global Privacy Control declaration |
 | `/version` | `{"version","commit","buildDate"}` to confirm a deploy |
 
 - **No third parties**: every script, stylesheet and font is served by
-  shellshawk; the only script is a few lines that show a notice when the
-  browser has GPC turned on. Assets have content-hashed names and are cached
+  shellshawk. There are two small scripts: one shows a notice when the
+  browser has GPC turned on; the other streams thread chat from this server
+  (server-sent events) and sends messages without reloading. Without
+  JavaScript the chat still works: send with the form, reload to see new
+  messages. Assets have content-hashed names and are cached
   as immutable; pages are `no-store`.
 - **Global Privacy Control**: detected from the `Sec-GPC` header and
   `navigator.globalPrivacyControl`, acknowledged on every page, declared at
   `/.well-known/gpc.json`, and explained in the privacy policy. Nothing is
   ever sold or shared, so honouring it changes nothing else.
 - **Headers**: `Content-Security-Policy: default-src 'none'; script-src
-  'self'; style-src 'self'; img-src 'self' data:; form-action 'self';
-  frame-ancestors 'none'; base-uri 'none'`, `Referrer-Policy: no-referrer`,
+  'self'; style-src 'self'; img-src 'self' data:; connect-src 'self';
+  form-action 'self'; frame-ancestors 'none'; base-uri 'none'`,
+  `Referrer-Policy: same-origin` (other sites never receive a referrer),
   `X-Frame-Options: DENY`, nosniff, a restrictive `Permissions-Policy`, and
   HSTS. The CSP avoids blanket bans such as `style-src 'none'` so
   Privacy Badger keeps working.

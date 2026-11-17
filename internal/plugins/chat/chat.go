@@ -16,6 +16,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"go.privatebychoice.com/shellshawk/internal/auth"
 	"go.privatebychoice.com/shellshawk/internal/perm"
 	"go.privatebychoice.com/shellshawk/internal/plugin"
 	"go.privatebychoice.com/shellshawk/internal/sftpd"
@@ -51,6 +52,7 @@ var (
 	ErrNotFound = errors.New("channel not found")
 	ErrInvalid  = errors.New("invalid")
 	ErrExists   = errors.New("a channel with that name already exists")
+	ErrSlowDown = fmt.Errorf("slow down: at most %d messages every %d seconds", floodLines, int(floodWindow.Seconds()))
 )
 
 var namePattern = regexp.MustCompile(`^[a-z][a-z0-9-]{1,31}$`)
@@ -133,6 +135,7 @@ func (p *Plugin) Manifest() plugin.Manifest {
 			INSERT INTO chat_channels (name, kind, topic, created_at)
 				VALUES ('lobby', 'persistent', 'General chat', strftime('%Y-%m-%dT%H:%M:%SZ', 'now'));`}},
 		MenuItems: []plugin.MenuItem{{Key: "main", Label: "Chat", Help: "Live chat channels", AnyOf: []string{PermUse}, Run: p.run}},
+		Web:       p.webRoutes(),
 		SFTP:      []sftpd.Mount{{Name: "chat", AnyOf: []string{PermUse}, FS: &logFS{p: p}}},
 		Export:    p.export,
 	}
@@ -476,6 +479,39 @@ type Entry struct {
 }
 
 // record logs a line if the channel is logged.
+// cleanMessage checks a message: one line of printable text, at most
+// MaxMessage characters.
+func cleanMessage(text string) (string, error) {
+	text = strings.TrimSpace(text)
+	switch {
+	case text == "":
+		return "", fmt.Errorf("%w: the message is empty", ErrInvalid)
+	case utf8.RuneCountInString(text) > MaxMessage:
+		return "", fmt.Errorf("%w: messages are at most %d characters", ErrInvalid, MaxMessage)
+	case term.Sanitize(text, false) != text:
+		return "", fmt.Errorf("%w: messages must be one line of printable text", ErrInvalid)
+	}
+	return text, nil
+}
+
+// Say sends a message from u to c: checked, flood-limited, logged if c is
+// logged, and delivered to everyone in c. Callers check access first.
+func (p *Plugin) Say(ctx context.Context, c Channel, u auth.User, text string) error {
+	text, err := cleanMessage(text)
+	if err != nil {
+		return err
+	}
+	now := p.now()
+	if !p.hub.allow(u.ID, now) {
+		return ErrSlowDown
+	}
+	if err := p.record(ctx, c, u.ID, "message", text, now); err != nil {
+		return fmt.Errorf("chat: log message: %w", err)
+	}
+	p.hub.broadcast(c.ID, messageLine(now, u.Username, text))
+	return nil
+}
+
 func (p *Plugin) record(ctx context.Context, c Channel, user int64, kind, body string, at time.Time) error {
 	if c.RetentionDays == 0 {
 		return nil

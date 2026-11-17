@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"log/slog"
+	"net/http"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -88,6 +89,9 @@ func newEnv(t *testing.T) *env {
 
 func TestValidate(t *testing.T) {
 	mod := func(f func(*Manifest)) Manifest { m := goodManifest(); f(&m); return m }
+	page := func(*http.Request, WebSession) (WebPage, error) { return WebPage{}, nil }
+	stream := func(http.ResponseWriter, *http.Request, WebSession) error { return nil }
+	webRoute := func(r WebRoute) Manifest { return mod(func(m *Manifest) { m.Web = []WebRoute{r} }) }
 	tests := []struct {
 		name string
 		m    Manifest
@@ -115,6 +119,14 @@ func TestValidate(t *testing.T) {
 		{"sftp mount without fs", mod(func(m *Manifest) { m.SFTP = []sftpd.Mount{{Name: "notes"}} }), "no file system"},
 		{"sftp mount with id prefix ok", mod(func(m *Manifest) { m.SFTP = []sftpd.Mount{{Name: "notes-archive", FS: nullFS{}}} }), ""},
 		{"quoted name checked", mod(func(m *Manifest) { m.Migrations[0].SQL = `CREATE TABLE "users2" (id INTEGER)` }), `touches "users2"`},
+		{"web page", webRoute(WebRoute{Path: "/", Handle: page}), ""},
+		{"web action", webRoute(WebRoute{Path: "/save", Method: "POST", Handle: page}), ""},
+		{"web stream", webRoute(WebRoute{Path: "/live", Stream: stream}), ""},
+		{"web route without handler", webRoute(WebRoute{Path: "/"}), "invalid web route"},
+		{"web route with both handlers", webRoute(WebRoute{Path: "/", Handle: page, Stream: stream}), "invalid web route"},
+		{"web stream by POST", webRoute(WebRoute{Path: "/live", Method: "POST", Stream: stream}), "invalid web route"},
+		{"web route other method", webRoute(WebRoute{Path: "/", Method: "DELETE", Handle: page}), "invalid web route"},
+		{"web route relative path", webRoute(WebRoute{Path: "x", Handle: page}), "invalid web route"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

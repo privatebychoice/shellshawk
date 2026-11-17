@@ -25,7 +25,7 @@ type asset struct {
 
 // Assets holds the fingerprinted URLs used by the templates.
 type Assets struct {
-	CSS, GPC, Theme string
+	CSS, GPC, Live, Theme string
 }
 
 type assetStore struct {
@@ -79,6 +79,11 @@ func loadAssets(cat *theme.Catalog) (*assetStore, error) {
 	}
 	s.Default.CSS = s.add("app.css", "text/css; charset=utf-8", css)
 	s.Default.GPC = s.add("gpc.js", "text/javascript; charset=utf-8", js)
+	live, err := files.ReadFile("static/live.js")
+	if err != nil {
+		return nil, err
+	}
+	s.Default.Live = s.add("live.js", "text/javascript; charset=utf-8", live)
 	for _, th := range cat.All() {
 		s.themes[th.Name] = s.add("theme-"+th.Name+".css", "text/css; charset=utf-8", []byte(":root{"+themeCSS(th)+"}\n"))
 	}

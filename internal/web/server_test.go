@@ -6,6 +6,7 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"encoding/json"
+	"fmt"
 	"html/template"
 	"log/slog"
 	"net/http"
@@ -52,6 +53,19 @@ func (notesPlugin) Manifest() plugin.Manifest {
 			{Path: "/boom", Handle: func(*http.Request, plugin.WebSession) (plugin.WebPage, error) { panic("plugin bug") }},
 			{Path: "/missing", Handle: func(*http.Request, plugin.WebSession) (plugin.WebPage, error) {
 				return plugin.WebPage{}, plugin.ErrWebNotFound
+			}},
+			{Path: "/save", Method: http.MethodPost, Handle: func(r *http.Request, s plugin.WebSession) (plugin.WebPage, error) {
+				if r.PostFormValue("note") == "bad" {
+					return plugin.WebPage{}, &plugin.WebError{Status: http.StatusBadRequest, Message: "Notes cannot be bad."}
+				}
+				return plugin.WebPage{Redirect: r.PostFormValue("to")}, nil
+			}},
+			{Path: "/live", Stream: func(w http.ResponseWriter, r *http.Request, s plugin.WebSession) error {
+				w.Header().Set("Content-Type", "text/event-stream")
+				fmt.Fprintf(w, "data: hello %d\n\n", s.UserID())
+				w.(http.Flusher).Flush()
+				<-r.Context().Done()
+				return nil
 			}},
 		},
 	}
@@ -221,6 +235,14 @@ func TestStaticAssets(t *testing.T) {
 	}
 	if rec := e.do(req{method: "GET", path: "/static/app.css"}); rec.Code != 404 {
 		t.Error("unfingerprinted asset name served")
+	}
+	live := regexp.MustCompile(`<script src="(/static/live\.[0-9a-f]{12}\.js)" defer>`).FindStringSubmatch(body)
+	if live == nil {
+		t.Fatalf("layout does not load live.js: %s", body)
+	}
+	if rec := e.do(req{method: "GET", path: live[1]}); rec.Code != 200 || !strings.HasPrefix(rec.Header().Get("Content-Type"), "text/javascript") ||
+		!strings.Contains(rec.Body.String(), "EventSource") {
+		t.Errorf("live.js = %d %v", rec.Code, rec.Header())
 	}
 }
 

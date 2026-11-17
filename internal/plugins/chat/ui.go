@@ -30,6 +30,16 @@ func eventLine(at time.Time, text string) tui.Line {
 	return tui.Styled("["+clock(at)+"] * "+text, theme.Style{FG: theme.Muted})
 }
 
+// sentence turns an ErrInvalid or ErrSlowDown error into a sentence for
+// the member: "invalid: the message is empty" → "The message is empty."
+func sentence(err error) string {
+	msg := strings.TrimPrefix(err.Error(), ErrInvalid.Error()+": ")
+	if msg == "" {
+		return ""
+	}
+	return strings.ToUpper(msg[:1]) + msg[1:] + "."
+}
+
 func errorMessage(err error) string {
 	switch {
 	case errors.Is(err, perm.ErrForbidden):
@@ -54,7 +64,7 @@ func (p *Plugin) run(ctx context.Context, s plugin.Session) error {
 		for _, c := range chans {
 			items = append(items, tui.MenuItem{
 				Value: strconv.FormatInt(c.ID, 10),
-				Label: fmt.Sprintf("#%s %s (%d here)", c.Name, c.Tag(), p.hub.count(c.ID)),
+				Label: channelLabel(c, p.hub.count(c.ID)),
 				Help:  c.Topic,
 			})
 		}
@@ -225,6 +235,16 @@ func (p *Plugin) enterOne(ctx context.Context, s plugin.Session, id int64) (int6
 	return next, err
 }
 
+// channelLabel is a channel's line in the chat list. Thread chats also show
+// their topic (the thread title) so members can tell them apart.
+func channelLabel(c Channel, here int) string {
+	l := fmt.Sprintf("#%s %s (%d here)", c.Name, c.Tag(), here)
+	if c.Kind == KindThread && c.Topic != "" {
+		l += " " + c.Topic
+	}
+	return l
+}
+
 func banner(c Channel) string {
 	b := fmt.Sprintf("#%s, %s.", c.Name, c.KindName())
 	if c.Topic != "" {
@@ -261,15 +281,14 @@ func (p *Plugin) submit(ctx context.Context, s plugin.Session, u auth.User, chID
 		return say("You no longer have access to this chat."), true, 0
 	}
 	if !strings.HasPrefix(text, "/") {
-		if !p.hub.allow(u.ID, p.now()) {
-			return say("Slow down: at most %d messages every %d seconds.", floodLines, int(floodWindow.Seconds())), false, 0
-		}
-		now := p.now()
-		if err := p.record(ctx, c, u.ID, "message", text, now); err != nil {
+		switch err := p.Say(ctx, c, u, text); {
+		case err == nil:
+		case errors.Is(err, ErrSlowDown), errors.Is(err, ErrInvalid):
+			return say("%s", sentence(err)), false, 0
+		default:
 			s.Log().Error("chat log write failed", "err", err)
 			return say("Your message could not be sent."), false, 0
 		}
-		p.hub.broadcast(c.ID, messageLine(now, u.Username, text))
 		return nil, false, 0
 	}
 

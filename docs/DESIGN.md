@@ -452,7 +452,8 @@ TOML/JSON files; admins can add more.
   hashed, rate-limited. Web never uses passwords.
 - GPC: `Sec-GPC` header detection middleware, `navigator.globalPrivacyControl`
   noted client-side, `/.well-known/gpc.json`, privacy policy page.
-- Strict CSP without breaking Privacy Badger (`default-src 'self'`, no
+- Strict CSP without breaking Privacy Badger (`default-src 'none'` with
+  `'self'` for scripts, styles, images and `connect-src`, no
   `style-src 'none'`), `Referrer-Policy: same-origin` (`no-referrer` would make browsers send `Origin: null` on the site's own form posts), HSTS, fingerprinted
   asset names, `/version` endpoint, build number `1.0.x` in footer.
 - No analytics, no third-party requests. Session cookie: `HttpOnly; Secure;
@@ -467,8 +468,25 @@ html/template). Login codes are 8 Crockford characters (40 bits), single
 use, 5 minutes, replaced by any newer code, rate-limited; sessions are
 stored hashed with a per-session CSRF token. Login rate limits key on the
 connecting IP: behind a reverse proxy that is the proxy's address, so the
-per-username limit is the effective one. Chat over the web (SSE) and posting
-are left for a later version.
+per-username limit is the effective one.
+
+Live thread chat (after stage 10): plugin web routes may also be POST
+actions (`Method: "POST"`; the core checks the session, CSRF token and
+Origin, and only follows redirects to local paths) or streams (`Stream`;
+the core lifts the read and whole-response write timeouts, sets a write
+deadline per write, ends the stream when the session expires or is logged
+out, re-checked every 30 seconds, and on shutdown, and allows 4 open streams
+per member). The chat plugin serves `/p/chat/c/{id}/events` (server-sent
+events; a web member is in the channel and listed by `/who` while it is
+open; access is re-checked every 25 seconds) and `/p/chat/c/{id}/send`, and
+`WebPanel` embeds a panel in other plugins' pages. Messages from the web go
+through the same `Say` as the TUI (one printable line, at most 500
+characters, flood control, logging); slash commands stay SSH-only.
+`static/live.js` progressively enhances the panel; the CSP gains
+`connect-src 'self'`. Thread chats are named `<conference>-<title words>`
+(falling back to adding the thread ID), the chat list shows a thread
+chat's title, and a thread forgets a chat that was closed from the Chat
+menu so it can be enabled again.
 
 ## 12. Core plugins — notable design points
 

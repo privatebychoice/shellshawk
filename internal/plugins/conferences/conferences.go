@@ -575,7 +575,31 @@ func (p *Plugin) Thread(ctx context.Context, user, id int64) (Thread, Conference
 	if err != nil {
 		return Thread{}, Conference{}, nil, err
 	}
-	return ts[0], c, set, nil
+	t := ts[0]
+	if err := p.dropClosedChat(ctx, &t); err != nil {
+		return Thread{}, Conference{}, nil, err
+	}
+	return t, c, set, nil
+}
+
+// dropClosedChat forgets a thread's chat channel once it no longer exists
+// (a moderator closed it from the Chat menu), so the thread offers to
+// enable a new one instead of failing to open the old one.
+func (p *Plugin) dropClosedChat(ctx context.Context, t *Thread) error {
+	if t.ChatChannelID == 0 || p.chat == nil {
+		return nil
+	}
+	_, err := p.chat.Get(ctx, t.ChatChannelID)
+	if !errors.Is(err, chat.ErrNotFound) {
+		return err
+	}
+	if _, err := p.h.DB.ExecContext(ctx, `UPDATE conferences_threads SET chat_channel_id = NULL WHERE id = ? AND chat_channel_id = ?`,
+		t.ID, t.ChatChannelID); err != nil {
+		return fmt.Errorf("conferences: forget closed chat: %w", err)
+	}
+	p.h.Log.Info("thread chat was closed; reference removed", "thread_id", t.ID, "channel_id", t.ChatChannelID)
+	t.ChatChannelID = 0
+	return nil
 }
 
 // Posts returns a thread's posts, oldest first.
@@ -816,6 +840,38 @@ func (p *Plugin) cleanupThread(ctx context.Context, thread int64) error {
 
 const threadChatPrefix = "conferences:thread:"
 
+// maxChatName is the chat plugin's channel name limit.
+const maxChatName = 32
+
+// chatNames returns channel names to try for a thread's chat, most
+// readable first: "<conference>-<title words>", then the same with the
+// thread ID to make it unique, then "thread-<id>". Each is a valid chat
+// name: lowercase letters, digits and '-', starting with a letter.
+func chatNames(confSlug, title string, thread int64) []string {
+	words := strings.FieldsFunc(strings.ToLower(title), func(r rune) bool {
+		return !(r >= 'a' && r <= 'z' || r >= '0' && r <= '9')
+	})
+	base := strings.Trim(confSlug, "-")
+	if base == "" || base[0] < 'a' || base[0] > 'z' {
+		base = "c" + base
+	}
+	fit := func(suffix string) string {
+		name := base
+		for _, w := range words {
+			if len(name)+1+len(w)+len(suffix) > maxChatName {
+				break
+			}
+			name += "-" + w
+		}
+		if len(name)+len(suffix) > maxChatName {
+			name = strings.TrimRight(name[:maxChatName-len(suffix)], "-")
+		}
+		return name + suffix
+	}
+	id := strconv.FormatInt(thread, 10)
+	return []string{fit(""), fit("-" + id), "thread-" + id}
+}
+
 func threadChatContext(thread int64) string {
 	return threadChatPrefix + strconv.FormatInt(thread, 10)
 }
@@ -851,7 +907,7 @@ func (p *Plugin) EnableChat(ctx context.Context, user, thread int64) (int64, err
 	if p.chat == nil {
 		return 0, fmt.Errorf("%w: chat is not installed", ErrInvalid)
 	}
-	t, _, set, err := p.Thread(ctx, user, thread)
+	t, c, set, err := p.Thread(ctx, user, thread)
 	if err != nil {
 		return 0, err
 	}
@@ -861,10 +917,15 @@ func (p *Plugin) EnableChat(ctx context.Context, user, thread int64) (int64, err
 	if t.ChatChannelID != 0 {
 		return t.ChatChannelID, nil
 	}
-	name := fmt.Sprintf("thread-%d", thread)
 	// Titles (MaxTitle) fit the chat topic limit (chat.MaxTopic).
 	// Access follows the conference's groups through chatAccess.
-	id, err := p.chat.EnsureThreadChannel(ctx, threadChatContext(thread), name, t.Title, "")
+	var id int64
+	for _, name := range chatNames(c.Slug, t.Title, thread) {
+		id, err = p.chat.EnsureThreadChannel(ctx, threadChatContext(thread), name, t.Title, "")
+		if !errors.Is(err, chat.ErrExists) {
+			break
+		}
+	}
 	if err != nil {
 		return 0, err
 	}

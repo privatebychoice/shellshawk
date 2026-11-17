@@ -1,7 +1,7 @@
 // Package web serves the optional web interface (docs/DESIGN.md §11): a
 // public start page with connection instructions, the privacy policy, GPC
-// declaration, login with one-time codes from the TUI, and read-only pages
-// contributed by plugins. Everything is self-hosted; pages make no
+// declaration, login with one-time codes from the TUI, and pages, actions
+// and live streams contributed by plugins. Everything is self-hosted; pages make no
 // third-party requests.
 package web
 
@@ -85,6 +85,7 @@ type Server struct {
 	custom  bool   // policy came from PrivacyPolicyFile
 	ipLim   *auth.Limiter
 	userLim *auth.Limiter
+	streams *streams
 	handler http.Handler
 }
 
@@ -112,6 +113,7 @@ func New(cfg Config) (*Server, error) {
 		cfg: cfg, log: cfg.Log.With("component", "web"), tmpl: tmpl, assets: assets,
 		ipLim:   auth.NewLimiter(loginIPFailures, loginWindow, nil),
 		userLim: auth.NewLimiter(loginUserFailures, loginWindow, nil),
+		streams: newStreams(),
 	}
 	if cfg.PrivacyPolicyFile != "" {
 		b, err := os.ReadFile(cfg.PrivacyPolicyFile)
@@ -156,11 +158,19 @@ func (s *Server) routes() http.Handler {
 	if s.cfg.Plugins != nil {
 		for _, p := range s.cfg.Plugins.Plugins() {
 			for _, r := range p.Manifest.Web {
-				pattern := "GET /p/" + p.Manifest.ID + r.Path
+				method := r.Method
+				if method == "" {
+					method = http.MethodGet
+				}
+				pattern := method + " /p/" + p.Manifest.ID + r.Path
 				if r.Path == "/" {
 					pattern += "{$}"
 				}
-				mux.Handle(pattern, s.pluginPage(p.Manifest.ID, r))
+				if r.Stream != nil {
+					mux.Handle(pattern, s.pluginStream(p.Manifest.ID, r))
+				} else {
+					mux.Handle(pattern, s.pluginPage(p.Manifest.ID, r))
+				}
 			}
 		}
 	}
@@ -230,11 +240,11 @@ func newRequestID() string {
 	return hex.EncodeToString(b[:])
 }
 
-// ContentSecurityPolicy allows only this server's own scripts, styles and
-// images, with no inline code. It is strict without blanket bans such as
+// ContentSecurityPolicy allows only this server's own scripts, styles,
+// images and live connections (server-sent events), with no inline code. It is strict without blanket bans such as
 // style-src 'none' that would break extension-injected placeholders
 // (Privacy Badger).
-const ContentSecurityPolicy = "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; " +
+const ContentSecurityPolicy = "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; " +
 	"form-action 'self'; frame-ancestors 'none'; base-uri 'none'"
 
 func securityHeaders(secure bool, next http.Handler) http.Handler {
@@ -556,6 +566,7 @@ type webSession struct {
 	s      *Server
 	user   int64
 	plugin string
+	csrf   string
 }
 
 func (ws webSession) UserID() int64 { return ws.user }
@@ -570,33 +581,71 @@ func (ws webSession) Markdown(src string) template.HTML {
 	return template.HTML(html) //nolint:gosec // sanitising markdown renderer
 }
 func (ws webSession) Path(rel string) string { return "/p/" + ws.plugin + rel }
+func (ws webSession) CSRF() string           { return ws.csrf }
 
-// pluginPage serves a plugin's page to logged-in members holding the
-// route's permission. Pages the member may not open are reported as not
-// found.
+// pluginPage serves a plugin's page or POST action to logged-in members
+// holding the route's permission. Pages the member may not open are
+// reported as not found. POST actions need the session's CSRF token.
 func (s *Server) pluginPage(id string, route plugin.WebRoute) http.Handler {
+	post := route.Method == http.MethodPost
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		sess := sessionFrom(r)
+		if post {
+			r.Body = http.MaxBytesReader(w, r.Body, maxFormBytes)
+			if sess == nil || r.ParseForm() != nil || !websess.CheckCSRF(*sess, r.PostForm.Get("csrf")) {
+				s.pluginError(w, r, http.StatusForbidden, "Your session has ended. Please log in again.")
+				return
+			}
+		}
 		if sess == nil {
 			http.Redirect(w, r, "/login", http.StatusSeeOther)
 			return
 		}
 		set, err := s.cfg.Perms.Permissions(r.Context(), sess.UserID)
 		if err != nil || !allowed(set, route.AnyOf) {
-			s.renderError(w, r, http.StatusNotFound, "Page not found.")
+			s.pluginError(w, r, http.StatusNotFound, "Page not found.")
 			return
 		}
-		page, err := safeHandle(route, r, webSession{s: s, user: sess.UserID, plugin: id})
+		page, err := safeHandle(route, r, webSession{s: s, user: sess.UserID, plugin: id, csrf: sess.CSRF})
+		var werr *plugin.WebError
 		switch {
 		case errors.Is(err, plugin.ErrWebNotFound):
-			s.renderError(w, r, http.StatusNotFound, "Page not found.")
+			s.pluginError(w, r, http.StatusNotFound, "Page not found.")
+		case errors.As(err, &werr) && werr.Status >= 400 && werr.Status < 500:
+			s.pluginError(w, r, werr.Status, werr.Message)
 		case err != nil:
 			LoggerFrom(r.Context()).Error("plugin page failed", "plugin", id, "err", err)
-			s.renderError(w, r, http.StatusInternalServerError, "Sorry, something went wrong.")
+			s.pluginError(w, r, http.StatusInternalServerError, "Sorry, something went wrong.")
+		case post:
+			http.Redirect(w, r, localPath(page.Redirect), http.StatusSeeOther)
 		default:
 			s.writePage(w, r, http.StatusOK, page.Title, page.Body)
 		}
 	})
+}
+
+// pluginError renders an error page, or plain text for scripts that ask
+// for it (live.js), so they can show the message inline.
+func (s *Server) pluginError(w http.ResponseWriter, r *http.Request, status int, msg string) {
+	if strings.Contains(r.Header.Get("Accept"), "text/plain") {
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		w.Header().Set("Cache-Control", "no-store")
+		w.WriteHeader(status)
+		_, _ = w.Write([]byte(msg))
+		return
+	}
+	s.renderError(w, r, status, msg)
+}
+
+// localPath returns p if it is a plain path on this site, otherwise /home,
+// so a plugin's redirect can never send the browser elsewhere.
+func localPath(p string) string {
+	u, err := url.Parse(p)
+	if err != nil || !strings.HasPrefix(p, "/") || strings.HasPrefix(p, "//") || strings.ContainsAny(p, "\\\r\n") ||
+		u.Scheme != "" || u.Host != "" || u.User != nil {
+		return "/home"
+	}
+	return p
 }
 
 func safeHandle(route plugin.WebRoute, r *http.Request, ws plugin.WebSession) (page plugin.WebPage, err error) {

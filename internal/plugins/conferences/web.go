@@ -19,7 +19,8 @@ var webTmpl = template.Must(template.New("conf").Parse(`
 <span class="meta">by {{.Author}}, {{.Posts}} post(s), last {{.Last}}</span></li>{{end}}</ul>{{else}}<p>No threads yet.</p>{{end}}
 <p class="meta">Start threads and reply over SSH.</p>{{end}}
 {{define "thread"}}<p class="meta">In <a href="{{.ConfHref}}">{{.Conf}}</a>.{{if .Locked}} This thread is locked.{{end}}</p>
-{{range .Posts}}<article class="post"><h2>Post {{.N}} by {{.Author}}</h2><p class="meta">{{.Date}}{{if .Edited}} (edited){{end}}{{if .Polls}} · has a poll: vote over SSH{{end}}</p>{{.Body}}</article>{{end}}{{end}}
+{{range .Posts}}<article class="post"><h2>Post {{.N}} by {{.Author}}</h2><p class="meta">{{.Date}}{{if .Edited}} (edited){{end}}{{if .Polls}} · has a poll: vote over SSH{{end}}</p>{{.Body}}</article>{{end}}
+{{.Chat}}{{end}}
 `))
 
 func execTmpl(name string, data any) (template.HTML, error) {
@@ -132,8 +133,15 @@ func (p *Plugin) webThread(r *http.Request, s plugin.WebSession) (plugin.WebPage
 	for i, po := range posts {
 		ps = append(ps, postOut{i + 1, po.Author, po.CreatedAt.UTC().Format("2006-01-02 15:04 UTC"), po.EditedAt != nil, len(po.Polls) > 0, s.Markdown(po.Body)})
 	}
+	var chatPanel template.HTML
+	if t.ChatChannelID != 0 && p.chat != nil {
+		chatPanel, err = p.chat.WebPanel(r.Context(), s.UserID(), t.ChatChannelID, "Thread chat", s.CSRF(), s.Path("/t/"+strconv.FormatInt(id, 10)))
+		if err != nil {
+			return plugin.WebPage{}, err
+		}
+	}
 	body, err := execTmpl("thread", map[string]any{
-		"Conf": c.Name, "ConfHref": s.Path("/c/" + strconv.FormatInt(c.ID, 10)), "Locked": t.Locked, "Posts": ps,
+		"Conf": c.Name, "ConfHref": s.Path("/c/" + strconv.FormatInt(c.ID, 10)), "Locked": t.Locked, "Posts": ps, "Chat": chatPanel,
 	})
 	return plugin.WebPage{Title: t.Title, Body: body}, err
 }

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log/slog"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"testing"
@@ -389,5 +390,107 @@ func TestMigrationConvertsPermission(t *testing.T) {
 		if restricted != tt.wantRestricted || groups != tt.wantGroups {
 			t.Errorf("%s: restricted=%v groups=%q, want %v %q", tt.slug, restricted, groups, tt.wantRestricted, tt.wantGroups)
 		}
+	}
+}
+
+func TestChatNames(t *testing.T) {
+	tests := []struct {
+		name, conf, title string
+		thread            int64
+		want              []string
+	}{
+		{"words", "general", "Hello, World!", 7, []string{"general-hello-world", "general-hello-world-7", "thread-7"}},
+		{"long title stops at a word", "general", "Planning the spring meetup in the park", 12,
+			[]string{"general-planning-the-spring", "general-planning-the-spring-12", "thread-12"}},
+		{"no usable words", "news", "¿¡!", 3, []string{"news", "news-3", "thread-3"}},
+		{"slug starting with a digit", "2026-plans", "Budget", 4, []string{"c2026-plans-budget", "c2026-plans-budget-4", "thread-4"}},
+		{"very long slug", strings.Repeat("a", 32), "x", 5, []string{strings.Repeat("a", 32), strings.Repeat("a", 30) + "-5", "thread-5"}},
+	}
+	valid := regexp.MustCompile(`^[a-z][a-z0-9-]{1,31}$`) // chat's name rule
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := chatNames(tt.conf, tt.title, tt.thread)
+			if strings.Join(got, " ") != strings.Join(tt.want, " ") {
+				t.Errorf("chatNames = %v, want %v", got, tt.want)
+			}
+			for _, n := range got {
+				if !valid.MatchString(n) {
+					t.Errorf("%q is not a valid chat name", n)
+				}
+			}
+		})
+	}
+}
+
+func TestThreadChatNamesAndClosing(t *testing.T) {
+	f := setup(t)
+	tid, _, _ := f.p.StartThread(f.Ctx, f.alice, f.general, "Hello world", "x")
+	tid2, _, _ := f.p.StartThread(f.Ctx, f.alice, f.general, "Hello world", "same title")
+	cid, err := f.p.EnableChat(f.Ctx, f.mod, tid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cid2, err := f.p.EnableChat(f.Ctx, f.mod, tid2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, _ := f.chat.Get(f.Ctx, cid)
+	c2, _ := f.chat.Get(f.Ctx, cid2)
+	if c.Name != "general-hello-world" || c2.Name != "general-hello-world-"+strconv.FormatInt(tid2, 10) {
+		t.Errorf("chat names = %q, %q", c.Name, c2.Name)
+	}
+
+	// A moderator closes the chat from the Chat menu: the thread must
+	// forget it rather than fail to open it.
+	if err := f.chat.Destroy(f.Ctx, f.mod, cid); err != nil {
+		t.Fatal(err)
+	}
+	th, _, _, err := f.p.Thread(f.Ctx, f.alice, tid)
+	if err != nil || th.ChatChannelID != 0 {
+		t.Fatalf("after closing, thread chat = %d, err %v; want none", th.ChatChannelID, err)
+	}
+	var stored any
+	f.DB.QueryRow(`SELECT chat_channel_id FROM conferences_threads WHERE id = ?`, tid).Scan(&stored)
+	if stored != nil {
+		t.Errorf("stored chat_channel_id = %v, want NULL", stored)
+	}
+	again, err := f.p.EnableChat(f.Ctx, f.mod, tid)
+	if err != nil || again == cid {
+		t.Errorf("re-enabling: id %d (old %d), err %v", again, cid, err)
+	}
+}
+
+func TestWebThreadChatPanel(t *testing.T) {
+	f := setup(t)
+	tid, _, _ := f.p.StartThread(f.Ctx, f.alice, f.general, "Chatty", "x")
+	staffThread, _, _ := f.p.StartThread(f.Ctx, f.mod, f.staffCnf, "Staff", "x")
+	id := func(n int64) map[string]string { return map[string]string{"id": strconv.FormatInt(n, 10)} }
+
+	page, err := f.WebGet(f.p, "/t/{id}", id(tid), f.alice)
+	if err != nil || strings.Contains(string(page.Body), "data-live-events") {
+		t.Errorf("thread without chat shows a chat panel (err %v)", err)
+	}
+	if _, err := f.p.EnableChat(f.Ctx, f.mod, tid); err != nil {
+		t.Fatal(err)
+	}
+	page, err = f.WebGet(f.p, "/t/{id}", id(tid), f.alice)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(page.Body)
+	for _, want := range []string{"data-live-events=\"/p/chat/c/", "Thread chat", `name="csrf" value="test-csrf"`,
+		`name="return" value="/p/conferences/t/` + strconv.FormatInt(tid, 10) + `"`} {
+		if !strings.Contains(body, want) {
+			t.Errorf("thread page missing %q", want)
+		}
+	}
+
+	// The chat of a group-only thread follows the conference's groups.
+	scid, err := f.p.EnableChat(f.Ctx, f.mod, staffThread)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if html, err := f.chat.WebPanel(f.Ctx, f.alice, scid, "Thread chat", "t", "/"); err != nil || html != "" {
+		t.Errorf("member outside the groups gets the staff chat panel (err %v)", err)
 	}
 }

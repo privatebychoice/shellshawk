@@ -43,3 +43,10 @@ header button { background: var(--title-fg); color: var(--title-bg); }
 .pbc-grade-a { color: var(--grade-a); } .pbc-grade-b { color: var(--grade-b); } .pbc-grade-c { color: var(--grade-c); }
 .pbc-grade-d { color: var(--grade-d); } .pbc-grade-f { color: var(--grade-f); } .pbc-grade-unknown { color: var(--grade-unknown); }
 @media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }
+.live { border: 2px solid var(--rule); padding: .5rem 1rem; margin-top: 1.5rem; }
+.live h2 { margin-top: 0; }
+.chat-log { list-style: none; margin: 0; padding: .25rem 0; max-height: 24rem; overflow-y: auto; font-family: ui-monospace, "SFMono-Regular", Menlo, monospace; overflow-wrap: anywhere; }
+.chat-log li { margin: .15rem 0; }
+.chat-log:focus-visible { outline: 3px solid var(--focus-bg); outline-offset: 2px; }
+.live form label { display: block; font-weight: 600; margin-top: .5rem; }
+.live form input[type=text] { font: inherit; width: 100%; max-width: 40rem; padding: .4rem; background: var(--input-bg); color: var(--input-fg); border: 2px solid var(--muted); box-sizing: border-box; }

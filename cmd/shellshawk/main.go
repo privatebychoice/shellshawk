@@ -251,6 +251,7 @@ func (a *app) serve(ctx context.Context) error {
 			log.Warn("insecure web cookies enabled: use only for local testing over plain HTTP")
 		}
 		webSrv = web.NewHTTPServer(cfg.HTTPAddr, site.Handler(), log)
+		webSrv.RegisterOnShutdown(site.CloseStreams) // live streams would hold up a graceful shutdown
 		go func() {
 			log.Info("web interface listening", "addr", cfg.HTTPAddr)
 			if err := webSrv.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
