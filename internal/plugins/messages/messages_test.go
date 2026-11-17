@@ -2,6 +2,7 @@ package messages
 
 import (
 	"errors"
+	"fmt"
 	"slices"
 	"strconv"
 	"strings"
@@ -53,11 +54,12 @@ func TestSend(t *testing.T) {
 		wantTo []string
 	}{
 		{"one recipient", Draft{To: "bob", Subject: "Hi", Body: "Hello"}, nil, []string{"bob"}},
-		{"names trimmed, @ allowed, dedupe, self dropped", Draft{To: " @Bob , bob, alice", Subject: "Hi", Body: "x"}, nil, []string{"bob"}},
+		{"names trimmed, @ allowed, dedupe, sender included", Draft{To: " @Bob , bob, alice", Subject: "Hi", Body: "x"}, nil, []string{"alice", "bob"}},
 		{"contact group", Draft{ContactGroups: []string{"TEAM"}, Subject: "Hi", Body: "x"}, nil, []string{"bob", "carol"}},
 		{"unknown user", Draft{To: "bob, ghost", Subject: "Hi", Body: "x"}, &RecipientError{}, nil},
 		{"someone else's group", Draft{ContactGroups: []string{"nope"}, Subject: "Hi", Body: "x"}, &RecipientError{}, nil},
-		{"only self", Draft{To: "alice", Subject: "Hi", Body: "x"}, ErrNoneToSend, nil},
+		{"note to self", Draft{To: "alice", Subject: "Hi", Body: "x"}, nil, []string{"alice"}},
+		{"no recipients", Draft{To: " , ", Subject: "Hi", Body: "x"}, ErrNoneToSend, nil},
 		{"empty subject", Draft{To: "bob", Subject: " ", Body: "x"}, ErrInvalid, nil},
 		{"escape in subject", Draft{To: "bob", Subject: "Hi\x1b[2J", Body: "x"}, ErrInvalid, nil},
 		{"empty body", Draft{To: "bob", Subject: "Hi", Body: "\n\n"}, ErrInvalid, nil},
@@ -109,7 +111,10 @@ func TestReadDeleteRestoreAndCounts(t *testing.T) {
 	if c, _ := f.p.Count(f.Ctx, f.bob); c != (Counts{Read: 1}) {
 		t.Errorf("counts after read = %+v", c)
 	}
-	if err := f.p.Delete(f.Ctx, f.bob, id); err != nil {
+	if err := f.p.Delete(f.Ctx, f.bob, id, Sent); !errors.Is(err, ErrNotFound) {
+		t.Errorf("recipient deleting from Sent err = %v, want ErrNotFound", err)
+	}
+	if err := f.p.Delete(f.Ctx, f.bob, id, Inbox); err != nil {
 		t.Fatal(err)
 	}
 	if c, _ := f.p.Count(f.Ctx, f.bob); c != (Counts{Deleted: 1}) {
@@ -128,7 +133,7 @@ func TestReadDeleteRestoreAndCounts(t *testing.T) {
 	if c, _ := f.p.Count(f.Ctx, f.bob); c != (Counts{Read: 1}) {
 		t.Errorf("counts after restore = %+v", c)
 	}
-	if err := f.p.Delete(f.Ctx, f.alice, id); err != nil {
+	if err := f.p.Delete(f.Ctx, f.alice, id, Sent); err != nil {
 		t.Fatal(err)
 	}
 	if sent, _ := f.p.List(f.Ctx, f.alice, Sent); len(sent) != 0 {
@@ -139,6 +144,51 @@ func TestReadDeleteRestoreAndCounts(t *testing.T) {
 	}
 	if _, err := f.p.Read(f.Ctx, f.bob, id); err != nil {
 		t.Errorf("recipient lost the message when the sender deleted theirs: %v", err)
+	}
+}
+
+func TestNoteToSelf(t *testing.T) {
+	f := setup(t)
+	id, err := f.p.Send(f.Ctx, f.alice, Draft{To: "alice", Subject: "Remember", Body: "milk"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	folder := func(name string) int {
+		l, _ := f.p.List(f.Ctx, f.alice, name)
+		return len(l)
+	}
+	if folder(Inbox) != 1 || folder(Sent) != 1 {
+		t.Fatalf("inbox %d, sent %d; a note to self belongs in both", folder(Inbox), folder(Sent))
+	}
+	if c, _ := f.p.Count(f.Ctx, f.alice); c != (Counts{Unread: 1}) {
+		t.Errorf("counts = %+v, want one unread", c)
+	}
+
+	// Each folder's copy is deleted separately.
+	steps := []struct {
+		name                string
+		do                  func() error
+		inbox, sent, delete int
+	}{
+		{"remove from Sent", func() error { return f.p.Delete(f.Ctx, f.alice, id, Sent) }, 1, 0, 0},
+		{"remove from Sent again", func() error {
+			if err := f.p.Delete(f.Ctx, f.alice, id, Sent); !errors.Is(err, ErrNotFound) {
+				return fmt.Errorf("second delete err = %v, want ErrNotFound", err)
+			}
+			return nil
+		}, 1, 0, 0},
+		{"inbox copy still readable", func() error { _, err := f.p.Read(f.Ctx, f.alice, id); return err }, 1, 0, 0},
+		{"delete from inbox", func() error { return f.p.Delete(f.Ctx, f.alice, id, Inbox) }, 0, 0, 1},
+		{"restore", func() error { return f.p.Restore(f.Ctx, f.alice, id) }, 1, 0, 0},
+	}
+	for _, st := range steps {
+		if err := st.do(); err != nil {
+			t.Fatalf("%s: %v", st.name, err)
+		}
+		if folder(Inbox) != st.inbox || folder(Sent) != st.sent || folder(Deleted) != st.delete {
+			t.Errorf("after %s: inbox %d, sent %d, deleted %d; want %d, %d, %d", st.name,
+				folder(Inbox), folder(Sent), folder(Deleted), st.inbox, st.sent, st.delete)
+		}
 	}
 }
 
@@ -251,6 +301,7 @@ func TestEraseAndExport(t *testing.T) {
 	f := setup(t)
 	f.p.Send(f.Ctx, f.alice, Draft{To: "bob", Subject: "From alice", Body: "kept for bob"})
 	f.p.Send(f.Ctx, f.bob, Draft{To: "alice", Subject: "To alice", Body: "gone with alice"})
+	f.p.Send(f.Ctx, f.alice, Draft{To: "alice", Subject: "Note", Body: "private note to self"})
 
 	files, err := f.p.export(f.Ctx, f.alice)
 	if err != nil || len(files) != 1 || !strings.Contains(string(files[0].Data), "gone with alice") || !strings.Contains(string(files[0].Data), "kept for bob") {
@@ -271,6 +322,11 @@ func TestEraseAndExport(t *testing.T) {
 	f.DB.QueryRow(`SELECT count(*) FROM messages_recipients WHERE user_id = ?`, f.alice).Scan(&left)
 	if left != 0 {
 		t.Error("erased member's received messages kept")
+	}
+	var notes int
+	f.DB.QueryRow(`SELECT count(*) FROM messages_messages WHERE body = 'private note to self'`).Scan(&notes)
+	if notes != 0 {
+		t.Error("erased member's note to self kept: nobody else holds it")
 	}
 }
 

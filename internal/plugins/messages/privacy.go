@@ -2,9 +2,12 @@ package messages
 
 import (
 	"context"
+	"database/sql"
+	"fmt"
 
 	"go.privatebychoice.com/shellshawk/internal/events"
 	"go.privatebychoice.com/shellshawk/internal/export"
+	"go.privatebychoice.com/shellshawk/internal/store"
 )
 
 // export returns every message the member received (including deleted
@@ -43,8 +46,20 @@ func (p *Plugin) export(ctx context.Context, user int64) ([]export.File, error) 
 
 // erase deletes the member's copies of messages they received. Messages
 // they sent stay in the recipients' mailboxes, credited to the anonymous
-// tombstone name (docs/DESIGN.md §5.2).
+// tombstone name (docs/DESIGN.md §5.2); sent messages nobody else holds
+// any more (such as notes to self) are deleted.
 func (p *Plugin) erase(ctx context.Context, e events.Event) error {
-	_, err := p.h.DB.ExecContext(ctx, `DELETE FROM messages_recipients WHERE user_id = ?`, e.UserID)
-	return err
+	return store.WithTx(ctx, p.h.DB, func(tx *sql.Tx) error {
+		if _, err := tx.ExecContext(ctx, `DELETE FROM messages_recipients WHERE user_id = ?`, e.UserID); err != nil {
+			return fmt.Errorf("messages: erase received: %w", err)
+		}
+		res, err := tx.ExecContext(ctx, `DELETE FROM messages_messages WHERE sender_id = ?
+			AND NOT EXISTS (SELECT 1 FROM messages_recipients r WHERE r.message_id = messages_messages.id)`, e.UserID)
+		if err != nil {
+			return fmt.Errorf("messages: erase unreceived: %w", err)
+		}
+		n, _ := res.RowsAffected()
+		p.h.Log.Info("erased messages", "user_id", e.UserID, "sent_without_recipients_deleted", n)
+		return nil
+	})
 }

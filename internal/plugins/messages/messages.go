@@ -229,8 +229,9 @@ func (p *Plugin) Send(ctx context.Context, from int64, d Draft) (int64, error) {
 	return id, err
 }
 
-// resolve turns usernames and contact group names into active account IDs,
-// excluding the sender, and checks each recipient's "who can send you
+// resolve turns usernames and contact group names into active account IDs
+// (the sender may include themselves, e.g. for a note to self), and checks
+// each recipient's "who can send you
 // private messages" setting (docs/DESIGN.md §5.1).
 func (p *Plugin) resolve(ctx context.Context, from int64, d Draft) ([]int64, error) {
 	var ids []int64
@@ -260,7 +261,6 @@ func (p *Plugin) resolve(ctx context.Context, from int64, d Draft) ([]int64, err
 	}
 	slices.Sort(ids)
 	ids = slices.Compact(ids)
-	ids = slices.DeleteFunc(ids, func(id int64) bool { return id == from })
 	if len(ids) == 0 {
 		return nil, ErrNoneToSend
 	}
@@ -475,34 +475,36 @@ func (p *Plugin) Read(ctx context.Context, user, id int64) (Message, error) {
 	return m, nil
 }
 
-// Delete moves a received message to Deleted, or removes a sent message
-// from the Sent folder. It does not affect other members' copies.
-func (p *Plugin) Delete(ctx context.Context, user, id int64) error {
-	return p.setDeleted(ctx, user, id, true)
-}
-
-// Restore moves a received message back from Deleted to the inbox.
-func (p *Plugin) Restore(ctx context.Context, user, id int64) error {
-	return p.setDeleted(ctx, user, id, false)
-}
-
-func (p *Plugin) setDeleted(ctx context.Context, user, id int64, deleted bool) error {
-	role, err := p.access(ctx, p.h.DB, user, id)
-	if err != nil {
-		return err
-	}
-	var at any
-	if deleted {
-		at = store.FormatTime(p.now())
-	}
+// Delete removes a message from one of the member's folders: from Inbox it
+// moves the received copy to Deleted; from Sent it removes the sent copy.
+// The folder matters for a message sent to oneself, which is in both. It
+// does not affect other members' copies.
+func (p *Plugin) Delete(ctx context.Context, user, id int64, folder string) error {
 	var res sql.Result
-	if role == RoleRecipient {
-		res, err = p.h.DB.ExecContext(ctx, `UPDATE messages_recipients SET deleted_at = ? WHERE message_id = ? AND user_id = ?`, at, id, user)
-	} else if deleted {
-		res, err = p.h.DB.ExecContext(ctx, `UPDATE messages_messages SET sender_deleted_at = ? WHERE id = ? AND sender_id = ?`, at, id, user)
-	} else {
-		return ErrNotFound // sent messages cannot be restored
+	var err error
+	switch folder {
+	case Inbox:
+		res, err = p.h.DB.ExecContext(ctx, `UPDATE messages_recipients SET deleted_at = ? WHERE message_id = ? AND user_id = ? AND deleted_at IS NULL`,
+			store.FormatTime(p.now()), id, user)
+	case Sent:
+		res, err = p.h.DB.ExecContext(ctx, `UPDATE messages_messages SET sender_deleted_at = ? WHERE id = ? AND sender_id = ? AND sender_deleted_at IS NULL`,
+			store.FormatTime(p.now()), id, user)
+	default:
+		return fmt.Errorf("%w: messages can be deleted from the inbox or Sent", ErrInvalid)
 	}
+	return affected(res, err)
+}
+
+// Restore moves a received message back from Deleted to the inbox. Sent
+// messages cannot be restored.
+func (p *Plugin) Restore(ctx context.Context, user, id int64) error {
+	res, err := p.h.DB.ExecContext(ctx, `UPDATE messages_recipients SET deleted_at = NULL WHERE message_id = ? AND user_id = ? AND deleted_at IS NOT NULL`, id, user)
+	return affected(res, err)
+}
+
+// affected maps an update that matched nothing (not the member's message,
+// or not in that folder) to ErrNotFound.
+func affected(res sql.Result, err error) error {
 	if err != nil {
 		return fmt.Errorf("messages: delete: %w", err)
 	}

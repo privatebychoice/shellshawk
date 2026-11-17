@@ -177,9 +177,11 @@ every request, so locking an account takes effect immediately.
 - **Contacts**: your personal list (with private notes) and named contact
   groups. A contact who also has you in their list is shown as a *friend*.
 - **Messages**: private mail with a subject and a markdown body, sent to
-  usernames and/or your contact groups; replies quote the original. The
-  mailbox shows unread, read and deleted counts; deleted messages can be
-  restored. Your mail is also available read-only over SFTP in
+  usernames and/or your contact groups (including yourself, for a note to
+  self); replies quote the original. The mailbox shows unread, read and
+  deleted counts; deleted messages can be restored. A message you send
+  yourself is in both your inbox and Sent; deleting it from one leaves the
+  other. When an account is erased, notes to self are deleted with it. Your mail is also available read-only over SFTP in
   `/messages/inbox` and `/messages/sent`. Sending needs `messages.send`
   (granted to `member` on first start). Administrators can change the
   per-message recipient limit, the hourly sending limit and the maximum

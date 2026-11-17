@@ -86,7 +86,7 @@ func (p *Plugin) folder(ctx context.Context, s plugin.Session, folder string) er
 			return err
 		}
 		id, _ := strconv.ParseInt(choice, 10, 64)
-		if err := p.view(ctx, s, id); err != nil && !errors.Is(err, tui.ErrCancelled) {
+		if err := p.view(ctx, s, id, folder); err != nil && !errors.Is(err, tui.ErrCancelled) {
 			return err
 		}
 	}
@@ -105,7 +105,9 @@ func escape(v string) string {
 	return r.Replace(v)
 }
 
-func (p *Plugin) view(ctx context.Context, s plugin.Session, id int64) error {
+// view shows a message opened from folder, which decides what Delete does
+// (a message sent to oneself is in both Inbox and Sent).
+func (p *Plugin) view(ctx context.Context, s plugin.Session, id int64, folder string) error {
 	m, err := p.Read(ctx, s.UserID(), id)
 	if err != nil {
 		return err
@@ -121,9 +123,12 @@ func (p *Plugin) view(ctx context.Context, s plugin.Session, id int64) error {
 	if set.Has(PermSend) && m.SenderID != 0 && m.Role == RoleRecipient {
 		items = append(items, tui.MenuItem{Value: "reply", Label: "Reply"})
 	}
-	if m.Deleted {
+	switch folder {
+	case Deleted:
 		items = append(items, tui.MenuItem{Value: "restore", Label: "Move back to the inbox"})
-	} else {
+	case Sent:
+		items = append(items, tui.MenuItem{Value: "delete", Label: "Remove from Sent"})
+	default:
 		items = append(items, tui.MenuItem{Value: "delete", Label: "Delete"})
 	}
 	items = append(items, tui.MenuItem{Value: "back", Label: "Back"})
@@ -143,7 +148,7 @@ func (p *Plugin) view(ctx context.Context, s plugin.Session, id int64) error {
 		quoted := m.From + " wrote:\n\n> " + strings.ReplaceAll(m.Body, "\n", "\n> ") + "\n\n"
 		return p.compose(ctx, s, Draft{To: m.From, Subject: subject, Body: quoted, ParentID: m.ID}, form.Errors{})
 	case "delete":
-		return p.Delete(ctx, s.UserID(), m.ID)
+		return p.Delete(ctx, s.UserID(), m.ID, folder)
 	case "restore":
 		return p.Restore(ctx, s.UserID(), m.ID)
 	}
