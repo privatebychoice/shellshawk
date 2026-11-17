@@ -99,7 +99,8 @@ func (p *Plugin) Manifest() plugin.Manifest {
 				created_at  TEXT    NOT NULL
 			) STRICT;
 
-			-- permission: replaced by groups in version 2.
+			-- permission: extra permission needed to read and post here
+			-- (the per-conference group check), or ''.
 			CREATE TABLE conferences_conferences (
 				id          INTEGER PRIMARY KEY,
 				area_id     INTEGER NOT NULL REFERENCES conferences_areas (id) ON DELETE CASCADE,
