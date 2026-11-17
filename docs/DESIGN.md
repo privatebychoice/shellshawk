@@ -511,6 +511,20 @@ characters, flood control, logging); slash commands stay SSH-only.
 chat's title, and a thread forgets a chat that was closed from the Chat
 menu so it can be enabled again.
 
+Web messages (after stage 10): the inbox page gained Sent and Deleted
+folders (folder links with `aria-current`), and each message page offers
+what SSH offers from that folder: Reply, Delete (to Deleted), Move back
+to the inbox, Delete permanently, Remove from Sent; the Deleted folder can
+be emptied. Which copy an action applies to follows the folder the
+message was opened from (`?folder=`, sent back as a form field), as a
+message sent to oneself is in both Inbox and Sent; a wrong folder fails
+as not found. Irreversible actions need a ticked confirmation box (Remove
+from Sent too, which SSH does without asking). `/new` writes or replies
+(`?reply=id` fills in the recipient, "Re:" subject and quoted text through
+the same `replyDraft` as SSH); sending goes through `Send` with its
+recipient, rate, length and privacy checks, and a refused message comes
+back with what was typed and the error at its field (status 422).
+
 Web chat pages (after stage 10): `/p/chat/` lists every channel the member
 may enter, grouped as channels, private chats and thread chats, with a
 GET search (`/find?q=`; the access log records paths only, so the query

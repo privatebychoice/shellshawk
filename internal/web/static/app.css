@@ -64,3 +64,8 @@ header button { background: var(--title-fg); color: var(--title-bg); }
 .results { list-style: none; padding: 0; }
 .results li { margin: .6rem 0; }
 .results meter { width: 100%; max-width: 24rem; height: 1rem; }
+.form textarea { font: inherit; width: 100%; max-width: 40rem; padding: .4rem; background: var(--input-bg); color: var(--input-fg); border: 2px solid var(--muted); box-sizing: border-box; }
+.form fieldset { border: 2px solid var(--muted); margin: .5rem 0; max-width: 40rem; }
+.form legend { font-weight: 600; padding: 0 .3rem; }
+.folders ul { list-style: none; display: flex; flex-wrap: wrap; gap: 1rem; padding: 0; }
+.folders a[aria-current=page] { font-weight: 700; }

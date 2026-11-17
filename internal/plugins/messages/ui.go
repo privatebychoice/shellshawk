@@ -157,15 +157,7 @@ func (p *Plugin) view(ctx context.Context, s plugin.Session, id int64, folder st
 	}
 	switch action {
 	case "reply":
-		subject := m.Subject
-		if !strings.HasPrefix(strings.ToLower(subject), "re:") {
-			subject = "Re: " + subject
-		}
-		if len([]rune(subject)) > MaxSubject {
-			subject = string([]rune(subject)[:MaxSubject])
-		}
-		quoted := m.From + " wrote:\n\n> " + strings.ReplaceAll(m.Body, "\n", "\n> ") + "\n\n"
-		return p.compose(ctx, s, Draft{To: m.From, Subject: subject, Body: quoted, ParentID: m.ID}, form.Errors{})
+		return p.compose(ctx, s, replyDraft(m), form.Errors{})
 	case "delete":
 		return p.Delete(ctx, s.UserID(), m.ID, folder)
 	case "restore":
@@ -178,6 +170,20 @@ func (p *Plugin) view(ctx context.Context, s plugin.Session, id int64, folder st
 		return p.DeleteForever(ctx, s.UserID(), m.ID)
 	}
 	return nil
+}
+
+// replyDraft starts a reply to m: back to its sender, "Re: " subject, the
+// original quoted.
+func replyDraft(m Message) Draft {
+	subject := m.Subject
+	if !strings.HasPrefix(strings.ToLower(subject), "re:") {
+		subject = "Re: " + subject
+	}
+	if len([]rune(subject)) > MaxSubject {
+		subject = string([]rune(subject)[:MaxSubject])
+	}
+	quoted := m.From + " wrote:\n\n> " + strings.ReplaceAll(m.Body, "\n", "\n> ") + "\n\n"
+	return Draft{To: m.From, Subject: subject, Body: quoted, ParentID: m.ID}
 }
 
 // compose collects recipients and subject with a form, then the body with
