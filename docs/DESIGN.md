@@ -511,6 +511,21 @@ characters, flood control, logging); slash commands stay SSH-only.
 chat's title, and a thread forgets a chat that was closed from the Chat
 menu so it can be enabled again.
 
+Web chat pages (after stage 10): `/p/chat/` lists every channel the member
+may enter, grouped as channels, private chats and thread chats, with a
+GET search (`/find?q=`; the access log records paths only, so the query
+is not logged). `/p/chat/c/{id}` is the channel's page around `WebPanel`.
+Private chats add POST forms at `/c/{id}/invite`, `/topic`, `/remove` and
+`/close` (close needs a ticked confirmation box), and `/new` starts one;
+they use the same checks as the SSH commands, and topic changes and
+removals are announced in the chat by the same helpers. These forms are
+refused (not found) on other channel kinds: moderator topic/kick in
+public channels and channel management stay on SSH. A refused form is
+shown again with the member's input and an error next to the field (a
+POST handler may return a page instead of a redirect; the core sends it
+with status 422). Confirmations after a redirect use fixed codes
+(`?done=invite`), never text the member typed.
+
 ## 12. Core plugins — notable design points
 
 | Plugin | Notes |

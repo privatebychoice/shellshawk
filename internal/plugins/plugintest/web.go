@@ -73,6 +73,15 @@ func (e *Env) WebGet(p plugin.Plugin, pattern string, values map[string]string, 
 	return r.Handle(e.request(p, http.MethodGet, pattern, values, nil), WebSession{Env: e, User: user, Plugin: p.Manifest().ID})
 }
 
+// WebGetQuery is WebGet with a query string (e.g. a search form).
+func (e *Env) WebGetQuery(p plugin.Plugin, pattern string, values map[string]string, query url.Values, user int64) (plugin.WebPage, error) {
+	e.t.Helper()
+	r := e.route(p, http.MethodGet, pattern)
+	req := e.request(p, http.MethodGet, pattern, values, nil)
+	req.URL.RawQuery = query.Encode()
+	return r.Handle(req, WebSession{Env: e, User: user, Plugin: p.Manifest().ID})
+}
+
 // WebPost calls the plugin's POST action whose Path is pattern. The core's
 // CSRF and origin checks are tested in the web package, not here.
 func (e *Env) WebPost(p plugin.Plugin, pattern string, values map[string]string, form url.Values, user int64) (plugin.WebPage, error) {

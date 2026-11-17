@@ -151,13 +151,12 @@ func (p *Plugin) createAdHocForm(ctx context.Context, s plugin.Session) (int64, 
 func (p *Plugin) createAdHoc(ctx context.Context, creator int64, name, topic, invite string) (int64, error) {
 	var ids []int64
 	for _, u := range strings.Split(invite, ",") {
-		u = strings.TrimPrefix(strings.TrimSpace(u), "@")
-		if u == "" {
+		if strings.TrimSpace(u) == "" {
 			continue
 		}
-		acct, err := p.h.Auth.UserByUsername(ctx, u)
+		acct, err := p.member(ctx, u)
 		if err != nil || acct.Status != auth.StatusActive {
-			return 0, fmt.Errorf("%w: no active member called %q", ErrInvalid, u)
+			return 0, fmt.Errorf("%w: no active member called %q", ErrInvalid, strings.TrimPrefix(strings.TrimSpace(u), "@"))
 		}
 		ids = append(ids, acct.ID)
 	}
@@ -175,6 +174,43 @@ func (p *Plugin) createAdHoc(ctx context.Context, creator int64, name, topic, in
 		}
 	}
 	return id, nil
+}
+
+// member looks up a member by username ("@name" also works).
+func (p *Plugin) member(ctx context.Context, name string) (auth.User, error) {
+	name = strings.TrimPrefix(strings.TrimSpace(name), "@")
+	acct, err := p.h.Auth.UserByUsername(ctx, name)
+	if err != nil || name == "" {
+		return auth.User{}, fmt.Errorf("%w: no member called %q", ErrInvalid, name)
+	}
+	return acct, nil
+}
+
+// changeTopic sets c's topic as u and announces it in the channel.
+func (p *Plugin) changeTopic(ctx context.Context, u auth.User, c Channel, topic string) error {
+	topic, err := cleanTopic(topic)
+	if err != nil {
+		return err
+	}
+	if err := p.SetTopic(ctx, u.ID, c, topic); err != nil {
+		return err
+	}
+	now := p.now()
+	ev := u.Username + " changed the topic to: " + topic
+	if err := p.record(ctx, c, u.ID, "event", ev, now); err != nil {
+		p.h.Log.Error("chat log write failed", "channel_id", c.ID, "err", err)
+	}
+	p.hub.broadcast(c.ID, eventLine(now, ev))
+	return nil
+}
+
+// remove takes target out of c as u (see Kick) and announces it.
+func (p *Plugin) remove(ctx context.Context, u auth.User, c Channel, target auth.User) error {
+	if err := p.Kick(ctx, u.ID, c, target.ID); err != nil {
+		return err
+	}
+	p.hub.broadcast(c.ID, eventLine(p.now(), target.Username+" was removed by "+u.Username))
+	return nil
 }
 
 // Enter opens a channel. /join and /createchat switch channels without
@@ -340,13 +376,7 @@ func (p *Plugin) submit(ctx context.Context, s plugin.Session, u auth.User, chID
 		s.Log().Error("chat command failed", "command", cmd, "err", err)
 		return say("Sorry, that did not work.")
 	}
-	userArg := func() (auth.User, error) {
-		acct, err := p.h.Auth.UserByUsername(ctx, strings.TrimPrefix(arg, "@"))
-		if err != nil || arg == "" {
-			return auth.User{}, fmt.Errorf("%w: no member called %q", ErrInvalid, arg)
-		}
-		return acct, nil
-	}
+	userArg := func() (auth.User, error) { return p.member(ctx, arg) }
 	switch strings.ToLower(cmd) {
 	case "/help":
 		var out []tui.Line
@@ -381,15 +411,9 @@ func (p *Plugin) submit(ctx context.Context, s plugin.Session, u auth.User, chID
 		if arg == "" {
 			return say("Topic: %s", c.Topic), false, 0
 		}
-		if err := p.SetTopic(ctx, u.ID, c, arg); err != nil {
+		if err := p.changeTopic(ctx, u, c, arg); err != nil {
 			return fail(err), false, 0
 		}
-		now := p.now()
-		ev := u.Username + " changed the topic to: " + arg
-		if err := p.record(ctx, c, u.ID, "event", ev, now); err != nil {
-			s.Log().Error("chat log write failed", "err", err)
-		}
-		p.hub.broadcast(c.ID, eventLine(now, ev))
 		return nil, false, 0
 	case "/invite":
 		acct, err := userArg()
@@ -406,12 +430,11 @@ func (p *Plugin) submit(ctx context.Context, s plugin.Session, u auth.User, chID
 			err = fmt.Errorf("%w: you cannot kick yourself; use /quit", ErrInvalid)
 		}
 		if err == nil {
-			err = p.Kick(ctx, u.ID, c, acct.ID)
+			err = p.remove(ctx, u, c, acct)
 		}
 		if err != nil {
 			return fail(err), false, 0
 		}
-		p.hub.broadcast(c.ID, eventLine(p.now(), acct.Username+" was removed by "+u.Username))
 		return nil, false, 0
 	case "/createchat":
 		name, users, _ := strings.Cut(arg, " ")

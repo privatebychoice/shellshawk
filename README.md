@@ -6,7 +6,7 @@ interface. See [docs/DESIGN.md](docs/DESIGN.md) for the full design.
 > **Status:** all ten stages of the design are implemented: SSH server,
 > accounts, TUI (full-screen and screen-reader), markdown with graded links,
 > plugins and menus, administration, SFTP, the core plugins, privacy and
-> erasure, and a web interface for reading and for live thread chat.
+> erasure, and a web interface for reading, live chat and voting.
 
 ## Build
 
@@ -248,9 +248,10 @@ every request, so locking an account takes effect immediately.
 ## Web interface
 
 Optional (`SHELLSHAWK_HTTP_ADDR`); serve it behind a TLS-terminating
-reverse proxy. Mostly read-only: you can take part in a conference thread's
-live chat and vote in polls; posting, creating polls, other chats and
-settings stay in the SSH interface.
+reverse proxy. Mostly read-only: you can chat live in any channel you may
+join, start and run private chats, and vote in polls; posting, creating
+polls, channel management, slash commands and settings stay in the SSH
+interface.
 
 | Path | Description |
 |------|-------------|
@@ -258,6 +259,7 @@ settings stay in the SSH interface.
 | `/login` | Log in with your username and a one-time code from **Web login code** in the BBS main menu (single use, 5 minutes) |
 | `/home` | Your start page once logged in |
 | `/p/conferences/` | Areas, conferences and threads you may read; polls on posts can be voted in, and a thread with a chat shows it live, and you can send messages |
+| `/p/chat/` | Channels, private chats and thread chats you may join (with who is there and the topic), and a search by name or topic. Each channel has a live page: messages arrive as they are sent and you can send your own. Start a private chat with invitations; inside one, anyone in it can invite, and its creator (or a chat moderator) can change the topic, remove someone or close it |
 | `/p/messages/` | Your inbox; opening a message marks it read |
 | `/p/polls/` | Open polls (pinned first) and closed polls; vote or change your vote, and see results under the same rules as over SSH |
 | `/p/wall/` | The wall (read-only); the message of the day is on `/home` |
@@ -267,7 +269,7 @@ settings stay in the SSH interface.
 
 - **No third parties**: every script, stylesheet and font is served by
   shellshawk. There are two small scripts: one shows a notice when the
-  browser has GPC turned on; the other streams thread chat from this server
+  browser has GPC turned on; the other streams chat from this server
   (server-sent events) and sends messages without reloading. Without
   JavaScript the chat still works: send with the form, reload to see new
   messages. Assets have content-hashed names and are cached

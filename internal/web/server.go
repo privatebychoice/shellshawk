@@ -677,6 +677,9 @@ func (s *Server) pluginPage(id string, route plugin.WebRoute) http.Handler {
 		case err != nil:
 			LoggerFrom(r.Context()).Error("plugin page failed", "plugin", id, "err", err)
 			s.pluginError(w, r, http.StatusInternalServerError, "Sorry, something went wrong.")
+		case post && page.Redirect == "" && page.Body != "":
+			// A form shown again with its errors.
+			s.writePage(w, r, http.StatusUnprocessableEntity, page.Title, page.Body)
 		case post:
 			http.Redirect(w, r, localPath(page.Redirect), http.StatusSeeOther)
 		default:

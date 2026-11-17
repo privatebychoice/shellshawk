@@ -38,9 +38,19 @@ var panelTmpl = template.Must(template.New("panel").Parse(`<section class="live"
 </section>`))
 
 func (p *Plugin) webRoutes() []plugin.WebRoute {
+	use, create := []string{PermUse}, []string{PermCreate}
 	return []plugin.WebRoute{
-		{Path: "/c/{id}/events", AnyOf: []string{PermUse}, Stream: p.webEvents},
-		{Path: "/c/{id}/send", Method: http.MethodPost, AnyOf: []string{PermUse}, Handle: p.webSend},
+		{Path: "/", Nav: "Chat", AnyOf: use, Handle: p.webList},
+		{Path: "/find", AnyOf: use, Handle: p.webFind},
+		{Path: "/new", AnyOf: create, Handle: p.webNew},
+		{Path: "/new", Method: http.MethodPost, AnyOf: create, Handle: p.webCreate},
+		{Path: "/c/{id}", AnyOf: use, Handle: p.webChannelPage},
+		{Path: "/c/{id}/events", AnyOf: use, Stream: p.webEvents},
+		{Path: "/c/{id}/send", Method: http.MethodPost, AnyOf: use, Handle: p.webSend},
+		{Path: "/c/{id}/invite", Method: http.MethodPost, AnyOf: use, Handle: p.privateAction("invite", "invite", p.webInvite)},
+		{Path: "/c/{id}/topic", Method: http.MethodPost, AnyOf: use, Handle: p.privateAction("topic", "topic", p.webTopic)},
+		{Path: "/c/{id}/remove", Method: http.MethodPost, AnyOf: use, Handle: p.privateAction("remove", "remove", p.webRemove)},
+		{Path: "/c/{id}/close", Method: http.MethodPost, AnyOf: use, Handle: p.privateAction("close", "closed", p.webClose)},
 	}
 }
 

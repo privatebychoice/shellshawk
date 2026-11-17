@@ -43,6 +43,7 @@ func TestPluginActions(t *testing.T) {
 		{"other site", url.Values{"csrf": {tok}, "note": {"hi"}}, "https://evil.example", cookie, "", 403, "", ""},
 		{"plugin rejects, page", url.Values{"csrf": {tok}, "note": {"bad"}}, origin, cookie, "", 400, "", "Notes cannot be bad."},
 		{"plugin rejects, script", url.Values{"csrf": {tok}, "note": {"bad"}}, origin, cookie, "text/plain", 400, "", "Notes cannot be bad."},
+		{"form shown again with its errors", url.Values{"csrf": {tok}, "note": {"retry"}}, origin, cookie, "", 422, "", `<h1>Write a note</h1>`},
 		{"offsite redirect refused", url.Values{"csrf": {tok}, "to": {"//evil.example/x"}}, origin, cookie, "", 303, "/home", ""},
 	}
 	for _, tt := range tests {

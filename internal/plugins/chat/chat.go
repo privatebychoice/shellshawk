@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"go.privatebychoice.com/shellshawk/internal/events"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -589,6 +590,46 @@ func (p *Plugin) Invite(ctx context.Context, actor int64, c Channel, user int64)
 	}
 	_, err := p.h.DB.ExecContext(ctx, `INSERT INTO chat_invites (channel_id, user_id) VALUES (?, ?) ON CONFLICT DO NOTHING`, c.ID, user)
 	return err
+}
+
+// Invitee is a member invited to a private chat.
+type Invitee struct {
+	ID   int64
+	Name string
+}
+
+// Invited returns the members invited to private chat c, by name. Callers
+// check that the viewer may enter c.
+func (p *Plugin) Invited(ctx context.Context, c Channel) ([]Invitee, error) {
+	rows, err := p.h.DB.QueryContext(ctx, `SELECT user_id FROM chat_invites WHERE channel_id = ?`, c.ID)
+	if err != nil {
+		return nil, fmt.Errorf("chat: invited: %w", err)
+	}
+	var ids []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	names, err := p.h.Auth.Usernames(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+	var out []Invitee
+	for _, id := range ids {
+		if n, ok := names[id]; ok {
+			out = append(out, Invitee{id, n})
+		}
+	}
+	slices.SortFunc(out, func(a, b Invitee) int { return strings.Compare(a.Name, b.Name) })
+	return out, nil
 }
 
 // Kick removes user from c now. In an ad hoc chat their invitation is

@@ -58,8 +58,11 @@ func (notesPlugin) Manifest() plugin.Manifest {
 				return plugin.WebPage{}, plugin.ErrWebNotFound
 			}},
 			{Path: "/save", Method: http.MethodPost, Handle: func(r *http.Request, s plugin.WebSession) (plugin.WebPage, error) {
-				if r.PostFormValue("note") == "bad" {
+				switch r.PostFormValue("note") {
+				case "bad":
 					return plugin.WebPage{}, &plugin.WebError{Status: http.StatusBadRequest, Message: "Notes cannot be bad."}
+				case "retry":
+					return plugin.WebPage{Title: "Write a note", Body: template.HTML(`<p role="alert">Try again: <input name="note" value="retry"></p>`)}, nil
 				}
 				return plugin.WebPage{Redirect: r.PostFormValue("to")}, nil
 			}},

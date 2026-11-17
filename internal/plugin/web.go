@@ -29,7 +29,9 @@ func (e *WebError) Error() string { return e.Message }
 //   - Handle with Method "" or "GET" returns a page shown inside the layout.
 //   - Handle with Method "POST" performs an action. The core checks the
 //     session's CSRF token (form field "csrf") and the request origin
-//     before calling it; the result must set WebPage.Redirect.
+//     before calling it. On success the result sets WebPage.Redirect; to
+//     show a form again with its errors, return the page (Title and Body,
+//     no Redirect) and it is shown with status 422.
 //   - Stream (GET only) serves a long-lived response such as server-sent
 //     events. The core lifts the usual timeouts, ends the request when the
 //     session expires, is revoked or the server shuts down, and limits how
@@ -73,6 +75,7 @@ type WebPage struct {
 	Body  template.HTML
 	// Redirect, for POST routes, is the local path to send the browser to
 	// afterwards (e.g. back to the page holding the form). Anything that is
-	// not a plain local path is replaced by /home.
+	// not a plain local path is replaced by /home. A POST result without
+	// Redirect but with a Body is shown instead, with status 422.
 	Redirect string
 }
