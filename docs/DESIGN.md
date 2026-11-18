@@ -611,7 +611,9 @@ renumber. `sessions.Service.SetWeb` enables `WebSessions` and `EndWeb`
 `web_session.ended`). Routes: `GET /admin/web-sessions/{id}` and `POST
 /admin/web-sessions/{id}/end`. The viewer's own session is marked and not
 offered; logging out ends it. The privacy policy says last activity is
-recorded while logged in.
+recorded while logged in. The SSH screen lists web sessions after the
+connections in the same menu (values prefixed `web:`), with the same
+confirmation and rules.
 
 ## 12. Core plugins — notable design points
 

@@ -14,11 +14,17 @@ import (
 	"go.privatebychoice.com/shellshawk/internal/tui"
 )
 
-// whoIsOnline lists every SSH connection and lets staff end one.
+// whoIsOnline lists every SSH connection, then every logged-in web
+// session, and lets staff end one. Web session values carry a "web:"
+// prefix; SSH connection values are their registry numbers.
 func (s *session) whoIsOnline(ctx context.Context) error {
 	title := s.Title("Who is online")
 	for {
 		conns, err := s.h.Sessions.List(ctx, s.userID)
+		if err != nil {
+			return err
+		}
+		webs, err := s.h.Sessions.WebSessions(ctx, s.userID)
 		if err != nil {
 			return err
 		}
@@ -30,55 +36,92 @@ func (s *session) whoIsOnline(ctx context.Context) error {
 				label += " (this connection)"
 			}
 			items = append(items, tui.MenuItem{Value: strconv.FormatUint(c.ID, 10), Label: label,
-				Help: "Connected since " + fmtTime(&c.Started)})
+				Help: "SSH, connected since " + fmtTime(&c.Started)})
+		}
+		for _, w := range webs {
+			items = append(items, tui.MenuItem{Value: "web:" + w.ID, Label: describeWeb(w, now),
+				Help: "Logged in " + fmtTime(&w.Created) + ", expires " + fmtTime(&w.Expires)})
+		}
+		intro := fmt.Sprintf("%d SSH connection(s) open. Choose one to end it.", len(conns))
+		if s.h.Sessions.HasWeb() {
+			intro = fmt.Sprintf("%d SSH connection(s) and %d web session(s), SSH first. Choose one to end it.", len(conns), len(webs))
 		}
 		choice, err := s.ui.Choose(ctx, tui.Menu{
 			Title:   title,
-			Intro:   fmt.Sprintf("%d connection(s) open. Choose one to end it.", len(conns)),
+			Intro:   intro,
 			Items:   items,
 			Actions: []tui.Action{{Key: 'r', Value: "refresh", Label: "Refresh"}},
 		})
 		if err != nil {
 			return err
 		}
-		if choice == "refresh" {
+		switch {
+		case choice == "refresh":
 			continue
+		case strings.HasPrefix(choice, "web:"):
+			err = s.endWebSession(ctx, title, webs, strings.TrimPrefix(choice, "web:"))
+		default:
+			err = s.endConnection(ctx, title, conns, choice)
 		}
-		id, _ := strconv.ParseUint(choice, 10, 64)
-		if id == s.conn.ConnSerial {
-			if err := tui.Message(ctx, s.ui, title, "This is your own connection. To leave, press q in the main menu."); err != nil {
-				return err
-			}
-			continue
-		}
-		var c sessions.Connection
-		for _, x := range conns {
-			if x.ID == id {
-				c = x
-			}
-		}
-		ok, err := tui.Confirm(ctx, s.ui, title, "End this connection? "+c.Describe(time.Now())+". They are told it was ended by an administrator or moderator.")
 		if err != nil {
 			return err
 		}
-		if !ok {
-			continue
-		}
-		msg := "The connection has been ended."
-		switch err := s.h.Sessions.End(ctx, s.userID, id); {
-		case errors.Is(err, sessions.ErrNotFound):
-			msg = "That connection has already closed."
-		case err != nil:
-			if m := adminErrorMessage(err); m != "" {
-				msg = "You cannot end that connection: the account has permissions you do not have."
-				break
-			}
-			return err
-		}
-		if err := tui.Message(ctx, s.ui, title, msg); err != nil {
-			return err
+	}
+}
+
+// describeWeb is a web session's one-line summary.
+func describeWeb(w sessions.WebSession, now time.Time) string {
+	return w.Who() + ": web session, last active " + w.Active(now)
+}
+
+func (s *session) endConnection(ctx context.Context, title string, conns []sessions.Connection, choice string) error {
+	id, _ := strconv.ParseUint(choice, 10, 64)
+	if id == s.conn.ConnSerial {
+		return tui.Message(ctx, s.ui, title, "This is your own connection. To leave, press q in the main menu.")
+	}
+	var c sessions.Connection
+	for _, x := range conns {
+		if x.ID == id {
+			c = x
 		}
 	}
+	ok, err := tui.Confirm(ctx, s.ui, title, "End this connection? "+c.Describe(time.Now())+". They are told it was ended by an administrator or moderator.")
+	if err != nil || !ok {
+		return err
+	}
+	msg := "The connection has been ended."
+	switch err := s.h.Sessions.End(ctx, s.userID, id); {
+	case errors.Is(err, sessions.ErrNotFound):
+		msg = "That connection has already closed."
+	case adminErrorMessage(err) != "":
+		msg = "You cannot end that connection: the account has permissions you do not have."
+	case err != nil:
+		return err
+	}
+	return tui.Message(ctx, s.ui, title, msg)
+}
+
+func (s *session) endWebSession(ctx context.Context, title string, webs []sessions.WebSession, id string) error {
+	var w sessions.WebSession
+	for _, x := range webs {
+		if x.ID == id {
+			w = x
+		}
+	}
+	ok, err := tui.Confirm(ctx, s.ui, title, "Log out this web session? "+describeWeb(w, time.Now())+". Their next page asks them to log in again.")
+	if err != nil || !ok {
+		return err
+	}
+	msg := "The web session has been logged out."
+	switch err := s.h.Sessions.EndWeb(ctx, s.userID, id); {
+	case errors.Is(err, sessions.ErrNotFound):
+		msg = "That web session had already ended."
+	case adminErrorMessage(err) != "":
+		msg = "You cannot log out that web session: the account has permissions you do not have."
+	case err != nil:
+		return err
+	}
+	return tui.Message(ctx, s.ui, title, msg)
 }
 
 // connectionLimits edits the idle timeout and the per-account connection

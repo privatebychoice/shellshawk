@@ -50,7 +50,7 @@ func TestWhoIsOnlineEndsConnection(t *testing.T) {
 	ada.send("6\r") // Administration
 	ada.waitFor("3. Who is online. See SSH connections and end one")
 	ada.send("3\r")
-	ada.waitFor("2 connection(s) open. Choose one to end it.")
+	ada.waitFor("2 SSH connection(s) and 0 web session(s), SSH first. Choose one to end it.")
 	ada.waitFor("1. mel: 1 terminal, idle under a minute")
 	ada.waitFor("2. ada: 1 terminal, idle under a minute (this connection)")
 	ada.waitFor("Actions: r Refresh; q Back.")
@@ -72,7 +72,7 @@ func TestWhoIsOnlineEndsConnection(t *testing.T) {
 	}
 
 	ada.send("\r")
-	ada.waitFor("1 connection(s) open.")
+	ada.waitFor("1 SSH connection(s) and 0 web session(s)")
 	var n int
 	e.db.QueryRow(`SELECT count(*) FROM audit_log WHERE action = 'connection.ended'`).Scan(&n)
 	if n != 1 {
@@ -173,5 +173,40 @@ func TestRejectEndsConnections(t *testing.T) {
 	case <-done:
 	case <-time.After(10 * time.Second):
 		t.Fatal("rejected account's connection still open")
+	}
+}
+
+func TestWhoIsOnlineWebSessions(t *testing.T) {
+	e := startBBS(t)
+	adaKey := e.accessibleAdmin(t, "ada")
+	_ = e.member(t, "ada", "mel")
+	ctx := context.Background()
+	mel, _ := e.auth.UserByUsername(ctx, "mel")
+	tok, _, err := e.web.Create(ctx, mel.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ada := e.interactive(t, "ada", ssh.PublicKeys(adaKey))
+	ada.waitFor("or q to log out")
+	ada.send("6\r")
+	ada.waitFor("3. Who is online")
+	ada.send("3\r")
+	ada.waitFor("1 SSH connection(s) and 1 web session(s), SSH first.")
+	ada.waitFor("1. ada: 1 terminal, idle under a minute (this connection)")
+	ada.waitFor("2. mel: web session, last active under a minute ago. Logged in ")
+	ada.send("2\r")
+	ada.waitFor("Log out this web session? mel: web session")
+	ada.send("2\r") // Yes
+	ada.waitFor("The web session has been logged out.")
+	if _, err := e.web.Lookup(ctx, tok); err == nil {
+		t.Error("web session still valid")
+	}
+	ada.send("\r")
+	ada.waitFor("1 SSH connection(s) and 0 web session(s)")
+	var n int
+	e.db.QueryRow(`SELECT count(*) FROM audit_log WHERE action = 'web_session.ended'`).Scan(&n)
+	if n != 1 {
+		t.Errorf("audit entries = %d, want 1", n)
 	}
 }

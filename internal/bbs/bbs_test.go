@@ -55,6 +55,7 @@ type env struct {
 	privacy *privacy.Service
 	handler *Handler
 	db      *sql.DB
+	web     *websess.Service
 	// idle, when set, replaces the idle timeout from the settings so tests
 	// need not wait minutes.
 	idle atomic.Int64
@@ -97,13 +98,15 @@ func startBBS(t *testing.T, plugins ...plugin.Plugin) *env {
 	h := &Handler{Auth: as, Settings: st, Perms: ps, Prefs: pr, Menu: menu.NewService(db, ps, nil, log), Plugins: reg, Privacy: priv,
 		Sessions: sessions.NewService(db, conns, nil, log), Log: log}
 	h.Sessions.Subscribe(bus)
+	web := websess.NewService(db, as, nil, log)
+	h.Sessions.SetWeb(web)
 	if err := h.Menu.Seed(ctx, h.MenuDefaults()); err != nil {
 		t.Fatal(err)
 	}
 
 	_, hostPriv, _ := ed25519.GenerateKey(rand.Reader)
 	host, _ := ssh.NewSignerFromKey(hostPriv)
-	e := &env{auth: as, perms: ps, prefs: pr, privacy: priv, handler: h, db: db}
+	e := &env{auth: as, perms: ps, prefs: pr, privacy: priv, handler: h, db: db, web: web}
 	srv, err := sshd.New(sshd.Config{
 		HostKey: host, Auth: auth.NewSSHAuthenticator(as), Log: log,
 		Handler: h, Conns: conns,

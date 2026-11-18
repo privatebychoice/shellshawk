@@ -157,7 +157,7 @@ main menu, showing only the sections they may use:
 | Users (find, lock/unlock, change groups) | `core.users.manage` or `core.groups.manage` |
 | Groups and permissions | `core.groups.manage` |
 | Create / view / revoke invites | `core.invite.create`, `core.invite.manage` |
-| Who is online (see and end SSH connections) | `core.sessions.manage` |
+| Who is online (see and end SSH connections and web sessions) | `core.sessions.manage` |
 | Branding (BBS name) | `core.settings.manage` |
 | Connection limits (idle timeout, connections per account) | `core.settings.manage` |
 | Plugin settings | `core.plugins.settings` (admins and moderators) |
@@ -189,10 +189,13 @@ without a restart:
 
 *Administration → Who is online* lists every SSH connection: the account,
 whether it has a terminal or a file transfer open, how long it has been
-idle and when it connected. It never shows addresses. Choosing a connection
-ends it after a confirmation; the member is told it was ended by an
-administrator or moderator, and the action is audited
-(`connection.ended`). It needs `core.sessions.manage`, which administrators
+idle and when it connected, then every logged-in web session with its last
+activity. It never shows addresses. Choosing a connection ends it after a
+confirmation; the member is told it was ended by an administrator or
+moderator, and the action is audited (`connection.ended`). Choosing a web
+session logs it out after a confirmation (`web_session.ended`); the
+member's next page asks them to log in again. The same list is on the web
+at `/admin/online`. It needs `core.sessions.manage`, which administrators
 have; give it to moderators by granting it to their group under *Groups
 and permissions*. Nobody can end the connection of an account holding
 permissions they lack, so a moderator cannot end an administrator's.
