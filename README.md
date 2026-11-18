@@ -65,6 +65,19 @@ It prints a single-use invite code (valid 24 hours) that registers an
 administrator without approval. It only works while no active administrator
 exists, and running it again revokes the previous unused code.
 
+## Unlocking an account from the server
+
+If an administrator's account is locked (for example by another
+administrator), unlock it with the same environment variables set:
+
+```bash
+./bin/shellshawk unlock USERNAME
+```
+
+It works for any locked account, needs no login, and is recorded in the
+audit log as done by the system. It refuses an account waiting to be
+erased. It can run while the server is running.
+
 ## Accounts and logins
 
 | Login | How | Result |
@@ -83,6 +96,11 @@ Built-in groups: `admin` (`core.admin`, implies everything), `moderator`
 permission, assign a group, or attach a group to an invite unless they hold
 every permission involved, and the last active administrator cannot be
 removed or locked.
+
+Locking an account ends its open SSH connections at once, telling the member
+why; its web sessions stop working on their next request. Nobody can lock
+their own account or an account holding permissions they lack, so a
+moderator cannot lock an administrator.
 
 ## Using the TUI
 

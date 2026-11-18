@@ -96,6 +96,7 @@ func startBBS(t *testing.T, plugins ...plugin.Plugin) *env {
 	conns := presence.NewConns(nil)
 	h := &Handler{Auth: as, Settings: st, Perms: ps, Prefs: pr, Menu: menu.NewService(db, ps, nil, log), Plugins: reg, Privacy: priv,
 		Sessions: sessions.NewService(db, conns, nil, log), Log: log}
+	h.Sessions.Subscribe(bus)
 	if err := h.Menu.Seed(ctx, h.MenuDefaults()); err != nil {
 		t.Fatal(err)
 	}

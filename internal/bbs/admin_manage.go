@@ -88,7 +88,7 @@ func (s *session) adminUsers(ctx context.Context) error {
 				items = append(items, tui.MenuItem{Value: "cancelerase", Label: "Cancel the erasure request", Help: "Reactivates the account"})
 			case erasing:
 			case u.Status == auth.StatusActive:
-				items = append(items, tui.MenuItem{Value: "lock", Label: "Lock account", Help: "The member cannot log in until unlocked"})
+				items = append(items, tui.MenuItem{Value: "lock", Label: "Lock account", Help: "Ends their SSH connections; they cannot log in until unlocked"})
 			case u.Status == auth.StatusLocked:
 				items = append(items, tui.MenuItem{Value: "unlock", Label: "Unlock account"})
 			}

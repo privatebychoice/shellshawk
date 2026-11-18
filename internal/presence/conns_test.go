@@ -72,3 +72,24 @@ func TestConnsLifecycle(t *testing.T) {
 		t.Errorf("list after close = %+v", r.List())
 	}
 }
+
+func TestConnsEndUser(t *testing.T) {
+	r := NewConns(nil)
+	ended := map[uint64]error{}
+	open := func(uid int64) *Conn {
+		var c *Conn
+		c, _ = r.Open(uid, "member", 0, func(cause error) { ended[c.ID()] = cause })
+		return c
+	}
+	a1, a2, b, reg := open(1), open(1), open(2), open(0)
+	cause := &Disconnect{Message: "locked"}
+	if n := r.EndUser(1, cause); n != 2 {
+		t.Errorf("ended %d connections, want 2", n)
+	}
+	if ended[a1.ID()] != cause || ended[a2.ID()] != cause || ended[b.ID()] != nil {
+		t.Errorf("ended = %v", ended)
+	}
+	if n := r.EndUser(0, cause); n != 0 || ended[reg.ID()] != nil {
+		t.Error("EndUser(0) ended registrations")
+	}
+}

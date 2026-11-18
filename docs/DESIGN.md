@@ -158,6 +158,13 @@ to use.
   attach groups to invites if they hold every permission involved, and can
   only approve/reject/lock accounts whose permissions they fully hold. The
   last active administrator cannot be removed or locked.
+- Locking an account publishes `user.locked`; `sessions.Service` ends every
+  open SSH connection of the account (`presence.Conns.EndUser`) with a
+  `*presence.Disconnect` cause, so the member is told why. Web sessions
+  and live streams already re-check that the account is active.
+- Recovery: `shellshawk unlock USERNAME` (operator CLI) unlocks a locked
+  account without a login, audited as the system actor. Whoever can run it
+  can already edit the database, so it grants nothing new.
 - First administrator: `shellshawk bootstrap-invite` (operator CLI) prints a
   single-use admin invite, only while no active administrator exists.
 - Resource-level checks (e.g. "conference X requires group Y") are stored on the

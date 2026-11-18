@@ -156,6 +156,25 @@ func (r *Conns) Get(id uint64) (ConnInfo, bool) {
 	return c.info(), true
 }
 
+// EndUser ends every open connection of an account, giving cause as the
+// reason, and returns how many there were.
+func (r *Conns) EndUser(userID int64, cause error) int {
+	r.mu.Lock()
+	var ends []func(error)
+	for _, c := range r.conns {
+		if c.userID == userID && userID != 0 {
+			ends = append(ends, c.end)
+		}
+	}
+	r.mu.Unlock()
+	for _, end := range ends {
+		if end != nil {
+			end(cause)
+		}
+	}
+	return len(ends)
+}
+
 // End asks the server to end a connection, giving cause as the reason. It
 // reports false if the connection is no longer open.
 func (r *Conns) End(id uint64, cause error) bool {

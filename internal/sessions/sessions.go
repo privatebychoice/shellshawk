@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"go.privatebychoice.com/shellshawk/internal/audit"
+	"go.privatebychoice.com/shellshawk/internal/events"
 	"go.privatebychoice.com/shellshawk/internal/perm"
 	"go.privatebychoice.com/shellshawk/internal/presence"
 	"go.privatebychoice.com/shellshawk/internal/store"
@@ -22,6 +23,10 @@ var ErrNotFound = errors.New("sessions: connection not found")
 
 // EndedMessage is what a member sees when staff end their connection.
 const EndedMessage = "Your connection was ended by an administrator or moderator."
+
+// LockedMessage is what a member sees when their account is locked while
+// they are connected.
+const LockedMessage = "Your account has been locked, so this connection has ended."
 
 // Connection is an open connection with the account's name.
 type Connection struct {
@@ -99,4 +104,16 @@ func (s *Service) End(ctx context.Context, actor int64, id uint64) error {
 	}
 	s.log.Info("connection ended by staff", "actor", actor, "user_id", c.UserID, "conn", id)
 	return nil
+}
+
+// Subscribe makes locking an account end its open SSH connections. Web
+// sessions need nothing: every request and live stream re-checks that the
+// account is active.
+func (s *Service) Subscribe(bus *events.Bus) {
+	bus.Subscribe(events.UserLocked, "sessions", func(_ context.Context, e events.Event) error {
+		if n := s.conns.EndUser(e.UserID, &presence.Disconnect{Message: LockedMessage}); n > 0 {
+			s.log.Info("connections of locked account ended", "user_id", e.UserID, "count", n)
+		}
+		return nil
+	})
 }

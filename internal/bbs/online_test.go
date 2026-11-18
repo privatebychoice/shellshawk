@@ -117,3 +117,31 @@ func TestConnectionLimitsForm(t *testing.T) {
 		t.Errorf("limits = %+v", got)
 	}
 }
+
+func TestLockEndsConnections(t *testing.T) {
+	e := startBBS(t)
+	_ = e.accessibleAdmin(t, "ada")
+	melKey := e.member(t, "ada", "mel")
+	ctx := context.Background()
+	ada, _ := e.auth.UserByUsername(ctx, "ada")
+	mel, _ := e.auth.UserByUsername(ctx, "mel")
+
+	first := e.interactive(t, "mel", ssh.PublicKeys(melKey))
+	first.waitFor("or q to log out")
+	second := e.interactive(t, "mel", ssh.PublicKeys(melKey))
+	second.waitFor("or q to log out")
+
+	if err := e.auth.SetLocked(ctx, ada.ID, mel.ID, true); err != nil {
+		t.Fatal(err)
+	}
+	for _, l := range []*live{first, second} {
+		l.waitFor(sessions.LockedMessage)
+		done := make(chan error, 1)
+		go func() { done <- l.sess.Wait() }()
+		select {
+		case <-done:
+		case <-time.After(10 * time.Second):
+			t.Fatal("locked account's connection still open")
+		}
+	}
+}

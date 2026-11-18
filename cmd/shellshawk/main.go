@@ -4,6 +4,7 @@
 //
 //	shellshawk                   run the server
 //	shellshawk bootstrap-invite  print a one-time invite for the first administrator
+//	shellshawk unlock USERNAME   unlock a locked account (recovery for administrators)
 //
 // Configuration is read from environment variables; see README.md.
 package main
@@ -152,8 +153,10 @@ func run(args []string) error {
 		return a.serve(ctx)
 	case len(args) == 1 && args[0] == "bootstrap-invite":
 		return a.bootstrapInvite(ctx, os.Stdout)
+	case len(args) == 2 && args[0] == "unlock":
+		return a.unlock(ctx, os.Stdout, args[1])
 	default:
-		return fmt.Errorf("unknown command %q (commands: bootstrap-invite)", args)
+		return fmt.Errorf("unknown command %q (commands: bootstrap-invite, unlock USERNAME)", args)
 	}
 }
 
@@ -166,6 +169,21 @@ func (a *app) bootstrapInvite(ctx context.Context, out io.Writer) error {
 	}
 	fmt.Fprintf(out, "Administrator invite (single use, valid %s):\n\n    %s\n\n", auth.BootstrapTTL, code)
 	fmt.Fprintf(out, "Connect with SSH as user %q and enter the code as the password.\n", a.cfg.InviteUser)
+	return nil
+}
+
+// unlock unlocks a locked account from the operator CLI.
+func (a *app) unlock(ctx context.Context, out io.Writer, username string) error {
+	u, err := a.auth.UnlockByOperator(ctx, username)
+	switch {
+	case errors.Is(err, auth.ErrNotFound) && u.ID != 0:
+		return fmt.Errorf("account %q is %s, not locked", u.Username, u.Status)
+	case errors.Is(err, auth.ErrNotFound):
+		return fmt.Errorf("no account named %q", username)
+	case err != nil:
+		return err
+	}
+	fmt.Fprintf(out, "Account %q unlocked. It can log in again with its keys.\n", u.Username)
 	return nil
 }
 
@@ -191,6 +209,7 @@ func (a *app) serve(ctx context.Context) error {
 		Menu: menu.NewService(a.db, a.perms, nil, log), Plugins: a.plugins, Presence: a.presence, Privacy: a.privacy,
 		Sessions: sessions.NewService(a.db, conns, nil, log), Log: log,
 	}
+	handler.Sessions.Subscribe(a.bus)
 	var webSessions *websess.Service
 	if cfg.WebEnabled() {
 		webSessions = websess.NewService(a.db, a.auth, nil, log)

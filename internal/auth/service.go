@@ -254,6 +254,44 @@ func (s *Service) SetLocked(ctx context.Context, actor, userID int64, locked boo
 	return err
 }
 
+// UnlockByOperator unlocks an account for the operator CLI, the way back
+// when an administrator is locked out. It needs no permission because only
+// someone with access to the server and its database can run it. It is
+// audited as the system and refuses an account waiting to be erased.
+func (s *Service) UnlockByOperator(ctx context.Context, username string) (User, error) {
+	u, err := s.UserByUsername(ctx, username)
+	if err != nil {
+		return User{}, err
+	}
+	if u.Status != StatusLocked {
+		return u, fmt.Errorf("auth: account is %s, not locked: %w", u.Status, ErrNotFound)
+	}
+	err = store.WithTx(ctx, s.db, func(tx *sql.Tx) error {
+		var erasing bool
+		if err := tx.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM erasure_requests WHERE user_id = ?)`, u.ID).Scan(&erasing); err != nil {
+			return err
+		}
+		if erasing {
+			return ErrErasurePending
+		}
+		res, err := tx.ExecContext(ctx, `UPDATE users SET status = ? WHERE id = ? AND status = ?`, StatusActive, u.ID, StatusLocked)
+		if err != nil {
+			return fmt.Errorf("auth: unlock: %w", err)
+		}
+		if n, _ := res.RowsAffected(); n == 0 {
+			return fmt.Errorf("auth: account is not locked: %w", ErrNotFound)
+		}
+		s.log.Info("account unlocked by operator", "user_id", u.ID)
+		return audit.Record(ctx, tx, s.now(), audit.Entry{Actor: audit.SystemActor, Action: audit.UserUnlocked, TargetType: "user", TargetID: u.ID, Detail: "operator CLI"})
+	})
+	if err != nil {
+		return User{}, err
+	}
+	s.publish(ctx, events.UserUnlocked, u.ID, audit.SystemActor)
+	u.Status = StatusActive
+	return u, nil
+}
+
 // MaxListUsers bounds ListUsers results.
 const MaxListUsers = 200
 
