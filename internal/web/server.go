@@ -29,6 +29,7 @@ import (
 	"go.privatebychoice.com/shellshawk/internal/plugin"
 	"go.privatebychoice.com/shellshawk/internal/prefs"
 	"go.privatebychoice.com/shellshawk/internal/sessions"
+	"go.privatebychoice.com/shellshawk/internal/settings"
 	"go.privatebychoice.com/shellshawk/internal/theme"
 	"go.privatebychoice.com/shellshawk/internal/version"
 	"go.privatebychoice.com/shellshawk/internal/websess"
@@ -61,6 +62,8 @@ type Config struct {
 	// Connections lists and ends SSH connections (Who is online); nil
 	// leaves the pages out.
 	Connections *sessions.Service
+	// Settings edits the connection limits; nil leaves the page out.
+	Settings *settings.Service
 
 	// SSHAddress is the public host:port members connect to, shown on the
 	// start page (optional).
@@ -165,6 +168,10 @@ func (s *Server) routes() http.Handler {
 		mux.HandleFunc("POST /admin/online/{id}/end", s.handleOnlineEnd)
 		mux.HandleFunc("GET /admin/web-sessions/{id}", s.handleWebSessionConfirm)
 		mux.HandleFunc("POST /admin/web-sessions/{id}/end", s.handleWebSessionEnd)
+	}
+	if s.cfg.Settings != nil {
+		mux.HandleFunc("GET /admin/limits", s.handleLimits)
+		mux.HandleFunc("POST /admin/limits", s.handleLimitsSave)
 	}
 	if s.cfg.Plugins != nil {
 		for _, p := range s.cfg.Plugins.Plugins() {
@@ -381,6 +388,9 @@ func (s *Server) nav(ctx context.Context, user int64) []navItem {
 	}
 	if s.cfg.Connections != nil && set.Has(perm.SessionsManage) {
 		out = append(out, navItem{Label: "Who is online", Href: "/admin/online"})
+	}
+	if s.cfg.Settings != nil && set.Has(perm.SettingsManage) {
+		out = append(out, navItem{Label: "Connection limits", Href: "/admin/limits"})
 	}
 	return out
 }

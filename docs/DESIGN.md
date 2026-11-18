@@ -615,6 +615,14 @@ recorded while logged in. The SSH screen lists web sessions after the
 connections in the same menu (values prefixed `web:`), with the same
 confirmation and rules.
 
+Web connection limits: `web.Config.Settings` (nil leaves it out) serves
+`GET`/`POST /admin/limits` for holders of `core.settings.manage` (linked
+in the navigation only for them). Two number fields with their help and
+error text tied to the input by `aria-describedby`; a refused value comes
+back with status 422, the typed values and `aria-invalid`. Validation uses
+the same `settings.CheckIdleMinutes` and `CheckMaxPerUser` as the SSH
+form, and `SetConnLimits` re-checks the permission and audits each change.
+
 ## 12. Core plugins — notable design points
 
 | Plugin | Notes |

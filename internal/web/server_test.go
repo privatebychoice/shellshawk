@@ -26,6 +26,7 @@ import (
 	"go.privatebychoice.com/shellshawk/internal/prefs"
 	"go.privatebychoice.com/shellshawk/internal/presence"
 	sshsessions "go.privatebychoice.com/shellshawk/internal/sessions"
+	"go.privatebychoice.com/shellshawk/internal/settings"
 	"go.privatebychoice.com/shellshawk/internal/store"
 	"go.privatebychoice.com/shellshawk/internal/theme"
 	"go.privatebychoice.com/shellshawk/internal/version"
@@ -89,6 +90,7 @@ type env struct {
 	mod      int64 // a moderator; their group does not hold core.sessions.manage
 	perms    *perm.Service
 	conns    *presence.Conns
+	settings *settings.Service
 }
 
 func setup(t *testing.T, insecure bool) *env {
@@ -131,12 +133,12 @@ func setup(t *testing.T, insecure bool) *env {
 		Log: log, SiteName: func(context.Context) string { return "Test BBS" }, Auth: as, Perms: ps, Sessions: sessions,
 		Prefs: prefs.NewService(db, cat, nil), Themes: cat, Plugins: reg, SSHAddress: "bbs.example.net:2222",
 		HostKeyFingerprint: "SHA256:testfingerprint", InviteUser: "new", InsecureCookies: insecure, ChatDays: 90, AuditDays: 365, GraceDays: 14,
-		Connections: staff,
+		Connections: staff, Settings: settings.NewService(db, nil, log),
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	return &env{srv: srv, h: srv.Handler(), sessions: sessions, alice: alice, admin: admin, mod: mod, perms: ps, conns: conns}
+	return &env{srv: srv, h: srv.Handler(), sessions: sessions, alice: alice, admin: admin, mod: mod, perms: ps, conns: conns, settings: srv.cfg.Settings}
 }
 
 type req struct {

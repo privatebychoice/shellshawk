@@ -1,0 +1,15 @@
+{{define "limits"}}{{if .Notice}}<p class="notice" role="status">{{.Notice}}</p>
+{{end}}{{if .Errors}}<p class="error" role="alert">The limits were not saved. Correct the fields marked below.</p>
+{{end}}<form method="post" action="/admin/limits" class="form">
+<input type="hidden" name="csrf" value="{{.CSRF}}">
+<p><label for="idle">Idle timeout in minutes</label>
+<input type="number" id="idle" name="idle" inputmode="numeric" min="0" max="{{.MaxIdle}}" step="1" required value="{{.Values.idle}}" aria-describedby="idle-help{{if .Errors.idle}} idle-error{{end}}"{{if .Errors.idle}} aria-invalid="true"{{end}}>
+<span class="meta" id="idle-help">SSH connections with no activity for this long are ended. Members are warned shortly before. 0 turns it off; otherwise {{.MinIdle}} to {{.MaxIdle}}.</span></p>
+{{if .Errors.idle}}<p class="error" id="idle-error">{{.Errors.idle}}</p>
+{{end}}<p><label for="max">Connections per account</label>
+<input type="number" id="max" name="max" inputmode="numeric" min="0" max="{{.MaxPerUser}}" step="1" required value="{{.Values.max}}" aria-describedby="max-help{{if .Errors.max}} max-error{{end}}"{{if .Errors.max}} aria-invalid="true"{{end}}>
+<span class="meta" id="max-help">How many SSH connections, terminal and file transfer together, one account may have open at once. 0 means no limit; at most {{.MaxPerUser}}.</span></p>
+{{if .Errors.max}}<p class="error" id="max-error">{{.Errors.max}}</p>
+{{end}}<p><button type="submit">Save</button></p>
+</form>
+<p>The idle timeout applies to open connections within about 10 seconds; the connection limit applies to new connections.</p>{{end}}
