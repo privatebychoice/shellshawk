@@ -1,0 +1,63 @@
+{{define "users"}}<form method="get" action="/admin/users" class="form" role="search">
+<p><label for="q">Username starts with</label>
+<input type="search" id="q" name="q" maxlength="32" value="{{.Query}}" autocomplete="off" autocapitalize="none" spellcheck="false" aria-describedby="q-help">
+<span class="meta" id="q-help">Leave empty to list everyone (up to {{.Max}}).</span></p>
+<p><button type="submit">Find</button></p>
+</form>
+{{if .Searched}}<p role="status">{{len .Rows}} match(es){{if eq (len .Rows) .Max}}; only the first {{.Max}} are shown{{end}}.</p>
+{{if .Rows}}<table class="online">
+<caption>Accounts{{if .Query}} whose username starts with &ldquo;{{.Query}}&rdquo;{{end}}</caption>
+<thead><tr><th scope="col">Username</th><th scope="col">Status</th><th scope="col">Registered</th><th scope="col">Last login</th></tr></thead>
+<tbody>
+{{range .Rows}}<tr><th scope="row"><a href="/admin/users/{{.ID}}">{{.Username}}</a></th><td>{{.Status}}</td><td>{{.Registered}}</td><td>{{.LastLogin}}</td></tr>
+{{end}}</tbody>
+</table>
+{{end}}{{end}}{{end}}
+{{define "user"}}{{if .Notice}}<p class="notice" role="status">{{.Notice}}</p>
+{{end}}{{if .Error}}<p class="error" role="alert">{{.Error}}</p>
+{{end}}<dl class="facts">
+<dt>Status</dt><dd>{{.Status}}</dd>
+<dt>Groups</dt><dd>{{if .Groups}}{{.GroupList}}{{else}}none{{end}}</dd>
+<dt>Registered</dt><dd>{{.Registered}}</dd>
+<dt>Last login</dt><dd>{{.LastLogin}}</dd>
+{{if .Erasure}}<dt>Erasure</dt><dd>{{.Erasure}}</dd>
+{{end}}</dl>
+{{if .Email}}<section aria-labelledby="email-heading">
+<h2 id="email-heading">Email address</h2>
+<p role="status">Email address: <strong>{{.Email}}</strong>. This access has been recorded in the audit log.</p>
+</section>
+{{end}}{{if .Manage}}<section aria-labelledby="account-heading">
+<h2 id="account-heading">Account</h2>
+{{if .Self}}<p>You cannot lock your own account or show your own email address here.</p>
+{{else}}{{if .StatusAction}}<form method="post" action="/admin/users/{{.ID}}/{{.StatusAction}}" class="form">
+<input type="hidden" name="csrf" value="{{.CSRF}}">
+<p><label><input type="checkbox" name="confirm" value="yes" required> {{.StatusConfirm}}</label></p>
+<p><button type="submit">{{.StatusLabel}}</button></p>
+</form>
+{{end}}{{if .CanEmail}}<form method="post" action="/admin/users/{{.ID}}/email" class="form">
+<input type="hidden" name="csrf" value="{{.CSRF}}">
+<p><button type="submit" aria-describedby="email-help">Show email address</button>
+<span class="meta" id="email-help">For account recovery. Showing it is recorded in the audit log.</span></p>
+</form>
+{{end}}{{end}}</section>
+{{end}}{{if .ManageGroups}}<section aria-labelledby="groups-heading">
+<h2 id="groups-heading">Groups</h2>
+{{if .Joinable}}<form method="post" action="/admin/users/{{.ID}}/groups/add" class="form">
+<input type="hidden" name="csrf" value="{{.CSRF}}">
+<p><label for="add-group">Add to a group</label>
+<select id="add-group" name="group" required>
+{{range .Joinable}}<option value="{{.ID}}">{{.Name}}{{if .Description}}: {{.Description}}{{end}}</option>
+{{end}}</select></p>
+<p><button type="submit">Add</button></p>
+</form>
+{{end}}{{if .Leavable}}<form method="post" action="/admin/users/{{.ID}}/groups/remove" class="form">
+<input type="hidden" name="csrf" value="{{.CSRF}}">
+<p><label for="remove-group">Remove from a group</label>
+<select id="remove-group" name="group" required>
+{{range .Leavable}}<option value="{{.ID}}">{{.Name}}</option>
+{{end}}</select></p>
+<p><button type="submit">Remove</button></p>
+</form>
+{{end}}<p>You can only add or remove groups whose permissions you hold yourself.</p>
+</section>
+{{end}}<p><a href="/admin/users">Find another user</a></p>{{end}}

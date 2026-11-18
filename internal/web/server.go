@@ -29,6 +29,7 @@ import (
 	"go.privatebychoice.com/shellshawk/internal/perm"
 	"go.privatebychoice.com/shellshawk/internal/plugin"
 	"go.privatebychoice.com/shellshawk/internal/prefs"
+	"go.privatebychoice.com/shellshawk/internal/privacy"
 	"go.privatebychoice.com/shellshawk/internal/sessions"
 	"go.privatebychoice.com/shellshawk/internal/settings"
 	"go.privatebychoice.com/shellshawk/internal/theme"
@@ -63,6 +64,9 @@ type Config struct {
 	// Connections lists and ends SSH connections (Who is online); nil
 	// leaves the pages out.
 	Connections *sessions.Service
+	// Privacy shows erasure requests and email addresses on the user
+	// pages; nil leaves those parts out.
+	Privacy *privacy.Service
 	// Menu and MenuItems edit the member menu; either nil leaves the
 	// editor out.
 	Menu      *menu.Service
@@ -182,6 +186,14 @@ func (s *Server) routes() http.Handler {
 		mux.HandleFunc("POST /admin/branding", s.handleBrandingSave)
 	}
 	mux.HandleFunc("GET /admin/audit", s.handleAudit)
+	mux.HandleFunc("GET /admin/users", s.handleUsers)
+	mux.HandleFunc("GET /admin/users/{id}", s.handleUser)
+	mux.HandleFunc("POST /admin/users/{id}/lock", s.handleUserLock)
+	mux.HandleFunc("POST /admin/users/{id}/unlock", s.handleUserLock)
+	mux.HandleFunc("POST /admin/users/{id}/cancel-erasure", s.handleUserCancelErasure)
+	mux.HandleFunc("POST /admin/users/{id}/email", s.handleUserEmail)
+	mux.HandleFunc("POST /admin/users/{id}/groups/add", s.handleUserGroup)
+	mux.HandleFunc("POST /admin/users/{id}/groups/remove", s.handleUserGroup)
 	mux.HandleFunc("GET /admin/invites", s.handleInvites)
 	mux.HandleFunc("GET /admin/invites/new", s.handleInviteNew)
 	mux.HandleFunc("POST /admin/invites/new", s.handleInviteCreate)
@@ -419,6 +431,9 @@ func (s *Server) nav(ctx context.Context, user int64) []navItem {
 				}
 			}
 		}
+	}
+	if set.Has(perm.UsersManage) || set.Has(perm.GroupsManage) {
+		out = append(out, navItem{Label: "Users", Href: "/admin/users"})
 	}
 	if set.Has(perm.UsersApprove) {
 		out = append(out, navItem{Label: "Approvals", Href: "/admin/pending"})

@@ -16,6 +16,7 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 
 	"golang.org/x/crypto/ssh"
 
@@ -27,6 +28,7 @@ import (
 	"go.privatebychoice.com/shellshawk/internal/plugin"
 	"go.privatebychoice.com/shellshawk/internal/prefs"
 	"go.privatebychoice.com/shellshawk/internal/presence"
+	"go.privatebychoice.com/shellshawk/internal/privacy"
 	sshsessions "go.privatebychoice.com/shellshawk/internal/sessions"
 	"go.privatebychoice.com/shellshawk/internal/settings"
 	"go.privatebychoice.com/shellshawk/internal/store"
@@ -169,6 +171,7 @@ func setup(t *testing.T, insecure bool) *env {
 		Prefs: prefs.NewService(db, cat, nil), Themes: cat, Plugins: reg, SSHAddress: "bbs.example.net:2222",
 		HostKeyFingerprint: "SHA256:testfingerprint", InviteUser: "new", InsecureCookies: insecure, ChatDays: 90, AuditDays: 365, GraceDays: 14,
 		Connections: staff, Settings: settings.NewService(db, nil, log), Menu: menus, MenuItems: testItems{},
+		Privacy: privacy.NewService(db, as, ps, 14*24*time.Hour, nil, log),
 	})
 	if err != nil {
 		t.Fatal(err)

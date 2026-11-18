@@ -686,6 +686,20 @@ response (status 200, `no-store`) rather than after a redirect, so it
 never appears in a URL or history entry and is never stored; reloading
 would ask to resubmit and create another invite.
 
+Web users: `GET /admin/users?q=` (prefix search through
+`auth.ListUsers`; no `q` shows only the form), `GET /admin/users/{id}`, and
+POSTs `/lock`, `/unlock`, `/cancel-erasure` (ticked box), `/email` and
+`/groups/add|remove` (`group=<id>`), for holders of `core.users.manage` or
+`core.groups.manage`, each section shown only with its permission. The
+services (`auth.SetLocked`, `privacy.CancelErasure`, `privacy.AdminEmail`,
+`perm.AddMember`/`RemoveMember`) check the permission, rank, self and
+last-administrator rules and audit; their errors come back on the account's
+page (403 forbidden, 409 conflicts). The email address is only shown in
+the response to its POST, so viewing it is a deliberate, audited action
+that a prefetching browser cannot trigger and that never reaches a URL.
+`web.Config.Privacy` (nil leaves erasure and email out) is the same
+service as SSH uses.
+
 ## 12. Core plugins — notable design points
 
 | Plugin | Notes |
