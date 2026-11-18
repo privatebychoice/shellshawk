@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"go.privatebychoice.com/shellshawk/internal/auth"
+	"go.privatebychoice.com/shellshawk/internal/events"
 	"go.privatebychoice.com/shellshawk/internal/store"
 )
 
@@ -204,4 +205,38 @@ func (s *Service) Delete(ctx context.Context, tok string) error {
 // CheckCSRF compares a submitted token with the session's in constant time.
 func CheckCSRF(sess Session, submitted string) bool {
 	return submitted != "" && subtle.ConstantTimeCompare([]byte(sess.CSRF), []byte(submitted)) == 1
+}
+
+// DeleteUser ends every web session of an account and deletes its unused
+// login codes. It returns how many sessions there were.
+func (s *Service) DeleteUser(ctx context.Context, userID int64) (int64, error) {
+	var n int64
+	err := store.WithTx(ctx, s.db, func(tx *sql.Tx) error {
+		res, err := tx.ExecContext(ctx, `DELETE FROM web_sessions WHERE user_id = ?`, userID)
+		if err != nil {
+			return fmt.Errorf("websess: delete sessions: %w", err)
+		}
+		n, _ = res.RowsAffected()
+		if _, err := tx.ExecContext(ctx, `DELETE FROM web_login_codes WHERE user_id = ?`, userID); err != nil {
+			return fmt.Errorf("websess: delete codes: %w", err)
+		}
+		return nil
+	})
+	return n, err
+}
+
+// Subscribe makes locking an account end its web sessions, so unlocking it
+// later does not bring them back; the member logs in afresh. (A locked
+// account's sessions are refused anyway, by Lookup.)
+func (s *Service) Subscribe(bus *events.Bus) {
+	bus.Subscribe(events.UserLocked, "websess", func(ctx context.Context, e events.Event) error {
+		n, err := s.DeleteUser(ctx, e.UserID)
+		if err != nil {
+			return err
+		}
+		if n > 0 {
+			s.log.Info("web sessions of locked account ended", "user_id", e.UserID, "count", n)
+		}
+		return nil
+	})
 }

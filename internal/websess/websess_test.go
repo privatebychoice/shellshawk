@@ -15,6 +15,7 @@ import (
 	"golang.org/x/crypto/ssh"
 
 	"go.privatebychoice.com/shellshawk/internal/auth"
+	"go.privatebychoice.com/shellshawk/internal/events"
 	"go.privatebychoice.com/shellshawk/internal/perm"
 	"go.privatebychoice.com/shellshawk/internal/store"
 )
@@ -120,5 +121,43 @@ func TestSessions(t *testing.T) {
 	s.Delete(ctx, tok2)
 	if _, err := s.Lookup(ctx, tok2); !errors.Is(err, ErrNoSession) {
 		t.Error("deleted session valid")
+	}
+}
+
+func TestLockClearsSessions(t *testing.T) {
+	s, as, _, admin, alice := setup(t)
+	ctx := context.Background()
+	bus := events.New(slog.New(slog.DiscardHandler))
+	as.SetPublisher(bus)
+	s.Subscribe(bus)
+
+	tok1, _, _ := s.Create(ctx, alice)
+	tok2, _, _ := s.Create(ctx, alice)
+	adminTok, _, _ := s.Create(ctx, admin)
+	code, _, _ := s.NewCode(ctx, alice)
+
+	if err := as.SetLocked(ctx, admin, alice, true); err != nil {
+		t.Fatal(err)
+	}
+	if err := as.SetLocked(ctx, admin, alice, false); err != nil {
+		t.Fatal(err)
+	}
+	// After the unlock, nothing from before the lock works again.
+	for _, tok := range []string{tok1, tok2} {
+		if _, err := s.Lookup(ctx, tok); !errors.Is(err, ErrNoSession) {
+			t.Error("a session from before the lock came back after the unlock")
+		}
+	}
+	if _, err := s.Redeem(ctx, "alice", code); !errors.Is(err, ErrInvalidCode) {
+		t.Error("a login code from before the lock still works")
+	}
+	if _, err := s.Lookup(ctx, adminTok); err != nil {
+		t.Errorf("another member's session ended: %v", err)
+	}
+	// Logging in afresh works.
+	if tok, _, err := s.Create(ctx, alice); err != nil {
+		t.Fatal(err)
+	} else if _, err := s.Lookup(ctx, tok); err != nil {
+		t.Errorf("new session after unlock: %v", err)
 	}
 }

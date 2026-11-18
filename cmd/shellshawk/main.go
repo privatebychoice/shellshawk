@@ -210,9 +210,11 @@ func (a *app) serve(ctx context.Context) error {
 		Sessions: sessions.NewService(a.db, conns, nil, log), Log: log,
 	}
 	handler.Sessions.Subscribe(a.bus)
-	var webSessions *websess.Service
+	// Locking an account clears its web sessions even while the web
+	// interface is off: sessions from an earlier run stay in the database.
+	webSessions := websess.NewService(a.db, a.auth, nil, log)
+	webSessions.Subscribe(a.bus)
 	if cfg.WebEnabled() {
-		webSessions = websess.NewService(a.db, a.auth, nil, log)
 		handler.WebLogin = webSessions
 	}
 	if err := handler.Menu.Seed(ctx, handler.MenuDefaults()); err != nil {

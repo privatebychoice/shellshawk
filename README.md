@@ -98,10 +98,11 @@ every permission involved, and the last active administrator cannot be
 removed or locked.
 
 Locking an account ends its open SSH connections at once, telling the member
-why; its web sessions stop working on their next request. Rejecting an
-account awaiting approval likewise ends its open connections. Nobody can lock
-their own account or an account holding permissions they lack, so a
-moderator cannot lock an administrator.
+why, and deletes its web sessions and unused web login codes, so unlocking
+it later does not bring them back: the member logs in to the web afresh.
+Rejecting an account awaiting approval likewise ends its open connections.
+Nobody can lock their own account or an account holding permissions they
+lack, so a moderator cannot lock an administrator.
 
 ## Using the TUI
 

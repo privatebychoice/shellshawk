@@ -161,8 +161,12 @@ to use.
 - Locking an account publishes `user.locked`, and rejecting a pending one
   `user.rejected`; on either, `sessions.Service` ends every open SSH
   connection of the account (`presence.Conns.EndUser`) with a
-  `*presence.Disconnect` cause, so the member is told why. Web sessions
-  and live streams already re-check that the account is active.
+  `*presence.Disconnect` cause, so the member is told why. On
+  `user.locked`, `websess.Service` also deletes the account's web sessions
+  and login codes (subscribed even while the web interface is off, since
+  sessions from an earlier run remain), so an unlock does not revive them.
+  Until then, `Lookup` refuses any account that is not active, and live
+  streams re-check it.
 - Recovery: `shellshawk unlock USERNAME` (operator CLI) unlocks a locked
   account without a login, audited as the system actor. Whoever can run it
   can already edit the database, so it grants nothing new.
