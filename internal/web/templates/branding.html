@@ -1,0 +1,10 @@
+{{define "branding"}}{{if .Notice}}<p class="notice" role="status">{{.Notice}}</p>
+{{end}}<form method="post" action="/admin/branding" class="form">
+<input type="hidden" name="csrf" value="{{.CSRF}}">
+<p><label for="name">BBS name</label>
+<input type="text" id="name" name="name" maxlength="{{.MaxLen}}" required autocomplete="off" value="{{.Name}}" aria-describedby="name-help{{if .Error}} name-error{{end}}"{{if .Error}} aria-invalid="true"{{end}}>
+<span class="meta" id="name-help">Shown in every title bar over SSH, on the welcome prompt and on every web page. 1 to {{.MaxLen}} printable characters.</span></p>
+{{if .Error}}<p class="error" id="name-error" role="alert">{{.Error}}</p>
+{{end}}<p><button type="submit">Save</button></p>
+</form>
+<p>Members see a new name the next time they connect over SSH; web pages show it at once.</p>{{end}}

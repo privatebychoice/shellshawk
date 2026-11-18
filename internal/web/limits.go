@@ -15,6 +15,12 @@ import (
 // holders of core.settings.manage. settings.Service re-checks the
 // permission when saving.
 
+// errSettingsForbidden is shown to members without core.settings.manage.
+const errSettingsForbidden = "You do not have permission to change system settings."
+
+// settingsStaff returns the session of a member allowed to change system
+// settings. It answers the request itself (redirect or error) and returns
+// nil otherwise.
 func (s *Server) settingsStaff(w http.ResponseWriter, r *http.Request) *websess.Session {
 	sess := sessionFrom(r)
 	if sess == nil {
@@ -22,7 +28,7 @@ func (s *Server) settingsStaff(w http.ResponseWriter, r *http.Request) *websess.
 		return nil
 	}
 	if ok, err := s.cfg.Perms.Has(r.Context(), sess.UserID, perm.SettingsManage); err != nil || !ok {
-		s.renderError(w, r, http.StatusForbidden, "You do not have permission to change the connection limits.")
+		s.renderError(w, r, http.StatusForbidden, errSettingsForbidden)
 		return nil
 	}
 	return sess
@@ -90,7 +96,7 @@ func (s *Server) handleLimitsSave(w http.ResponseWriter, r *http.Request) {
 	err := s.cfg.Settings.SetConnLimits(r.Context(), sess.UserID, settings.ConnLimits{IdleMinutes: idle, MaxPerUser: maxConns})
 	switch {
 	case errors.Is(err, perm.ErrForbidden):
-		s.renderError(w, r, http.StatusForbidden, "You do not have permission to change the connection limits.")
+		s.renderError(w, r, http.StatusForbidden, errSettingsForbidden)
 	case err != nil:
 		LoggerFrom(r.Context()).Error("save connection limits", "err", err)
 		s.renderError(w, r, http.StatusInternalServerError, "The limits could not be saved. Please try again.")

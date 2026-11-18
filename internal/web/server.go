@@ -62,7 +62,8 @@ type Config struct {
 	// Connections lists and ends SSH connections (Who is online); nil
 	// leaves the pages out.
 	Connections *sessions.Service
-	// Settings edits the connection limits; nil leaves the page out.
+	// Settings edits the connection limits and branding; nil leaves those
+	// pages out.
 	Settings *settings.Service
 
 	// SSHAddress is the public host:port members connect to, shown on the
@@ -172,6 +173,8 @@ func (s *Server) routes() http.Handler {
 	if s.cfg.Settings != nil {
 		mux.HandleFunc("GET /admin/limits", s.handleLimits)
 		mux.HandleFunc("POST /admin/limits", s.handleLimitsSave)
+		mux.HandleFunc("GET /admin/branding", s.handleBranding)
+		mux.HandleFunc("POST /admin/branding", s.handleBrandingSave)
 	}
 	if s.cfg.Plugins != nil {
 		for _, p := range s.cfg.Plugins.Plugins() {
@@ -390,7 +393,8 @@ func (s *Server) nav(ctx context.Context, user int64) []navItem {
 		out = append(out, navItem{Label: "Who is online", Href: "/admin/online"})
 	}
 	if s.cfg.Settings != nil && set.Has(perm.SettingsManage) {
-		out = append(out, navItem{Label: "Connection limits", Href: "/admin/limits"})
+		out = append(out, navItem{Label: "Connection limits", Href: "/admin/limits"},
+			navItem{Label: "Branding", Href: "/admin/branding"})
 	}
 	return out
 }

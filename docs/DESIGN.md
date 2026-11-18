@@ -623,6 +623,13 @@ back with status 422, the typed values and `aria-invalid`. Validation uses
 the same `settings.CheckIdleMinutes` and `CheckMaxPerUser` as the SSH
 form, and `SetConnLimits` re-checks the permission and audits each change.
 
+Web branding: `GET`/`POST /admin/branding` (same `web.Config.Settings`
+and permission as the connection limits) edits the BBS name through
+`settings.SetBBSName`, which trims, refuses control characters and
+escape sequences, and audits. A refused name comes back with status 422
+and the error tied to the field. Web pages read the name on every
+request; SSH sessions read it when they start.
+
 ## 12. Core plugins — notable design points
 
 | Plugin | Notes |

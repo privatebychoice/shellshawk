@@ -141,7 +141,7 @@ pbc-classification privacy grade, e.g.
 mailto links are kept; images are never loaded; HTML is shown as text and
 never run. Tables are not supported. Members can read *Markdown guide* in the
 main menu and preview their own text. Administrators can change the BBS name
-under *Administration → Branding*.
+under *Administration → Branding* or on the web at `/admin/branding`.
 
 All user-supplied text is stripped of control characters and escape
 sequences before it is written to anyone's terminal.
@@ -303,9 +303,10 @@ every request, so locking an account takes effect immediately.
 Optional (`SHELLSHAWK_HTTP_ADDR`); serve it behind a TLS-terminating
 reverse proxy. You can read, write, reply to and delete private messages,
 chat live in any channel you may join, start and run private chats, and
-vote in polls, and staff can see who is online, end a connection and set
-the connection limits; conference posting, creating polls, channel management,
-slash commands and settings stay in the SSH interface.
+vote in polls. Staff can see who is online, end a connection, and set the
+connection limits and the BBS name. Conference posting, creating polls,
+channel management, slash commands, your own settings and the rest of
+administration stay in the SSH interface.
 
 | Path | Description |
 |------|-------------|
@@ -317,6 +318,7 @@ slash commands and settings stay in the SSH interface.
 | `/p/messages/` | Inbox, Sent and Deleted, with unread marks and counts; opening a message marks it read. Write a message (to usernames and your contact groups; markdown) or reply, with the same limits and privacy rules as over SSH. Delete (to Deleted, restorable), move back to the inbox, delete permanently, remove from Sent and empty the Deleted folder; the ones that cannot be undone need a ticked confirmation box |
 | `/p/polls/` | Open polls (pinned first) and closed polls; vote or change your vote, and see results under the same rules as over SSH |
 | `/p/wall/` | The wall (read-only); the message of the day is on `/home` |
+| `/admin/branding` | Branding, for staff with `core.settings.manage` (linked in the navigation only for them): the BBS name, with the same rules as *Administration → Branding* (1 to 40 printable characters) |
 | `/admin/limits` | Connection limits, for staff with `core.settings.manage` (linked in the navigation only for them): the idle timeout and connections per account, with the same rules as *Administration → Connection limits*. A refused value is shown again with the reason next to its field |
 | `/admin/online` | Who is online, for staff with `core.sessions.manage` (linked in the navigation only for them): a table of open SSH connections with account, what is open, idle time and connection time, and a table of logged-in web sessions with account, last activity (to the minute), login and expiry time. Addresses are never shown. **End** opens a confirmation page; ending needs a ticked box, follows the same rank rule as over SSH and is audited (`connection.ended`, `web_session.ended`). A logged-out web member's next page asks them to log in, and their live chat closes within 30 seconds. Your own web session is marked and ended by logging out |
 | `/privacy` | Privacy policy (built in, or `SHELLSHAWK_PRIVACY_POLICY_FILE`) |
