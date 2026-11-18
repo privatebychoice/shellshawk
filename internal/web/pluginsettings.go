@@ -18,16 +18,7 @@ import (
 const maxSettingsFormBytes = 128 << 10
 
 func (s *Server) pluginStaff(w http.ResponseWriter, r *http.Request) *websess.Session {
-	sess := sessionFrom(r)
-	if sess == nil {
-		http.Redirect(w, r, "/login", http.StatusSeeOther)
-		return nil
-	}
-	if ok, err := s.cfg.Perms.Has(r.Context(), sess.UserID, perm.PluginSettings); err != nil || !ok {
-		s.renderError(w, r, http.StatusForbidden, "You do not have permission to change plugin settings.")
-		return nil
-	}
-	return sess
+	return s.requirePerm(w, r, perm.PluginSettings, "You do not have permission to change plugin settings.")
 }
 
 // configurable returns the plugins that declare settings.

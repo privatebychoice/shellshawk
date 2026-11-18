@@ -25,6 +25,7 @@ import (
 
 	"go.privatebychoice.com/shellshawk/internal/auth"
 	"go.privatebychoice.com/shellshawk/internal/markdown"
+	"go.privatebychoice.com/shellshawk/internal/menu"
 	"go.privatebychoice.com/shellshawk/internal/perm"
 	"go.privatebychoice.com/shellshawk/internal/plugin"
 	"go.privatebychoice.com/shellshawk/internal/prefs"
@@ -62,6 +63,10 @@ type Config struct {
 	// Connections lists and ends SSH connections (Who is online); nil
 	// leaves the pages out.
 	Connections *sessions.Service
+	// Menu and MenuItems edit the member menu; either nil leaves the
+	// editor out.
+	Menu      *menu.Service
+	MenuItems MenuItems
 	// Settings edits the connection limits and branding; nil leaves those
 	// pages out.
 	Settings *settings.Service
@@ -175,6 +180,15 @@ func (s *Server) routes() http.Handler {
 		mux.HandleFunc("POST /admin/limits", s.handleLimitsSave)
 		mux.HandleFunc("GET /admin/branding", s.handleBranding)
 		mux.HandleFunc("POST /admin/branding", s.handleBrandingSave)
+	}
+	if s.menuEnabled() {
+		mux.HandleFunc("GET /admin/menu", s.handleMenu)
+		mux.HandleFunc("POST /admin/menu/add", s.handleMenuAdd)
+		mux.HandleFunc("POST /admin/menu/reset", s.handleMenuReset)
+		mux.HandleFunc("GET /admin/menu/{id}", s.handleMenuEntry)
+		mux.HandleFunc("POST /admin/menu/{id}", s.handleMenuUpdate)
+		mux.HandleFunc("POST /admin/menu/{id}/move", s.handleMenuMove)
+		mux.HandleFunc("POST /admin/menu/{id}/delete", s.handleMenuDelete)
 	}
 	if len(s.configurable()) > 0 {
 		mux.HandleFunc("GET /admin/plugins", s.handlePluginSettingsList)
@@ -378,6 +392,8 @@ func (s *Server) layout(r *http.Request, title string, body template.HTML) layou
 	return d
 }
 
+func (s *Server) menuEnabled() bool { return s.cfg.Menu != nil && s.cfg.MenuItems != nil }
+
 // nav lists the pages the member may open: plugin pages, then staff pages.
 func (s *Server) nav(ctx context.Context, user int64) []navItem {
 	set, err := s.cfg.Perms.Permissions(ctx, user)
@@ -396,6 +412,9 @@ func (s *Server) nav(ctx context.Context, user int64) []navItem {
 	}
 	if s.cfg.Connections != nil && set.Has(perm.SessionsManage) {
 		out = append(out, navItem{Label: "Who is online", Href: "/admin/online"})
+	}
+	if s.menuEnabled() && set.Has(perm.MenuManage) {
+		out = append(out, navItem{Label: "Menu editor", Href: "/admin/menu"})
 	}
 	if len(s.configurable()) > 0 && set.Has(perm.PluginSettings) {
 		out = append(out, navItem{Label: "Plugin settings", Href: "/admin/plugins"})

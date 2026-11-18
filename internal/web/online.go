@@ -36,19 +36,25 @@ type onlineRow struct {
 
 func fmtSince(t time.Time) string { return t.UTC().Format("2006-01-02 15:04 UTC") }
 
-// staff returns the session of a member allowed to manage connections. It
-// answers the request itself (redirect or error) and returns nil otherwise.
-func (s *Server) staff(w http.ResponseWriter, r *http.Request) *websess.Session {
+// requirePerm returns the session of a logged-in member holding p. It
+// answers the request itself (a redirect to log in, or forbidden with
+// refusal) and returns nil otherwise. The services re-check on every
+// change; this keeps the pages themselves from showing anything.
+func (s *Server) requirePerm(w http.ResponseWriter, r *http.Request, p, refusal string) *websess.Session {
 	sess := sessionFrom(r)
 	if sess == nil {
 		http.Redirect(w, r, "/login", http.StatusSeeOther)
 		return nil
 	}
-	if ok, err := s.cfg.Perms.Has(r.Context(), sess.UserID, perm.SessionsManage); err != nil || !ok {
-		s.renderError(w, r, http.StatusForbidden, "You do not have permission to see who is online.")
+	if ok, err := s.cfg.Perms.Has(r.Context(), sess.UserID, p); err != nil || !ok {
+		s.renderError(w, r, http.StatusForbidden, refusal)
 		return nil
 	}
 	return sess
+}
+
+func (s *Server) staff(w http.ResponseWriter, r *http.Request) *websess.Session {
+	return s.requirePerm(w, r, perm.SessionsManage, "You do not have permission to see who is online.")
 }
 
 func (s *Server) handleOnline(w http.ResponseWriter, r *http.Request) {

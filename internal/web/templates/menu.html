@@ -1,0 +1,75 @@
+{{define "menu-editor"}}{{if .Notice}}<p class="notice" role="status">{{.Notice}}</p>
+{{end}}{{if .Error}}<p class="error" role="alert">{{.Error}}</p>
+{{end}}{{if .Parent}}<p><a href="{{.Up}}">Back to {{.UpLabel}}</a></p>
+{{end}}<p>Members see the entries in this order, and only those they may use. Items of plugins that are no longer installed are hidden from members.</p>
+{{if .Entries}}<table class="online">
+<caption>Entries in {{.Where}}, in order</caption>
+<thead><tr><th scope="col">Position</th><th scope="col">Label</th><th scope="col">What it opens</th><th scope="col">Extra permission</th><th scope="col">Actions</th></tr></thead>
+<tbody>
+{{range .Entries}}<tr id="entry-{{.ID}}"><td>{{.Position}}</td><th scope="row">{{.Label}}</th><td>{{.What}}</td><td>{{if .Permission}}{{.Permission}}{{else}}none{{end}}</td>
+<td><a href="/admin/menu/{{.ID}}">Edit<span class="visually-hidden"> {{.Label}}</span></a>{{if .Submenu}} · <a href="/admin/menu?parent={{.ID}}">Open<span class="visually-hidden"> submenu {{.Label}}</span></a>{{end}}
+<form method="post" action="/admin/menu/{{.ID}}/move" class="inline"><input type="hidden" name="csrf" value="{{$.CSRF}}">{{if not .First}}<button type="submit" name="direction" value="up">Move up<span class="visually-hidden"> {{.Label}}</span></button>{{end}} {{if not .Last}}<button type="submit" name="direction" value="down">Move down<span class="visually-hidden"> {{.Label}}</span></button>{{end}}</form></td></tr>
+{{end}}</tbody>
+</table>
+{{else}}<p>This submenu is empty. Members do not see an empty submenu.</p>
+{{end}}<section aria-labelledby="add-heading">
+<h2 id="add-heading">Add an entry</h2>
+<form method="post" action="/admin/menu/add" class="form">
+<input type="hidden" name="csrf" value="{{.CSRF}}">
+<input type="hidden" name="parent" value="{{.Parent}}">
+<fieldset>
+<legend>Type</legend>
+<p><label><input type="radio" name="kind" value="item"{{if ne .Add.kind "submenu"}} checked{{end}}> A menu item</label></p>
+<p><label><input type="radio" name="kind" value="submenu"{{if eq .Add.kind "submenu"}} checked{{end}}> A submenu</label></p>
+</fieldset>
+<p><label for="add-target">Menu item</label>
+<select id="add-target" name="target" aria-describedby="add-target-help{{if .AddErrors.target}} add-target-error{{end}}"{{if .AddErrors.target}} aria-invalid="true"{{end}}>
+<option value="">Choose an item</option>
+{{range .Targets}}<option value="{{.Value}}"{{if eq .Value $.Add.target}} selected{{end}}>{{.Label}}</option>
+{{end}}</select>
+<span class="meta" id="add-target-help">Only used for a menu item.</span></p>
+{{if .AddErrors.target}}<p class="error" id="add-target-error">{{.AddErrors.target}}</p>
+{{end}}<p><label for="add-label">Label</label>
+<input type="text" id="add-label" name="label" maxlength="{{.MaxLabel}}" value="{{.Add.label}}" aria-describedby="add-label-help{{if .AddErrors.label}} add-label-error{{end}}"{{if .AddErrors.label}} aria-invalid="true"{{end}}>
+<span class="meta" id="add-label-help">Required for a submenu. For a menu item, empty uses the item's own name. Up to {{.MaxLabel}} printable characters.</span></p>
+{{if .AddErrors.label}}<p class="error" id="add-label-error">{{.AddErrors.label}}</p>
+{{end}}{{template "menu-perm" .AddPerm}}
+<p><button type="submit">Add</button></p>
+</form>
+</section>
+{{if not .Parent}}<section aria-labelledby="reset-heading">
+<h2 id="reset-heading">Reset</h2>
+<form method="post" action="/admin/menu/reset" class="form">
+<input type="hidden" name="csrf" value="{{.CSRF}}">
+<p><label><input type="checkbox" name="confirm" value="yes" required> Yes, discard all changes and restore the default menu</label></p>
+<p><button type="submit">Reset to the default menu</button></p>
+</form>
+</section>
+{{end}}{{end}}
+{{define "menu-perm"}}<p><label for="{{.ID}}">Extra permission</label>
+<select id="{{.ID}}" name="perm" aria-describedby="{{.ID}}-help">
+<option value="">No extra permission</option>
+{{range .Options}}<option value="{{.Name}}"{{if eq .Name $.Selected}} selected{{end}}>{{.Name}}: {{.Description}}</option>
+{{end}}</select>
+<span class="meta" id="{{.ID}}-help">Members also need this to see the entry.</span></p>{{end}}
+{{define "menu-entry"}}{{if .Error}}<p class="error" role="alert">{{.Error}}</p>
+{{end}}<p>{{.What}}.</p>
+<form method="post" action="/admin/menu/{{.ID}}" class="form">
+<input type="hidden" name="csrf" value="{{.CSRF}}">
+<p><label for="label">Label</label>
+<input type="text" id="label" name="label" maxlength="{{.MaxLabel}}" required value="{{.Label}}" aria-describedby="label-help{{if .LabelError}} label-error{{end}}"{{if .LabelError}} aria-invalid="true"{{end}}>
+<span class="meta" id="label-help">1 to {{.MaxLabel}} printable characters.</span></p>
+{{if .LabelError}}<p class="error" id="label-error">{{.LabelError}}</p>
+{{end}}{{template "menu-perm" .PermSelect}}
+<p><button type="submit">Save</button></p>
+</form>
+<section aria-labelledby="delete-heading">
+<h2 id="delete-heading">Delete</h2>
+{{if .Protected}}<p>Administration cannot be deleted, so nobody is ever locked out of it. You can rename or move it.</p>
+{{else}}<form method="post" action="/admin/menu/{{.ID}}/delete" class="form">
+<input type="hidden" name="csrf" value="{{.CSRF}}">
+<p><label><input type="checkbox" name="confirm" value="yes" required> Yes, delete &ldquo;{{.Label}}&rdquo; from the menu</label></p>
+<p><button type="submit">Delete</button></p>
+</form>
+{{end}}</section>
+<p><a href="{{.Back}}">Back to {{.BackLabel}}</a></p>{{end}}

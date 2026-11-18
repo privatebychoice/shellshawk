@@ -645,6 +645,20 @@ validates and re-checks the permission; a refused save comes back with
 status 422, the typed values and the errors, worded as over SSH ("<label>
 must be at most 50."). The form body limit is 128 KiB.
 
+Web menu editor: `web.Config.Menu` with `MenuItems` (the item catalogue,
+implemented by `bbs.Handler`: `MenuDefaults`, `ItemExists`, `ItemLabel`)
+serves `GET /admin/menu?parent=` (a table of a menu's entries in order,
+the add form, and on the main menu the reset form), `GET`/`POST
+/admin/menu/{id}` (label and extra permission, plus delete), and POSTs
+`/admin/menu/add`, `/admin/menu/{id}/move` (`direction=up|down`, redirects
+to `#entry-<id>`), `/admin/menu/{id}/delete` and `/admin/menu/reset` (both
+need a ticked box). Everything goes through `menu.Service`, which checks
+`core.menu.manage`, audits, refuses to delete Administration or a
+non-empty submenu, and validates labels, targets and permissions; labels
+are checked first so their errors appear at the field. Move buttons carry
+the entry's label in visually hidden text so each is distinct to screen
+readers. Web staff pages share one `requirePerm` helper.
+
 ## 12. Core plugins — notable design points
 
 | Plugin | Notes |

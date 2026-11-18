@@ -22,6 +22,7 @@ import (
 	"go.privatebychoice.com/shellshawk/internal/auth"
 	"go.privatebychoice.com/shellshawk/internal/events"
 	"go.privatebychoice.com/shellshawk/internal/form"
+	"go.privatebychoice.com/shellshawk/internal/menu"
 	"go.privatebychoice.com/shellshawk/internal/perm"
 	"go.privatebychoice.com/shellshawk/internal/plugin"
 	"go.privatebychoice.com/shellshawk/internal/prefs"
@@ -104,6 +105,23 @@ type env struct {
 	perms    *perm.Service
 	conns    *presence.Conns
 	settings *settings.Service
+	menu     *menu.Service
+}
+
+// testItems is the menu item catalogue for the menu editor tests.
+type testItems struct{}
+
+func (testItems) MenuDefaults() []menu.Default {
+	return []menu.Default{{Target: menu.TargetAdmin, Label: "Administration"}, {Target: "notes:read", Label: "Read notes"}}
+}
+func (testItems) ItemExists(t string) bool { return t == menu.TargetAdmin || t == "notes:read" }
+func (testItems) ItemLabel(t string) (string, bool) {
+	for _, d := range (testItems{}).MenuDefaults() {
+		if d.Target == t {
+			return d.Label, true
+		}
+	}
+	return "", false
 }
 
 func setup(t *testing.T, insecure bool) *env {
@@ -139,6 +157,10 @@ func setup(t *testing.T, insecure bool) *env {
 	modInv, _, _ := as.CreateInvite(ctx, admin, auth.InviteOptions{Groups: []string{perm.GroupModerator}})
 	mod := newUser(modInv, "mod1")
 	conns := presence.NewConns(nil)
+	menus := menu.NewService(db, ps, nil, log)
+	if err := menus.Seed(ctx, testItems{}.MenuDefaults()); err != nil {
+		t.Fatal(err)
+	}
 	sessions := websess.NewService(db, as, nil, log)
 	staff := sshsessions.NewService(db, conns, nil, log)
 	staff.SetWeb(sessions)
@@ -146,12 +168,12 @@ func setup(t *testing.T, insecure bool) *env {
 		Log: log, SiteName: func(context.Context) string { return "Test BBS" }, Auth: as, Perms: ps, Sessions: sessions,
 		Prefs: prefs.NewService(db, cat, nil), Themes: cat, Plugins: reg, SSHAddress: "bbs.example.net:2222",
 		HostKeyFingerprint: "SHA256:testfingerprint", InviteUser: "new", InsecureCookies: insecure, ChatDays: 90, AuditDays: 365, GraceDays: 14,
-		Connections: staff, Settings: settings.NewService(db, nil, log),
+		Connections: staff, Settings: settings.NewService(db, nil, log), Menu: menus, MenuItems: testItems{},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	return &env{srv: srv, h: srv.Handler(), sessions: sessions, alice: alice, admin: admin, mod: mod, perms: ps, conns: conns, settings: srv.cfg.Settings}
+	return &env{srv: srv, h: srv.Handler(), sessions: sessions, alice: alice, admin: admin, mod: mod, perms: ps, conns: conns, settings: srv.cfg.Settings, menu: menus}
 }
 
 type req struct {

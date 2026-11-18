@@ -102,6 +102,16 @@ func (h *Handler) itemExists(target string) bool {
 	return ok
 }
 
+// ItemExists reports whether a menu item target is provided by core or an
+// installed plugin. The web menu editor uses it.
+func (h *Handler) ItemExists(target string) bool { return h.itemExists(target) }
+
+// ItemLabel returns a menu item's own name.
+func (h *Handler) ItemLabel(target string) (string, bool) {
+	info, ok := h.item(target)
+	return info.label, ok
+}
+
 // visible reports whether a member with set should see entry e. Submenus
 // are shown only if something inside them is visible.
 func (s *session) visible(ctx context.Context, e menu.Entry, set perm.Set, depth int) bool {

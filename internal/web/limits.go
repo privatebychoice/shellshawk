@@ -18,20 +18,8 @@ import (
 // errSettingsForbidden is shown to members without core.settings.manage.
 const errSettingsForbidden = "You do not have permission to change system settings."
 
-// settingsStaff returns the session of a member allowed to change system
-// settings. It answers the request itself (redirect or error) and returns
-// nil otherwise.
 func (s *Server) settingsStaff(w http.ResponseWriter, r *http.Request) *websess.Session {
-	sess := sessionFrom(r)
-	if sess == nil {
-		http.Redirect(w, r, "/login", http.StatusSeeOther)
-		return nil
-	}
-	if ok, err := s.cfg.Perms.Has(r.Context(), sess.UserID, perm.SettingsManage); err != nil || !ok {
-		s.renderError(w, r, http.StatusForbidden, errSettingsForbidden)
-		return nil
-	}
-	return sess
+	return s.requirePerm(w, r, perm.SettingsManage, errSettingsForbidden)
 }
 
 func (s *Server) renderLimits(w http.ResponseWriter, r *http.Request, status int, sess *websess.Session, values, errs map[string]string, notice string) {
