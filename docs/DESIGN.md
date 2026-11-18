@@ -630,6 +630,21 @@ escape sequences, and audits. A refused name comes back with status 422
 and the error tied to the field. Web pages read the name on every
 request; SSH sessions read it when they start.
 
+Web plugin settings: `GET /admin/plugins` lists the plugins that declare
+settings, and `GET`/`POST /admin/plugins/{id}` edits one, for holders of
+`core.plugins.settings` (routes and the navigation link exist only when a
+plugin has settings). `web/formhtml.go` renders any `form.Form` as an
+accessible web form, so plugins write no HTML for their settings: every
+control has a label and its rules in words (`Field.Constraints`) and help,
+tied with `aria-describedby` along with any error; Int and Float become
+number inputs with min/max, MultiLine a textarea, Choice a select (or a
+fieldset of checkboxes when Multi), Boolean a checkbox (unticked means
+false), and Password is never sent back. Input names are prefixed `f-` so
+a setting key cannot clash with the form's `csrf` field. `Settings.Save`
+validates and re-checks the permission; a refused save comes back with
+status 422, the typed values and the errors, worded as over SSH ("<label>
+must be at most 50."). The form body limit is 128 KiB.
+
 ## 12. Core plugins — notable design points
 
 | Plugin | Notes |

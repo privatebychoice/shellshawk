@@ -1,0 +1,10 @@
+{{define "plugin-settings-list"}}{{if .Plugins}}<ul class="links">
+{{range .Plugins}}<li><a href="/admin/plugins/{{.ID}}">{{.Name}}</a>{{if .Description}}: {{.Description}}{{end}}</li>
+{{end}}</ul>{{else}}<p>No installed plugin has settings.</p>{{end}}{{end}}
+{{define "plugin-settings"}}{{if .Notice}}<p class="notice" role="status">{{.Notice}}</p>
+{{end}}{{if .Invalid}}<p class="error" role="alert">The settings were not saved. Correct the fields marked below.</p>
+{{end}}<form method="post" action="/admin/plugins/{{.ID}}" class="form">
+<input type="hidden" name="csrf" value="{{.CSRF}}">
+{{template "fields" .Fields}}<p><button type="submit">Save</button></p>
+</form>
+<p><a href="/admin/plugins">All plugin settings</a></p>{{end}}

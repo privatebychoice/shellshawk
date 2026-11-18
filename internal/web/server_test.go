@@ -21,6 +21,7 @@ import (
 
 	"go.privatebychoice.com/shellshawk/internal/auth"
 	"go.privatebychoice.com/shellshawk/internal/events"
+	"go.privatebychoice.com/shellshawk/internal/form"
 	"go.privatebychoice.com/shellshawk/internal/perm"
 	"go.privatebychoice.com/shellshawk/internal/plugin"
 	"go.privatebychoice.com/shellshawk/internal/prefs"
@@ -53,6 +54,18 @@ func (notesPlugin) Manifest() plugin.Manifest {
 			return template.HTML(`<section class="notes-panel">Notes for you</section>`), nil
 		},
 		Permissions: []plugin.Permission{{Name: "notes.secret", Description: "secret"}},
+		// One setting of every kind, for the plugin settings page.
+		Settings: []plugin.Setting{
+			{Field: form.Field{Name: "max", Label: "Most notes", Help: "Per member.", Kind: form.SingleLine, Subtype: form.Int, Required: true,
+				Min: form.Bound(1), Max: form.Bound(50)}, Default: "10"},
+			{Field: form.Field{Name: "title", Label: "Title", Kind: form.SingleLine, MaxLen: 20}, Default: "Notes"},
+			{Field: form.Field{Name: "csrf", Label: "Footer", Kind: form.MultiLine, MaxLen: 200}, Default: ""},
+			{Field: form.Field{Name: "public", Label: "Visible to guests", Kind: form.Boolean}, Default: form.True},
+			{Field: form.Field{Name: "sort", Label: "Sort order", Kind: form.Choice, Required: true,
+				Options: []form.Option{{Value: "new", Label: "Newest first"}, {Value: "old", Label: "Oldest first"}}}, Default: "new"},
+			{Field: form.Field{Name: "tags", Label: "Tags", Kind: form.Choice, Multi: true,
+				Options: []form.Option{{Value: "a", Label: "Alpha"}, {Value: "b", Label: "Beta"}}}, Default: "a"},
+		},
 		Web: []plugin.WebRoute{
 			{Path: "/", Nav: "Notes", Handle: page("Notes")},
 			{Path: "/secret", AnyOf: []string{"notes.secret"}, Handle: page("Secret")},

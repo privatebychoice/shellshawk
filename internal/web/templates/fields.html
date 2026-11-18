@@ -1,0 +1,22 @@
+{{define "fields"}}{{range .}}{{if eq .Control "checkboxes"}}<fieldset aria-describedby="{{.Describe}}">
+<legend>{{.Label}}</legend>
+{{$name := .Name}}{{range $o := .Options}}<p><label><input type="checkbox" name="{{$name}}" value="{{$o.Value}}"{{if $o.Selected}} checked{{end}}> {{$o.Label}}</label></p>
+{{end}}<span class="meta" id="{{.ID}}-rules">{{.Rules}}</span>
+{{if .Help}}<span class="meta" id="{{.ID}}-help">{{.Help}}</span>{{end}}
+{{if .Error}}<p class="error" id="{{.ID}}-error">{{.Error}}</p>{{end}}
+</fieldset>
+{{else if eq .Control "checkbox"}}<p><label><input type="checkbox" id="{{.ID}}" name="{{.Name}}" value="true"{{if eq .Value "true"}} checked{{end}} aria-describedby="{{.Describe}}"{{if .Error}} aria-invalid="true"{{end}}> {{.Label}}</label>
+{{if .Rules}}<span class="meta" id="{{.ID}}-rules">{{.Rules}}</span>{{else}}<span id="{{.ID}}-rules" hidden></span>{{end}}
+{{if .Help}}<span class="meta" id="{{.ID}}-help">{{.Help}}</span>{{end}}</p>
+{{if .Error}}<p class="error" id="{{.ID}}-error">{{.Error}}</p>
+{{end}}{{else}}<p><label for="{{.ID}}">{{.Label}}</label>
+{{if eq .Control "textarea"}}<textarea id="{{.ID}}" name="{{.Name}}" rows="6" maxlength="{{.MaxLen}}"{{if .Required}} required{{end}} aria-describedby="{{.Describe}}"{{if .Error}} aria-invalid="true"{{end}}>{{.Value}}</textarea>
+{{else if eq .Control "select"}}<select id="{{.ID}}" name="{{.Name}}"{{if .Required}} required{{end}} aria-describedby="{{.Describe}}"{{if .Error}} aria-invalid="true"{{end}}>
+{{if .Empty}}<option value="">No choice</option>
+{{end}}{{range .Options}}<option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{.Label}}</option>
+{{end}}</select>
+{{else}}<input type="{{.Control}}" id="{{.ID}}" name="{{.Name}}"{{if eq .Control "number"}} inputmode="{{if eq .Step "1"}}numeric{{else}}decimal{{end}}" step="{{.Step}}"{{if .Min}} min="{{.Min}}"{{end}}{{if .Max}} max="{{.Max}}"{{end}}{{else}} maxlength="{{.MaxLen}}"{{end}}{{if eq .Control "password"}} autocomplete="new-password"{{end}}{{if .Required}} required{{end}} value="{{.Value}}" aria-describedby="{{.Describe}}"{{if .Error}} aria-invalid="true"{{end}}>
+{{end}}<span class="meta" id="{{.ID}}-rules">{{.Rules}}</span>
+{{if .Help}}<span class="meta" id="{{.ID}}-help">{{.Help}}</span>{{end}}</p>
+{{if .Error}}<p class="error" id="{{.ID}}-error">{{.Error}}</p>
+{{end}}{{end}}{{end}}{{end}}

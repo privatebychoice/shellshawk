@@ -176,6 +176,11 @@ func (s *Server) routes() http.Handler {
 		mux.HandleFunc("GET /admin/branding", s.handleBranding)
 		mux.HandleFunc("POST /admin/branding", s.handleBrandingSave)
 	}
+	if len(s.configurable()) > 0 {
+		mux.HandleFunc("GET /admin/plugins", s.handlePluginSettingsList)
+		mux.HandleFunc("GET /admin/plugins/{id}", s.handlePluginSettings)
+		mux.HandleFunc("POST /admin/plugins/{id}", s.handlePluginSettingsSave)
+	}
 	if s.cfg.Plugins != nil {
 		for _, p := range s.cfg.Plugins.Plugins() {
 			for _, r := range p.Manifest.Web {
@@ -391,6 +396,9 @@ func (s *Server) nav(ctx context.Context, user int64) []navItem {
 	}
 	if s.cfg.Connections != nil && set.Has(perm.SessionsManage) {
 		out = append(out, navItem{Label: "Who is online", Href: "/admin/online"})
+	}
+	if len(s.configurable()) > 0 && set.Has(perm.PluginSettings) {
+		out = append(out, navItem{Label: "Plugin settings", Href: "/admin/plugins"})
 	}
 	if s.cfg.Settings != nil && set.Has(perm.SettingsManage) {
 		out = append(out, navItem{Label: "Connection limits", Href: "/admin/limits"},
