@@ -1,0 +1,30 @@
+{{define "invites"}}{{if .Notice}}<p class="notice" role="status">{{.Notice}}</p>
+{{end}}{{if .CanCreate}}<p><a href="/admin/invites/new">Create an invite</a></p>
+{{end}}<p>{{if .All}}All invites{{else}}Your invites{{end}}, newest first. Codes are never stored, so they cannot be shown again.</p>
+{{if .Rows}}<table class="online">
+<caption>{{if .All}}All invites{{else}}Your invites{{end}}</caption>
+<thead><tr><th scope="col">Invite</th><th scope="col">State</th><th scope="col">Used</th><th scope="col">Expires</th>{{if .All}}<th scope="col">Created by</th>{{end}}<th scope="col">Note</th><th scope="col">Action</th></tr></thead>
+<tbody>
+{{range .Rows}}<tr><th scope="row">Invite {{.ID}}</th><td>{{.State}}{{if .Approval}}, needs approval{{end}}</td><td>{{.Uses}} of {{.MaxUses}}</td><td>{{.Expires}}</td>{{if $.All}}<td>{{.Creator}}</td>{{end}}<td>{{.Note}}</td><td>{{if .Usable}}<a href="/admin/invites/{{.ID}}/revoke">Revoke<span class="visually-hidden"> invite {{.ID}}</span></a>{{end}}</td></tr>
+{{end}}</tbody>
+</table>
+{{else}}<p>There are no invites.</p>
+{{end}}{{end}}
+{{define "invite-new"}}{{if .Error}}<p class="error" role="alert">{{.Error}}</p>
+{{end}}<form method="post" action="/admin/invites/new" class="form">
+<input type="hidden" name="csrf" value="{{.CSRF}}">
+{{template "fields" .Fields}}<p><button type="submit">Create the invite</button></p>
+</form>
+<p><a href="/admin/invites">All invites</a></p>{{end}}
+{{define "invite-created"}}<p role="status">Invite {{.ID}} has been created. Its code is:</p>
+<p class="invite-code"><code>{{.Code}}</code></p>
+<p><strong>This is the only time the code is shown.</strong> It cannot be recovered, so copy it now and share it privately.</p>
+<p>To register, the new member connects with SSH{{if .SSHAddress}} to <code>{{.SSHAddress}}</code>{{end}} as user <code>{{.InviteUser}}</code> and enters the code as the password. It works {{.MaxUses}} time(s) and expires {{.Expires}}{{if .Approval}}; new accounts need approval{{end}}.</p>
+<p><a href="/admin/invites">All invites</a> · <a href="/admin/invites/new">Create another</a></p>{{end}}
+{{define "invite-revoke"}}{{if .Error}}<p class="error" role="alert">{{.Error}}</p>
+{{end}}<p>Revoke invite {{.ID}} ({{.Uses}} of {{.MaxUses}} used, expires {{.Expires}}{{if .Note}}, note: {{.Note}}{{end}})? It can no longer be used. Accounts it already created are not affected.</p>
+<form method="post" action="/admin/invites/{{.ID}}/revoke" class="form">
+<input type="hidden" name="csrf" value="{{.CSRF}}">
+<p><label><input type="checkbox" name="confirm" value="yes" required> Yes, revoke this invite</label></p>
+<p><button type="submit">Revoke</button> <a href="/admin/invites">Cancel</a></p>
+</form>{{end}}

@@ -676,6 +676,16 @@ registered, never the email address (viewing one is audited separately).
 An account that is no longer waiting redirects with `?done=gone`;
 rejecting publishes `user.rejected`, which ends its open connections.
 
+Web invites: `GET /admin/invites` (own invites with `core.invite.create`,
+all with `core.invite.manage`), `GET`/`POST /admin/invites/new` (the SSH
+form's fields through the generic renderer, `auth.CreateInvite` checks
+the permission and that every attached group's permissions are held), and
+`GET`/`POST /admin/invites/{id}/revoke` (ticked box; `RevokeInvite`
+allows your own or any with manage). The new code is rendered in the POST
+response (status 200, `no-store`) rather than after a redirect, so it
+never appears in a URL or history entry and is never stored; reloading
+would ask to resubmit and create another invite.
+
 ## 12. Core plugins — notable design points
 
 | Plugin | Notes |
