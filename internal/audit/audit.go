@@ -88,6 +88,7 @@ func Purge(ctx context.Context, db store.DBTX, now time.Time, retention time.Dur
 
 // Listed is an audit entry as listed for administrators.
 type Listed struct {
+	ID         int64
 	At         time.Time
 	Actor      string // username, "system", or "#<id>" if the account is gone
 	Action     string
@@ -99,10 +100,22 @@ type Listed struct {
 // Recent returns up to limit entries, newest first. Callers must check
 // core.audit.view first (this package cannot import perm).
 func Recent(ctx context.Context, db store.DBTX, limit int) ([]Listed, error) {
+	return Before(ctx, db, 0, limit)
+}
+
+// Before returns up to limit entries older than the entry with ID before
+// (0 = from the newest), newest first, for paging. An unknown before
+// returns nothing. Callers must check core.audit.view first.
+func Before(ctx context.Context, db store.DBTX, before int64, limit int) ([]Listed, error) {
+	where, args := "", []any{}
+	if before != 0 {
+		where = `WHERE EXISTS (SELECT 1 FROM audit_log b WHERE b.id = ? AND (a.at < b.at OR (a.at = b.at AND a.id < b.id)))`
+		args = append(args, before)
+	}
 	rows, err := db.QueryContext(ctx, `
-		SELECT a.at, a.actor_id, COALESCE(u.username, ''), a.action, a.target_type, a.target_id, a.detail
-		FROM audit_log a LEFT JOIN users u ON u.id = a.actor_id
-		ORDER BY a.at DESC, a.id DESC LIMIT ?`, limit)
+		SELECT a.id, a.at, a.actor_id, COALESCE(u.username, ''), a.action, a.target_type, a.target_id, a.detail
+		FROM audit_log a LEFT JOIN users u ON u.id = a.actor_id `+where+`
+		ORDER BY a.at DESC, a.id DESC LIMIT ?`, append(args, limit)...)
 	if err != nil {
 		return nil, fmt.Errorf("audit: list: %w", err)
 	}
@@ -112,7 +125,7 @@ func Recent(ctx context.Context, db store.DBTX, limit int) ([]Listed, error) {
 		var r Listed
 		var at, name string
 		var actor sql.NullInt64
-		if err := rows.Scan(&at, &actor, &name, &r.Action, &r.TargetType, &r.TargetID, &r.Detail); err != nil {
+		if err := rows.Scan(&r.ID, &at, &actor, &name, &r.Action, &r.TargetType, &r.TargetID, &r.Detail); err != nil {
 			return nil, err
 		}
 		if r.At, err = store.ParseTime(at); err != nil {

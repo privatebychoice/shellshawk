@@ -659,6 +659,14 @@ are checked first so their errors appear at the field. Move buttons carry
 the entry's label in visually hidden text so each is distinct to screen
 readers. Web staff pages share one `requirePerm` helper.
 
+Web audit log: `GET /admin/audit?before=<id>` for holders of
+`core.audit.view`, read-only, 100 entries to a page (one extra is read to
+know whether an older page exists). `audit.Before` pages by keyset in the
+same order as `Recent` (time, then insertion), so entries sharing a
+timestamp or recorded out of order are neither skipped nor repeated; an
+unknown cursor gives an empty page. Times are shown in UTC inside
+`<time datetime>`.
+
 ## 12. Core plugins — notable design points
 
 | Plugin | Notes |

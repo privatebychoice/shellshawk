@@ -1,0 +1,10 @@
+{{define "audit"}}<p>{{if .Before}}Older entries{{else}}The most recent entries{{end}}, newest first, {{.PageSize}} to a page. Entries are kept for {{.Days}} days. Times are UTC.</p>
+{{if .Rows}}<table class="online">
+<caption>Audit log entries{{if .Before}}, older page{{end}}</caption>
+<thead><tr><th scope="col">Time</th><th scope="col">Who</th><th scope="col">Action</th><th scope="col">Target</th><th scope="col">Detail</th></tr></thead>
+<tbody>
+{{range .Rows}}<tr><td><time datetime="{{.ISO}}">{{.When}}</time></td><td>{{.Actor}}</td><th scope="row">{{.Action}}</th><td>{{.Target}}</td><td>{{.Detail}}</td></tr>
+{{end}}</tbody>
+</table>
+{{else}}<p>{{if .Before}}There are no older entries.{{else}}The audit log is empty.{{end}}</p>
+{{end}}<nav aria-label="Audit log pages"><p>{{if .Before}}<a href="/admin/audit">Newest entries</a>{{end}}{{if and .Before .Older}} · {{end}}{{if .Older}}<a href="/admin/audit?before={{.Older}}">Older entries</a>{{end}}</p></nav>{{end}}

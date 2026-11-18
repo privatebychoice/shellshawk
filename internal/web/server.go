@@ -181,6 +181,7 @@ func (s *Server) routes() http.Handler {
 		mux.HandleFunc("GET /admin/branding", s.handleBranding)
 		mux.HandleFunc("POST /admin/branding", s.handleBrandingSave)
 	}
+	mux.HandleFunc("GET /admin/audit", s.handleAudit)
 	if s.menuEnabled() {
 		mux.HandleFunc("GET /admin/menu", s.handleMenu)
 		mux.HandleFunc("POST /admin/menu/add", s.handleMenuAdd)
@@ -412,6 +413,9 @@ func (s *Server) nav(ctx context.Context, user int64) []navItem {
 	}
 	if s.cfg.Connections != nil && set.Has(perm.SessionsManage) {
 		out = append(out, navItem{Label: "Who is online", Href: "/admin/online"})
+	}
+	if set.Has(perm.AuditView) {
+		out = append(out, navItem{Label: "Audit log", Href: "/admin/audit"})
 	}
 	if s.menuEnabled() && set.Has(perm.MenuManage) {
 		out = append(out, navItem{Label: "Menu editor", Href: "/admin/menu"})
