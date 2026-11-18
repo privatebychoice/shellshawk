@@ -5,6 +5,7 @@ import (
 	"context"
 	"io"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -25,6 +26,10 @@ type Terminal struct {
 
 	mu   sync.Mutex
 	size Size
+
+	writeMu sync.Mutex  // serialises writes from Flush and Notify
+	screen  atomic.Bool // a full-screen UI is drawing
+	redraw  atomic.Bool // a notice was drawn over the screen
 
 	// PTY reports whether the client allocated a terminal. Without one the
 	// client's own terminal echoes and edits lines, input arrives a line at
@@ -63,6 +68,11 @@ func (t *Terminal) readLoop(r io.Reader) {
 	timer := time.NewTimer(time.Hour)
 	timer.Stop()
 	emit := func(evs []Event) {
+		// After a notice was drawn over the full screen, the first input
+		// is preceded by a resize event so the UI draws itself again.
+		if len(evs) > 0 && t.redraw.Swap(false) {
+			t.events <- Event{Key: KeyResize}
+		}
 		for _, ev := range evs {
 			t.events <- ev
 		}
@@ -158,11 +168,39 @@ func (t *Terminal) Size() Size {
 // Sanitize any user-supplied text first.
 func (t *Terminal) WriteString(s string) { t.out.WriteString(s) }
 
+// SetScreen tells the terminal whether a full-screen UI is drawing, which
+// decides how Notify shows a notice.
+func (t *Terminal) SetScreen(on bool) { t.screen.Store(on) }
+
+// Notify shows msg at once, from any goroutine, without disturbing what the
+// UI is doing: in full screen as a highlighted line at the bottom (the
+// screen is drawn again on the next key), otherwise as a line of its own so
+// a screen reader announces it. It rings the bell to draw attention. msg
+// must not contain user-supplied text.
+func (t *Terminal) Notify(msg string) error {
+	var b bytes.Buffer
+	if t.screen.Load() {
+		size := t.Size()
+		b.WriteString("\x1b7" + MoveTo(max(size.Rows-1, 0), 0) + ClearLine + "\x1b[7m")
+		b.WriteString(Truncate(msg, max(size.Cols-1, 1)))
+		b.WriteString("\x1b[0m\x1b8\a")
+		t.redraw.Store(true)
+	} else {
+		b.WriteString("\a\r\n" + msg + "\r\n")
+	}
+	t.writeMu.Lock()
+	defer t.writeMu.Unlock()
+	_, err := t.w.Write(b.Bytes())
+	return err
+}
+
 // Flush sends buffered output.
 func (t *Terminal) Flush() error {
 	if t.out.Len() == 0 {
 		return nil
 	}
+	t.writeMu.Lock()
+	defer t.writeMu.Unlock()
 	_, err := t.w.Write(t.out.Bytes())
 	t.out.Reset()
 	return err

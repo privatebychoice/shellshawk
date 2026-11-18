@@ -169,6 +169,42 @@ to use.
 - **Approval**: configurable per invite or globally — new accounts land in
   `pending` until an admin/moderator approves.
 
+### 4.1 Connection limits and ending connections
+
+- `presence.Conns` records every authenticated SSH connection in memory
+  (account, login mode, terminal/SFTP sessions open, start, last input).
+  No address is recorded. `sshd` registers each connection after
+  authentication and enforces the per-account limit there, atomically
+  (`presence.ErrTooMany`). Accounts registering with an invite (user 0) are
+  not limited. A refused connection has its terminal and shell requests
+  granted, so the client prints the reason (stderr) and exits with status
+  1 instead of reporting a failed request.
+- Limits live in `system_settings` (`ssh.idle_timeout_minutes`, default
+  30, 0 or 2–1440; `ssh.max_connections_per_user`, default 3, 0–20) and are
+  read through `sshd.Config.Limits` on every check, so changes need no
+  restart.
+- Idle: reading from any channel of the connection counts as activity;
+  keepalives, window changes and output do not. A watcher per connection
+  checks at most every 10 seconds (more often for short timeouts). It
+  sends interactive sessions a warning (`Session.IdleWarning`) before the
+  timeout, a minute or a quarter of the timeout, and never ends a
+  connection that has not had its full warning period (WCAG 2.2.1 Timing
+  Adjustable: warn and let the member extend with one keystroke).
+  `term.Terminal.Notify` shows the warning without involving the screen in
+  progress: its own line in line mode; in full screen a reverse-video
+  bottom line drawn with save/restore cursor, followed by a forced redraw
+  (a `KeyResize` event) before the next key.
+- Ending a connection on purpose (idle, or by staff) cancels the
+  connection's context with a `*presence.Disconnect` cause. Sessions get
+  5 seconds to finish: the BBS closes its UI (restoring the terminal from
+  the alternate screen) and then writes the cause's message.
+- `sessions.Service` (permission `core.sessions.manage`, not granted to
+  moderators by default) lists connections with usernames and ends one.
+  Ending uses `perm.RequireOutranks`, so the actor must hold every
+  permission the target account holds; it is audited as
+  `connection.ended`. A staff member cannot end their own current
+  connection from the list; `q` in the main menu does that.
+
 ---
 
 ## 5. Privacy

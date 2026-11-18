@@ -5,6 +5,7 @@ import (
 	"io"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -151,5 +152,63 @@ func TestTerminalResize(t *testing.T) {
 	ev, err := tm.Next(context.Background())
 	if err != nil || ev.Key != KeyResize || tm.Size() != (Size{100, 40}) {
 		t.Errorf("resize: %+v %v %+v", ev, err, tm.Size())
+	}
+}
+
+type syncBuf struct {
+	mu sync.Mutex
+	b  strings.Builder
+}
+
+func (s *syncBuf) Write(p []byte) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.b.Write(p)
+}
+
+func (s *syncBuf) String() string { s.mu.Lock(); defer s.mu.Unlock(); return s.b.String() }
+
+func TestTerminalNotify(t *testing.T) {
+	tests := []struct {
+		name       string
+		screen     bool
+		want       string
+		wantResize bool // a redraw comes before the next key
+	}{
+		{"line mode: a line of its own", false, "\a\r\nStay a while\r\n", false},
+		{"full screen: bottom row, then redraw", true, "\x1b7\x1b[24;1H\x1b[2K\x1b[7mStay a while\x1b[0m\x1b8\a", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r, w := io.Pipe()
+			defer w.Close()
+			out := &syncBuf{}
+			tm := New(r, out, true, Size{Cols: 80, Rows: 24}, nil)
+			tm.SetScreen(tt.screen)
+			if err := tm.Notify("Stay a while"); err != nil {
+				t.Fatal(err)
+			}
+			if got := out.String(); got != tt.want {
+				t.Errorf("output = %q, want %q", got, tt.want)
+			}
+			go w.Write([]byte("a"))
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			defer cancel()
+			ev, err := tm.Next(ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if tt.wantResize {
+				if ev.Key != KeyResize {
+					t.Fatalf("first event = %+v, want a resize", ev)
+				}
+				if ev, err = tm.Next(ctx); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if ev.Key != KeyRune || ev.Rune != 'a' {
+				t.Errorf("key = %+v", ev)
+			}
+		})
 	}
 }

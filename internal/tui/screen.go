@@ -23,6 +23,7 @@ const minCols, minRows = 30, 8
 // NewScreen switches the terminal to the alternate screen.
 func NewScreen(t *term.Terminal, st theme.Styler) *Screen {
 	t.WriteString(term.AltScreenOn + term.BracketPasteOn + term.CursorHide)
+	t.SetScreen(true)
 	return &Screen{t: t, st: st}
 }
 
@@ -31,6 +32,7 @@ func (u *Screen) LineMode() bool { return false }
 
 // Close implements UI: restores the normal screen.
 func (u *Screen) Close() error {
+	u.t.SetScreen(false)
 	u.t.WriteString(theme.Reset + term.BracketPasteOff + term.CursorShow + term.AltScreenOff)
 	return u.t.Flush()
 }

@@ -13,6 +13,7 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -32,7 +33,9 @@ import (
 	"go.privatebychoice.com/shellshawk/internal/plugins/polls"
 	"go.privatebychoice.com/shellshawk/internal/plugins/wall"
 	"go.privatebychoice.com/shellshawk/internal/prefs"
+	"go.privatebychoice.com/shellshawk/internal/presence"
 	"go.privatebychoice.com/shellshawk/internal/privacy"
+	"go.privatebychoice.com/shellshawk/internal/sessions"
 	"go.privatebychoice.com/shellshawk/internal/settings"
 	"go.privatebychoice.com/shellshawk/internal/sshd"
 	"go.privatebychoice.com/shellshawk/internal/store"
@@ -52,6 +55,9 @@ type env struct {
 	privacy *privacy.Service
 	handler *Handler
 	db      *sql.DB
+	// idle, when set, replaces the idle timeout from the settings so tests
+	// need not wait minutes.
+	idle atomic.Int64
 }
 
 // startBBS runs a BBS with the given plugins (the hello test plugin if none).
@@ -87,16 +93,27 @@ func startBBS(t *testing.T, plugins ...plugin.Plugin) *env {
 	if err != nil {
 		t.Fatal(err)
 	}
-	h := &Handler{Auth: as, Settings: st, Perms: ps, Prefs: pr, Menu: menu.NewService(db, ps, nil, log), Plugins: reg, Privacy: priv, Log: log}
+	conns := presence.NewConns(nil)
+	h := &Handler{Auth: as, Settings: st, Perms: ps, Prefs: pr, Menu: menu.NewService(db, ps, nil, log), Plugins: reg, Privacy: priv,
+		Sessions: sessions.NewService(db, conns, nil, log), Log: log}
 	if err := h.Menu.Seed(ctx, h.MenuDefaults()); err != nil {
 		t.Fatal(err)
 	}
 
 	_, hostPriv, _ := ed25519.GenerateKey(rand.Reader)
 	host, _ := ssh.NewSignerFromKey(hostPriv)
+	e := &env{auth: as, perms: ps, prefs: pr, privacy: priv, handler: h, db: db}
 	srv, err := sshd.New(sshd.Config{
 		HostKey: host, Auth: auth.NewSSHAuthenticator(as), Log: log,
-		Handler: h,
+		Handler: h, Conns: conns,
+		Limits: func(ctx context.Context) sshd.Limits {
+			l := st.ConnLimits(ctx)
+			idle := time.Duration(l.IdleMinutes) * time.Minute
+			if d := e.idle.Load(); d != 0 {
+				idle = time.Duration(d)
+			}
+			return sshd.Limits{IdleTimeout: idle, MaxPerUser: l.MaxPerUser}
+		},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -111,7 +128,8 @@ func startBBS(t *testing.T, plugins ...plugin.Plugin) *env {
 		defer cancel()
 		srv.Shutdown(ctx)
 	})
-	return &env{addr: l.Addr().String(), hostKey: host.PublicKey(), auth: as, perms: ps, prefs: pr, privacy: priv, handler: h, db: db}
+	e.addr, e.hostKey = l.Addr().String(), host.PublicKey()
+	return e
 }
 
 func newUserKey(t *testing.T) (ssh.Signer, string) {
@@ -421,12 +439,12 @@ func TestPluginItemsAndRecovery(t *testing.T) {
 func TestPluginSettingsAndMenuEditor(t *testing.T) {
 	e := startBBS(t)
 	signer := e.accessibleAdmin(t, "frank")
-	// 6 Administration; 7 Plugin settings; 1 Hello; greeting "Howdy";
+	// 6 Administration; 9 Plugin settings; 1 Hello; greeting "Howdy";
 	// Enter to dismiss "Settings saved."; q back to main; 8 Say hello; Enter;
-	// 6 Administration; 8 Menu editor; 7 Administration entry (the editor
+	// 6 Administration; 10 Menu editor; 7 Administration entry (the editor
 	// also lists the hidden web login item); 4 Delete; 2 Yes ->
 	// protected message, Enter; q, q, then q logs out.
-	input := strings.Join([]string{"6", "7", "1", "Howdy", "", "q", "8", "", "6", "8", "7", "4", "2", "", "q", "q", "q"}, "\r") + "\r"
+	input := strings.Join([]string{"6", "9", "1", "Howdy", "", "q", "8", "", "6", "10", "7", "4", "2", "", "q", "q", "q"}, "\r") + "\r"
 	out := e.session(t, "frank", ssh.PublicKeys(signer), input)
 	for _, want := range []string{"Settings saved.", "Howdy from a plugin.", "cannot be deleted"} {
 		if !strings.Contains(out, want) {

@@ -6,6 +6,7 @@ package bbs
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"strconv"
@@ -21,6 +22,7 @@ import (
 	"go.privatebychoice.com/shellshawk/internal/prefs"
 	"go.privatebychoice.com/shellshawk/internal/presence"
 	"go.privatebychoice.com/shellshawk/internal/privacy"
+	"go.privatebychoice.com/shellshawk/internal/sessions"
 	"go.privatebychoice.com/shellshawk/internal/settings"
 	"go.privatebychoice.com/shellshawk/internal/sshd"
 	"go.privatebychoice.com/shellshawk/internal/tui"
@@ -37,7 +39,8 @@ type Handler struct {
 	Plugins  *plugin.Registry  // may be nil when no plugins are installed
 	Presence *presence.Tracker // may be nil
 	Privacy  *privacy.Service
-	WebLogin *websess.Service // nil when the web interface is disabled
+	Sessions *sessions.Service // who is online; nil hides the screen
+	WebLogin *websess.Service  // nil when the web interface is disabled
 	Perms    *perm.Service
 	Prefs    *prefs.Service
 	Log      *slog.Logger
@@ -53,11 +56,18 @@ type Conn struct {
 	Identity sshd.Identity
 	PTY      *sshd.PTY // nil if the client did not request a terminal
 	Resize   <-chan sshd.WindowSize
+	// ConnSerial identifies the connection in the presence.Conns registry
+	// (0 when there is none, as in tests).
+	ConnSerial uint64
+	// IdleWarning delivers how long remains before an idle disconnect; nil
+	// when the session is driven without an SSH server.
+	IdleWarning <-chan time.Duration
 }
 
 // HandleShell implements sshd.SessionHandler.
 func (h *Handler) HandleShell(ctx context.Context, s *sshd.Session) {
-	h.Run(ctx, Conn{RW: s, ConnID: s.ConnID, Identity: s.Identity, PTY: s.PTY, Resize: s.Resize})
+	h.Run(ctx, Conn{RW: s, ConnID: s.ConnID, Identity: s.Identity, PTY: s.PTY, Resize: s.Resize,
+		ConnSerial: s.ConnSerial, IdleWarning: s.IdleWarning})
 }
 
 // session is one user's connection.
@@ -109,6 +119,7 @@ func (h *Handler) Run(ctx context.Context, c Conn) {
 		s.log = log
 	}
 	log.Info("session started", "pty", c.PTY != nil)
+	go s.idleWarnings(ctx)
 
 	err := s.run(ctx)
 	if s.ui != nil {
@@ -116,11 +127,46 @@ func (h *Handler) Run(ctx context.Context, c Conn) {
 			err = cerr
 		}
 	}
+	// The server ended the connection on purpose: say why, after the UI
+	// has restored the terminal.
+	var d *presence.Disconnect
+	if errors.As(context.Cause(ctx), &d) {
+		log.Info("session ended by the server", "reason", d.Message)
+		s.t.WriteString("\r\n" + d.Message + "\r\n")
+		_ = s.t.Flush()
+		return
+	}
 	switch {
 	case err == nil, errors.Is(err, io.EOF), errors.Is(err, context.Canceled), errors.Is(err, tui.ErrCancelled):
 		log.Info("session ended")
 	default:
 		log.Error("session ended with error", "err", err)
+	}
+}
+
+// idleWarnings tells the member when their connection is about to be ended
+// for inactivity, and how to keep it.
+func (s *session) idleWarnings(ctx context.Context) {
+	if s.conn.IdleWarning == nil {
+		return
+	}
+	keep := "Press an arrow key to stay connected."
+	if s.conn.PTY == nil {
+		keep = "Press Enter to stay connected."
+	}
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case left := <-s.conn.IdleWarning:
+			secs := int(left.Round(time.Second) / time.Second)
+			msg := fmt.Sprintf("No activity: disconnecting in %d seconds. %s", max(secs, 1), keep)
+			if err := s.t.Notify(msg); err != nil {
+				s.log.Debug("idle warning not shown", "err", err)
+				return
+			}
+			s.log.Debug("idle warning shown")
+		}
 	}
 }
 

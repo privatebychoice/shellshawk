@@ -31,10 +31,12 @@ func (s *session) admin(ctx context.Context) error {
 		}
 		addIf(set.Has(perm.UsersApprove), "pending", "Accounts awaiting approval", "Approve or reject new accounts")
 		addIf(set.Has(perm.UsersManage) || set.Has(perm.GroupsManage), "users", "Users", "Find a user, lock or unlock, change groups")
+		addIf(set.Has(perm.SessionsManage) && s.h.Sessions != nil, "online", "Who is online", "See SSH connections and end one")
 		addIf(set.Has(perm.GroupsManage), "groups", "Groups and permissions", "Create groups, grant permissions, manage members")
 		addIf(set.Has(perm.InviteCreate), "invite", "Create an invite", "")
 		addIf(set.Has(perm.InviteCreate) || set.Has(perm.InviteManage), "invites", "View or revoke invites", "")
 		addIf(set.Has(perm.SettingsManage), "branding", "Branding", "The BBS name shown in every title")
+		addIf(set.Has(perm.SettingsManage), "limits", "Connection limits", "Idle timeout and connections per account")
 		addIf(set.Has(perm.PluginSettings), "plugins", "Plugin settings", "Settings of installed plugins")
 		addIf(set.Has(perm.MenuManage), "menu", "Menu editor", "Arrange the member menu")
 		addIf(set.Has(perm.AuditView), "audit", "Audit log", "Recent administrative actions")
@@ -51,6 +53,8 @@ func (s *session) admin(ctx context.Context) error {
 			err = s.pendingAccounts(ctx)
 		case "users":
 			err = s.adminUsers(ctx)
+		case "online":
+			err = s.whoIsOnline(ctx)
 		case "groups":
 			err = s.adminGroups(ctx)
 		case "invite":
@@ -59,6 +63,8 @@ func (s *session) admin(ctx context.Context) error {
 			err = s.manageInvites(ctx)
 		case "branding":
 			err = s.branding(ctx)
+		case "limits":
+			err = s.connectionLimits(ctx)
 		case "plugins":
 			err = s.pluginSettings(ctx)
 		case "menu":

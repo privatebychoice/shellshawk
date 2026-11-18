@@ -137,7 +137,9 @@ main menu, showing only the sections they may use:
 | Users (find, lock/unlock, change groups) | `core.users.manage` or `core.groups.manage` |
 | Groups and permissions | `core.groups.manage` |
 | Create / view / revoke invites | `core.invite.create`, `core.invite.manage` |
+| Who is online (see and end SSH connections) | `core.sessions.manage` |
 | Branding (BBS name) | `core.settings.manage` |
+| Connection limits (idle timeout, connections per account) | `core.settings.manage` |
 | Plugin settings | `core.plugins.settings` (admins and moderators) |
 | Menu editor | `core.menu.manage` |
 | Audit log | `core.audit.view` |
@@ -146,6 +148,34 @@ main menu, showing only the sections they may use:
 split into submenus and restricted by permission; *Administration* can be
 moved or renamed but never deleted. There is no Log out entry: `q` (or Esc)
 in the main menu logs out.
+
+### Connection limits and who is online
+
+*Administration → Connection limits* sets two limits, which take effect
+without a restart:
+
+- **Idle timeout** (default 30 minutes; 0 turns it off, otherwise 2 to
+  1440). An SSH connection with no input from the member for this long is
+  ended. Members are warned first: a minute before, or a quarter of the
+  timeout when that is shorter. The warning is a line of its own in line
+  mode and a highlighted bottom line in full screen, both with a bell.
+  Pressing an arrow key (or Enter without a terminal) keeps the
+  connection. A warning always comes first, even when the timeout is
+  lowered below how long someone has already been idle. Lowering or turning
+  on the timeout reaches open connections within about 10 seconds.
+- **Connections per account** (default 3; 0 means no limit, at most 20).
+  Terminal and SFTP connections count together. An extra connection is
+  told why and closed. Registrations with an invite are not counted.
+
+*Administration → Who is online* lists every SSH connection: the account,
+whether it has a terminal or a file transfer open, how long it has been
+idle and when it connected. It never shows addresses. Choosing a connection
+ends it after a confirmation; the member is told it was ended by an
+administrator or moderator, and the action is audited
+(`connection.ended`). It needs `core.sessions.manage`, which administrators
+have; give it to moderators by granting it to their group under *Groups
+and permissions*. Nobody can end the connection of an account holding
+permissions they lack, so a moderator cannot end an administrator's.
 
 ## Plugins
 

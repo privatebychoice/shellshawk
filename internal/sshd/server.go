@@ -11,10 +11,13 @@ import (
 	"log/slog"
 	"net"
 	"net/netip"
+	"strconv"
 	"sync"
 	"time"
 
 	"golang.org/x/crypto/ssh"
+
+	"go.privatebychoice.com/shellshawk/internal/presence"
 )
 
 // Defaults for Config fields left at zero.
@@ -31,7 +34,27 @@ const (
 	maxSessionsPerConn = 2
 	// serverVersion deliberately carries no version number.
 	serverVersion = "SSH-2.0-shellshawk"
+	// maxIdleWarning is how long before an idle disconnect the member is
+	// warned. Shorter timeouts warn at a quarter of the timeout.
+	maxIdleWarning = time.Minute
+	// maxIdleCheck bounds how often an idle connection is checked.
+	maxIdleCheck = 10 * time.Second
+	// endGrace is how long a session may take to restore the member's
+	// terminal and say goodbye when its connection is ended on purpose.
+	endGrace = 5 * time.Second
 )
+
+// Limits are the connection limits an administrator can change while the
+// server runs. They are read again for every check, so changes apply to
+// connections already open.
+type Limits struct {
+	// IdleTimeout ends a connection after this long without input from the
+	// member. 0 turns it off.
+	IdleTimeout time.Duration
+	// MaxPerUser caps the connections one account may have open at once.
+	// 0 means no limit.
+	MaxPerUser int
+}
 
 // Config configures a Server.
 type Config struct {
@@ -42,7 +65,13 @@ type Config struct {
 	SFTP             SFTPHandler   // nil = sftp subsystem refused
 	MaxConns         int           // 0 → DefaultMaxConns
 	HandshakeTimeout time.Duration // 0 → DefaultHandshakeTimeout
-	Log              *slog.Logger
+	// Limits returns the current connection limits; nil means none.
+	Limits func(context.Context) Limits
+	// idleCheck overrides maxIdleCheck in tests.
+	idleCheck time.Duration
+	// Conns records authenticated connections; nil creates a private one.
+	Conns *presence.Conns
+	Log   *slog.Logger
 }
 
 // Server is the SSH server.
@@ -54,6 +83,9 @@ type Server struct {
 	sftp             SFTPHandler
 	handshakeTimeout time.Duration
 	slots            chan struct{} // connection semaphore
+	limits           func(context.Context) Limits
+	idleCheck        time.Duration // longest wait between idle checks
+	registry         *presence.Conns
 	log              *slog.Logger
 
 	ctx    context.Context // cancelled by Shutdown
@@ -84,6 +116,15 @@ func New(cfg Config) (*Server, error) {
 	if cfg.HandshakeTimeout <= 0 {
 		cfg.HandshakeTimeout = DefaultHandshakeTimeout
 	}
+	if cfg.Limits == nil {
+		cfg.Limits = func(context.Context) Limits { return Limits{} }
+	}
+	if cfg.Conns == nil {
+		cfg.Conns = presence.NewConns(nil)
+	}
+	if cfg.idleCheck <= 0 {
+		cfg.idleCheck = maxIdleCheck
+	}
 
 	s := &Server{
 		addr:             cfg.Addr,
@@ -92,6 +133,9 @@ func New(cfg Config) (*Server, error) {
 		sftp:             cfg.SFTP,
 		handshakeTimeout: cfg.HandshakeTimeout,
 		slots:            make(chan struct{}, cfg.MaxConns),
+		limits:           cfg.Limits,
+		idleCheck:        cfg.idleCheck,
+		registry:         cfg.Conns,
 		log:              cfg.Log.With("component", "sshd"),
 		conns:            map[net.Conn]struct{}{},
 	}
@@ -277,15 +321,29 @@ func (s *Server) serveConn(c net.Conn) {
 		rec.RecordLogin(s.ctx, id)
 	}
 
-	ctx, cancel := context.WithCancel(s.ctx)
-	defer cancel()
+	// Ending the connection on purpose (idle, or ended by a moderator)
+	// cancels ctx with a *presence.Disconnect cause; see serveSession.
+	ctx, cancel := context.WithCancelCause(s.ctx)
+	defer cancel(nil)
 	go func() {
 		_ = sconn.Wait()
-		cancel()
+		cancel(nil)
 	}()
 
 	// Global requests (tcpip-forward, …) are all refused.
 	go discardGlobalRequests(reqs, log)
+
+	uid, _ := strconv.ParseInt(id.UserID, 10, 64) // "" while registering
+	limits := s.limits(ctx)
+	conn, err := s.registry.Open(uid, string(id.Mode), limits.MaxPerUser, cancel)
+	if err != nil {
+		log.Info("connection refused: per-account limit reached", "max_per_user", limits.MaxPerUser)
+		refuseTooMany(chans, limits.MaxPerUser, s.handshakeTimeout)
+		return
+	}
+	defer conn.Close()
+	warn := &idleNotifier{subs: map[chan time.Duration]struct{}{}}
+	go s.watchIdle(ctx, conn, cancel, warn, log)
 
 	var sessions sync.WaitGroup
 	defer sessions.Wait()
@@ -324,10 +382,162 @@ func (s *Server) serveConn(c net.Conn) {
 			}
 			sessions.Go(func() {
 				defer func() { activeMu.Lock(); active--; activeMu.Unlock() }()
-				s.serveSession(ctx, id, cid, ch, chReqs, log)
+				s.serveSession(ctx, sessionConn{id: id, connID: cid, conn: conn, warn: warn}, ch, chReqs, log)
 			})
 		}
 	}
+}
+
+// refuseTooMany tells the member why their connection is refused. The
+// first session channel's terminal, shell and subsystem requests are
+// granted so the client shows the reason (on stderr) and exits with status
+// 1, rather than reporting a failed request. Nothing runs: the channel
+// closes straight after. Everything else is refused. It gives up after
+// wait.
+func refuseTooMany(chans <-chan ssh.NewChannel, max int, wait time.Duration) {
+	msg := fmt.Sprintf("This account already has %d connection(s) open, the most allowed at once. Close one and try again.\r\n", max)
+	deadline := time.After(wait)
+	var reqs <-chan *ssh.Request
+	var ch ssh.Channel
+	for {
+		select {
+		case <-deadline:
+			if ch != nil {
+				_ = ch.Close()
+			}
+			return
+		case nc, ok := <-chans:
+			if !ok {
+				return
+			}
+			if ch != nil || nc.ChannelType() != "session" {
+				_ = nc.Reject(ssh.ResourceShortage, "too many connections for this account")
+				continue
+			}
+			var err error
+			if ch, reqs, err = nc.Accept(); err != nil {
+				return
+			}
+		case r, ok := <-reqs:
+			if !ok {
+				return
+			}
+			switch r.Type {
+			case "pty-req", "env":
+				_ = r.Reply(r.WantReply, nil)
+			case "shell", "subsystem":
+				_ = r.Reply(r.WantReply, nil)
+				_, _ = ch.Stderr().Write([]byte(msg))
+				_, _ = ch.SendRequest("exit-status", false, ssh.Marshal(exitStatusMsg{Status: 1}))
+				_ = ch.Close()
+				return
+			default:
+				if r.WantReply {
+					_ = r.Reply(false, nil)
+				}
+				_, _ = ch.Stderr().Write([]byte(msg))
+				_ = ch.Close()
+				return
+			}
+		}
+	}
+}
+
+// idleNotifier passes idle warnings to the connection's interactive
+// sessions.
+type idleNotifier struct {
+	mu   sync.Mutex
+	subs map[chan time.Duration]struct{}
+}
+
+func (n *idleNotifier) subscribe() (<-chan time.Duration, func()) {
+	c := make(chan time.Duration, 1)
+	n.mu.Lock()
+	n.subs[c] = struct{}{}
+	n.mu.Unlock()
+	return c, func() {
+		n.mu.Lock()
+		delete(n.subs, c)
+		n.mu.Unlock()
+	}
+}
+
+func (n *idleNotifier) send(left time.Duration) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	for c := range n.subs {
+		select {
+		case c <- left:
+		default: // a warning is already waiting
+		}
+	}
+}
+
+// idleWarning returns how long before an idle disconnect to warn.
+func idleWarning(timeout time.Duration) time.Duration {
+	return min(maxIdleWarning, timeout/4)
+}
+
+// watchIdle ends the connection when the member has sent nothing for the
+// idle timeout, warning interactive sessions shortly before. The timeout is
+// read on every check so a changed setting reaches open connections.
+func (s *Server) watchIdle(ctx context.Context, conn *presence.Conn, end context.CancelCauseFunc, warn *idleNotifier, log *slog.Logger) {
+	timer := time.NewTimer(s.checkEvery(s.limits(ctx).IdleTimeout))
+	defer timer.Stop()
+	var warnedAt time.Time // zero until the member has been warned
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-timer.C:
+		}
+		timeout := s.limits(ctx).IdleTimeout
+		if timeout <= 0 {
+			warnedAt = time.Time{}
+		} else {
+			now := time.Now()
+			idle := now.Sub(conn.LastActive())
+			before := idleWarning(timeout)
+			switch {
+			case idle < timeout-before:
+				warnedAt = time.Time{} // active again
+			case warnedAt.IsZero():
+				// Always warn first, even if the timeout was just lowered
+				// below the time already idle, and allow the full warning
+				// period.
+				warn.send(max(timeout-idle, before))
+				warnedAt = now
+			case idle >= timeout && now.Sub(warnedAt) >= before:
+				log.Info("connection ended: idle", "idle_timeout", timeout)
+				end(&presence.Disconnect{Message: "You have been disconnected after " + describeDuration(timeout) + " without activity."})
+				return
+			}
+		}
+		timer.Reset(s.checkEvery(timeout))
+	}
+}
+
+// checkEvery returns how often to check a connection: often enough that
+// the warning and the disconnect come close to on time, and that turning
+// the timeout on reaches open connections within s.idleCheck.
+func (s *Server) checkEvery(timeout time.Duration) time.Duration {
+	if timeout <= 0 {
+		return s.idleCheck
+	}
+	return min(s.idleCheck, max(timeout/8, 10*time.Millisecond))
+}
+
+// describeDuration writes a timeout for the member: whole minutes when it
+// is one, seconds otherwise.
+func describeDuration(d time.Duration) string {
+	n, unit := max(int(d.Round(time.Second)/time.Second), 1), "second"
+	if d >= time.Minute && d%time.Minute == 0 {
+		n, unit = int(d/time.Minute), "minute"
+	}
+	if n != 1 {
+		unit += "s"
+	}
+	return strconv.Itoa(n) + " " + unit
 }
 
 func discardGlobalRequests(reqs <-chan *ssh.Request, log *slog.Logger) {

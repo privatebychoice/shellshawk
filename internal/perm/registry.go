@@ -26,6 +26,7 @@ const (
 	MenuManage     = "core.menu.manage"      // edit the member menu
 	PluginSettings = "core.plugins.settings" // change plugin settings
 	AuditView      = "core.audit.view"       // read the audit log
+	SessionsManage = "core.sessions.manage"  // see who is connected and end connections
 )
 
 var permName = regexp.MustCompile(`^[a-z][a-z0-9]*(\.[a-z][a-z0-9_]*)+$`)
@@ -50,6 +51,7 @@ func NewRegistry() *Registry {
 		MenuManage:     "Edit the member menu",
 		PluginSettings: "Change plugin settings",
 		AuditView:      "Read the audit log",
+		SessionsManage: "See who is connected and end their connections",
 	}}
 }
 

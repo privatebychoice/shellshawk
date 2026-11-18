@@ -2,12 +2,16 @@ package sshd
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"strings"
 	"sync"
+	"time"
 	"unicode"
 
 	"golang.org/x/crypto/ssh"
+
+	"go.privatebychoice.com/shellshawk/internal/presence"
 )
 
 // Limits on client-supplied session values.
@@ -65,12 +69,24 @@ type Session struct {
 	// Resize delivers terminal size changes. It is never closed; select on
 	// ctx.Done() as well.
 	Resize <-chan WindowSize
+	// ConnSerial identifies the connection in the presence.Conns registry.
+	ConnSerial uint64
+	// IdleWarning delivers, for interactive sessions, how long remains
+	// before the connection is ended for inactivity. It is never closed.
+	IdleWarning <-chan time.Duration
 
-	ch ssh.Channel
+	ch    ssh.Channel
+	touch func()
 }
 
-// Read reads user input.
-func (s *Session) Read(p []byte) (int, error) { return s.ch.Read(p) }
+// Read reads user input. Anything read counts as activity.
+func (s *Session) Read(p []byte) (int, error) {
+	n, err := s.ch.Read(p)
+	if n > 0 && s.touch != nil {
+		s.touch()
+	}
+	return n, err
+}
 
 // Write writes output to the user's terminal.
 func (s *Session) Write(p []byte) (int, error) { return s.ch.Write(p) }
@@ -135,12 +151,21 @@ func validTerm(t string) bool {
 	return true
 }
 
+// sessionConn is what a session needs to know about its connection.
+type sessionConn struct {
+	id     Identity
+	connID string
+	conn   *presence.Conn
+	warn   *idleNotifier
+}
+
 // serveSession processes requests on one "session" channel. Only pty-req,
 // window-change, allowlisted env, and shell are accepted; exec, subsystems
 // (sftp arrives in stage 7), x11, agent forwarding, signals and anything
 // unknown are refused.
-func (s *Server) serveSession(ctx context.Context, id Identity, connID string, ch ssh.Channel, reqs <-chan *ssh.Request, log *slog.Logger) {
+func (s *Server) serveSession(ctx context.Context, sc sessionConn, ch ssh.Channel, reqs <-chan *ssh.Request, log *slog.Logger) {
 	defer ch.Close()
+	id := sc.id
 
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -173,6 +198,16 @@ func (s *Server) serveSession(ctx context.Context, id Identity, connID string, c
 			log.Debug("session ended")
 			return
 		case <-ctx.Done():
+			// When the connection is ended on purpose, the handler sees the
+			// reason as the context's cause; give it a moment to restore
+			// the terminal and tell the member before the channel closes.
+			var d *presence.Disconnect
+			if started && errors.As(context.Cause(ctx), &d) {
+				select {
+				case <-done:
+				case <-time.After(endGrace):
+				}
+			}
 			// Shutdown or disconnect. Closing the channel unblocks a handler
 			// stuck in Read; then wait for it to return.
 			ch.Close()
@@ -256,10 +291,15 @@ func (s *Server) serveSession(ctx context.Context, id Identity, connID string, c
 			}
 			started = true
 			reply(r, true)
-			sess := &Session{Identity: id, ConnID: connID, PTY: pty, Env: env, Resize: resize, ch: ch}
+			warnings, unsubscribe := sc.warn.subscribe()
+			sess := &Session{Identity: id, ConnID: sc.connID, PTY: pty, Env: env, Resize: resize,
+				ConnSerial: sc.conn.ID(), IdleWarning: warnings, ch: ch, touch: sc.conn.Touch}
 			log.Info("shell started", "mode", id.Mode, "pty", pty != nil)
+			used := sc.conn.Use(presence.UseTerminal)
 			wg.Go(func() {
 				defer close(done)
+				defer used()
+				defer unsubscribe()
 				s.handler.HandleShell(ctx, sess)
 			})
 
@@ -276,10 +316,13 @@ func (s *Server) serveSession(ctx context.Context, id Identity, connID string, c
 			default:
 				started = true
 				reply(r, true)
-				sess := &Session{Identity: id, ConnID: connID, Env: env, Resize: resize, ch: ch}
+				sess := &Session{Identity: id, ConnID: sc.connID, Env: env, Resize: resize,
+					ConnSerial: sc.conn.ID(), ch: ch, touch: sc.conn.Touch}
 				log.Info("sftp started")
+				used := sc.conn.Use(presence.UseSFTP)
 				wg.Go(func() {
 					defer close(done)
+					defer used()
 					s.sftp.HandleSFTP(ctx, sess)
 				})
 			}

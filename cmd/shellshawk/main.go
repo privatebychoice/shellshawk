@@ -45,6 +45,7 @@ import (
 	"go.privatebychoice.com/shellshawk/internal/prefs"
 	"go.privatebychoice.com/shellshawk/internal/presence"
 	"go.privatebychoice.com/shellshawk/internal/privacy"
+	"go.privatebychoice.com/shellshawk/internal/sessions"
 	"go.privatebychoice.com/shellshawk/internal/settings"
 	"go.privatebychoice.com/shellshawk/internal/sftpd"
 	"go.privatebychoice.com/shellshawk/internal/sshd"
@@ -184,9 +185,11 @@ func (a *app) serve(ctx context.Context) error {
 	}
 
 	siteSettings := settings.NewService(a.db, nil, log)
+	conns := presence.NewConns(nil)
 	handler := &bbs.Handler{
 		Auth: a.auth, Settings: siteSettings, Grader: a.grade, Perms: a.perms, Prefs: a.prefs,
-		Menu: menu.NewService(a.db, a.perms, nil, log), Plugins: a.plugins, Presence: a.presence, Privacy: a.privacy, Log: log,
+		Menu: menu.NewService(a.db, a.perms, nil, log), Plugins: a.plugins, Presence: a.presence, Privacy: a.privacy,
+		Sessions: sessions.NewService(a.db, conns, nil, log), Log: log,
 	}
 	var webSessions *websess.Service
 	if cfg.WebEnabled() {
@@ -223,7 +226,12 @@ func (a *app) serve(ctx context.Context) error {
 			Handler:  handler,
 			SFTP:     sftpSrv,
 			MaxConns: cfg.SSHMaxConns,
-			Log:      log,
+			Limits: func(ctx context.Context) sshd.Limits {
+				l := siteSettings.ConnLimits(ctx)
+				return sshd.Limits{IdleTimeout: time.Duration(l.IdleMinutes) * time.Minute, MaxPerUser: l.MaxPerUser}
+			},
+			Conns: conns,
+			Log:   log,
 		})
 		if err != nil {
 			return err
