@@ -667,6 +667,15 @@ timestamp or recorded out of order are neither skipped nor repeated; an
 unknown cursor gives an empty page. Times are shown in UTC inside
 `<time datetime>`.
 
+Web approvals: `GET /admin/pending`, `POST /admin/pending/{id}/approve`,
+`GET`/`POST /admin/pending/{id}/reject` (reject needs a ticked box), for
+holders of `core.users.approve`, through `auth.Service.PendingUsers`,
+`Approve` and `Reject`, which check the permission and the rank rule and
+audit. Like the SSH screen the page shows only the username and when it
+registered, never the email address (viewing one is audited separately).
+An account that is no longer waiting redirects with `?done=gone`;
+rejecting publishes `user.rejected`, which ends its open connections.
+
 ## 12. Core plugins — notable design points
 
 | Plugin | Notes |

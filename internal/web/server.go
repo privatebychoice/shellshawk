@@ -182,6 +182,10 @@ func (s *Server) routes() http.Handler {
 		mux.HandleFunc("POST /admin/branding", s.handleBrandingSave)
 	}
 	mux.HandleFunc("GET /admin/audit", s.handleAudit)
+	mux.HandleFunc("GET /admin/pending", s.handlePending)
+	mux.HandleFunc("POST /admin/pending/{id}/approve", s.handleApprove)
+	mux.HandleFunc("GET /admin/pending/{id}/reject", s.handleRejectConfirm)
+	mux.HandleFunc("POST /admin/pending/{id}/reject", s.handleReject)
 	if s.menuEnabled() {
 		mux.HandleFunc("GET /admin/menu", s.handleMenu)
 		mux.HandleFunc("POST /admin/menu/add", s.handleMenuAdd)
@@ -410,6 +414,9 @@ func (s *Server) nav(ctx context.Context, user int64) []navItem {
 				}
 			}
 		}
+	}
+	if set.Has(perm.UsersApprove) {
+		out = append(out, navItem{Label: "Approvals", Href: "/admin/pending"})
 	}
 	if s.cfg.Connections != nil && set.Has(perm.SessionsManage) {
 		out = append(out, navItem{Label: "Who is online", Href: "/admin/online"})

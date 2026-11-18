@@ -1,0 +1,19 @@
+{{define "pending"}}{{if .Notice}}<p class="notice" role="status">{{.Notice}}</p>
+{{end}}{{if .Error}}<p class="error" role="alert">{{.Error}}</p>
+{{end}}{{if .Rows}}<p>{{len .Rows}} account(s) waiting, oldest first. Approved accounts can use the BBS at once; rejected accounts are deleted with their keys.</p>
+<table class="online">
+<caption>Accounts awaiting approval</caption>
+<thead><tr><th scope="col">Username</th><th scope="col">Registered</th><th scope="col">Actions</th></tr></thead>
+<tbody>
+{{range .Rows}}<tr><th scope="row">{{.Username}}</th><td>{{.Registered}}</td><td><form method="post" action="/admin/pending/{{.ID}}/approve" class="inline"><input type="hidden" name="csrf" value="{{$.CSRF}}"><button type="submit">Approve<span class="visually-hidden"> {{.Username}}</span></button></form> <a href="/admin/pending/{{.ID}}/reject">Reject<span class="visually-hidden"> {{.Username}}</span></a></td></tr>
+{{end}}</tbody>
+</table>
+{{else}}<p>No accounts are waiting for approval.</p>
+{{end}}{{end}}
+{{define "pending-reject"}}{{if .Error}}<p class="error" role="alert">{{.Error}}</p>
+{{end}}<p>Reject <strong>{{.Username}}</strong>, registered {{.Registered}}? The account and its keys are deleted. If they are connected, their connection ends.</p>
+<form method="post" action="/admin/pending/{{.ID}}/reject" class="form">
+<input type="hidden" name="csrf" value="{{.CSRF}}">
+<p><label><input type="checkbox" name="confirm" value="yes" required> Yes, reject and delete this account</label></p>
+<p><button type="submit">Reject</button> <a href="/admin/pending">Cancel</a></p>
+</form>{{end}}

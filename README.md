@@ -303,11 +303,11 @@ every request, so locking an account takes effect immediately.
 Optional (`SHELLSHAWK_HTTP_ADDR`); serve it behind a TLS-terminating
 reverse proxy. You can read, write, reply to and delete private messages,
 chat live in any channel you may join, start and run private chats, and
-vote in polls. Staff can see who is online, end a connection, and set the
-connection limits, the BBS name and plugin settings, edit the member
-menu and read the audit log. Conference posting, creating polls,
-channel management, slash commands, your own settings and the rest of
-administration stay in the SSH interface.
+vote in polls. Staff can approve or reject new accounts, see who is
+online and end a connection, set the connection limits, the BBS name and
+plugin settings, edit the member menu and read the audit log. Conference
+posting, creating polls, channel management, slash commands, your own
+settings and the rest of administration stay in the SSH interface.
 
 | Path | Description |
 |------|-------------|
@@ -319,6 +319,7 @@ administration stay in the SSH interface.
 | `/p/messages/` | Inbox, Sent and Deleted, with unread marks and counts; opening a message marks it read. Write a message (to usernames and your contact groups; markdown) or reply, with the same limits and privacy rules as over SSH. Delete (to Deleted, restorable), move back to the inbox, delete permanently, remove from Sent and empty the Deleted folder; the ones that cannot be undone need a ticked confirmation box |
 | `/p/polls/` | Open polls (pinned first) and closed polls; vote or change your vote, and see results under the same rules as over SSH |
 | `/p/wall/` | The wall (read-only); the message of the day is on `/home` |
+| `/admin/pending` | Accounts awaiting approval, for staff with `core.users.approve` (administrators and moderators; linked as *Approvals* only for them): username and registration time, never the email address. Approve with one button; Reject (which deletes the account and its keys, and ends its connections) needs a ticked confirmation box. Nobody can approve or reject an account that would receive permissions they lack |
 | `/admin/audit` | Audit log, for staff with `core.audit.view` (linked in the navigation only for them): administrative actions as a table, newest first, 100 to a page with Older and Newest links; times in UTC. Read-only |
 | `/admin/menu` | Menu editor, for staff with `core.menu.manage` (linked in the navigation only for them): the member menu as a table in order, with Move up and Move down, Edit (label and extra permission), Open for submenus, Delete (with a ticked confirmation box; Administration cannot be deleted, and a submenu must be emptied first), Add an entry, and Reset to the default menu. Same rules as *Administration → Menu editor* |
 | `/admin/plugins` | Plugin settings, for staff with `core.plugins.settings` (administrators and moderators; linked in the navigation only for them): each plugin's settings as a form, with each field's rules in words and its help, under the same validation as *Administration → Plugin settings*. A refused value is shown again with the reason next to its field |
