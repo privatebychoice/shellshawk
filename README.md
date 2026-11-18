@@ -303,12 +303,12 @@ every request, so locking an account takes effect immediately.
 Optional (`SHELLSHAWK_HTTP_ADDR`); serve it behind a TLS-terminating
 reverse proxy. You can read, write, reply to and delete private messages,
 chat live in any channel you may join, start and run private chats, and
-vote in polls. Staff can manage users, create and revoke invites, approve
-or reject new accounts, see who is online and end a connection, set the
-connection limits, the BBS name and plugin settings, edit the member menu
-and read the audit log. Conference posting, creating polls, channel
-management, slash commands, your own settings and the rest of
-administration stay in the SSH interface.
+vote in polls. Staff can manage users, groups and permissions, create and
+revoke invites, approve or reject new accounts, see who is online and end
+a connection, set the connection limits, the BBS name and plugin settings,
+edit the member menu and read the audit log. Conference posting, creating
+polls, channel management, slash commands and your own settings stay in
+the SSH interface.
 
 | Path | Description |
 |------|-------------|
@@ -321,6 +321,7 @@ administration stay in the SSH interface.
 | `/p/polls/` | Open polls (pinned first) and closed polls; vote or change your vote, and see results under the same rules as over SSH |
 | `/p/wall/` | The wall (read-only); the message of the day is on `/home` |
 | `/admin/users` | Users, for staff with `core.users.manage` or `core.groups.manage` (linked in the navigation only for them): find accounts by the start of the username, then on an account's page see its status, groups, registration, last login and any erasure request. With `core.users.manage`: lock or unlock it, cancel an erasure request (each with a ticked box), and show its email address (a button; the address appears on the page that answers it and the viewing is audited). With `core.groups.manage`: add it to or remove it from a group. You cannot lock yourself, act on an account holding permissions you lack, or remove the last active administrator |
+| `/admin/groups` | Groups and permissions, for staff with `core.groups.manage` (linked in the navigation only for them): every group with its permission and member counts, and creating a group. A group's page lists its permissions (Revoke) with a Grant select, its members (Remove) with an Add field taking a username, and Delete for groups that are not built in (with a ticked box). You can only grant or attach what you hold yourself; built-in groups and the last active administrator are protected |
 | `/admin/invites` | Invites, for staff with `core.invite.create` (their own) or `core.invite.manage` (all, with who created each): state, uses, expiry and note, and Revoke for usable ones (with a ticked confirmation box). **Create an invite** (`core.invite.create`) takes the same options as over SSH (uses, days, approval, groups, note) and shows the new code once, on the page that answers the form: it is never put in a URL and cannot be shown again. You can only attach groups whose permissions you hold |
 | `/admin/pending` | Accounts awaiting approval, for staff with `core.users.approve` (administrators and moderators; linked as *Approvals* only for them): username and registration time, never the email address. Approve with one button; Reject (which deletes the account and its keys, and ends its connections) needs a ticked confirmation box. Nobody can approve or reject an account that would receive permissions they lack |
 | `/admin/audit` | Audit log, for staff with `core.audit.view` (linked in the navigation only for them): administrative actions as a table, newest first, 100 to a page with Older and Newest links; times in UTC. Read-only |

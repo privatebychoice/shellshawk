@@ -194,6 +194,14 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("POST /admin/users/{id}/email", s.handleUserEmail)
 	mux.HandleFunc("POST /admin/users/{id}/groups/add", s.handleUserGroup)
 	mux.HandleFunc("POST /admin/users/{id}/groups/remove", s.handleUserGroup)
+	mux.HandleFunc("GET /admin/groups", s.handleGroups)
+	mux.HandleFunc("POST /admin/groups/new", s.handleGroupCreate)
+	mux.HandleFunc("GET /admin/groups/{id}", s.handleGroup)
+	mux.HandleFunc("POST /admin/groups/{id}/grant", s.handleGroupPerm)
+	mux.HandleFunc("POST /admin/groups/{id}/revoke", s.handleGroupPerm)
+	mux.HandleFunc("POST /admin/groups/{id}/members/add", s.handleGroupAddMember)
+	mux.HandleFunc("POST /admin/groups/{id}/members/remove", s.handleGroupRemoveMember)
+	mux.HandleFunc("POST /admin/groups/{id}/delete", s.handleGroupDelete)
 	mux.HandleFunc("GET /admin/invites", s.handleInvites)
 	mux.HandleFunc("GET /admin/invites/new", s.handleInviteNew)
 	mux.HandleFunc("POST /admin/invites/new", s.handleInviteCreate)
@@ -434,6 +442,9 @@ func (s *Server) nav(ctx context.Context, user int64) []navItem {
 	}
 	if set.Has(perm.UsersManage) || set.Has(perm.GroupsManage) {
 		out = append(out, navItem{Label: "Users", Href: "/admin/users"})
+	}
+	if set.Has(perm.GroupsManage) {
+		out = append(out, navItem{Label: "Groups", Href: "/admin/groups"})
 	}
 	if set.Has(perm.UsersApprove) {
 		out = append(out, navItem{Label: "Approvals", Href: "/admin/pending"})

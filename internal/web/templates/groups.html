@@ -1,0 +1,68 @@
+{{define "groups"}}{{if .Notice}}<p class="notice" role="status">{{.Notice}}</p>
+{{end}}<table class="online">
+<caption>Groups</caption>
+<thead><tr><th scope="col">Group</th><th scope="col">Description</th><th scope="col">Permissions</th><th scope="col">Members</th><th scope="col">Built in</th></tr></thead>
+<tbody>
+{{range .Rows}}<tr><th scope="row"><a href="/admin/groups/{{.ID}}">{{.Name}}</a></th><td>{{.Description}}</td><td>{{.Perms}}</td><td>{{.Members}}</td><td>{{if .Builtin}}yes{{else}}no{{end}}</td></tr>
+{{end}}</tbody>
+</table>
+<section aria-labelledby="new-heading">
+<h2 id="new-heading">Create a group</h2>
+{{if .Error}}<p class="error" role="alert">{{.Error}}</p>
+{{end}}<form method="post" action="/admin/groups/new" class="form">
+<input type="hidden" name="csrf" value="{{.CSRF}}">
+{{template "fields" .Fields}}<p><button type="submit">Create the group</button></p>
+</form>
+<p>A new group has no permissions. Grant them from its page.</p>
+</section>{{end}}
+{{define "group"}}{{if .Notice}}<p class="notice" role="status">{{.Notice}}</p>
+{{end}}{{if .Error}}<p class="error" role="alert">{{.Error}}</p>
+{{end}}{{if .Description}}<p>{{.Description}}</p>
+{{end}}{{if .Builtin}}<p>This group is built in. It cannot be deleted.</p>
+{{end}}<section aria-labelledby="perms-heading">
+<h2 id="perms-heading">Permissions</h2>
+{{if .Perms}}<table class="online">
+<caption>Permissions of {{.Name}}</caption>
+<thead><tr><th scope="col">Permission</th><th scope="col">Description</th><th scope="col">Action</th></tr></thead>
+<tbody>
+{{range .Perms}}<tr><th scope="row">{{.Name}}</th><td>{{.Description}}</td><td><form method="post" action="/admin/groups/{{$.ID}}/revoke" class="inline"><input type="hidden" name="csrf" value="{{$.CSRF}}"><input type="hidden" name="perm" value="{{.Name}}"><button type="submit">Revoke<span class="visually-hidden"> {{.Name}}</span></button></form></td></tr>
+{{end}}</tbody>
+</table>
+{{else}}<p>This group has no permissions.</p>
+{{end}}{{if .Grantable}}<form method="post" action="/admin/groups/{{.ID}}/grant" class="form">
+<input type="hidden" name="csrf" value="{{.CSRF}}">
+<p><label for="grant">Grant a permission</label>
+<select id="grant" name="perm" required aria-describedby="grant-help">
+{{range .Grantable}}<option value="{{.Name}}">{{.Name}}: {{.Description}}</option>
+{{end}}</select>
+<span class="meta" id="grant-help">You can only grant permissions you hold yourself. Every member of the group gets it.</span></p>
+<p><button type="submit">Grant</button></p>
+</form>
+{{end}}</section>
+<section aria-labelledby="members-heading">
+<h2 id="members-heading">Members</h2>
+{{if .Members}}<table class="online">
+<caption>Members of {{.Name}}</caption>
+<thead><tr><th scope="col">Username</th><th scope="col">Status</th><th scope="col">Action</th></tr></thead>
+<tbody>
+{{range .Members}}<tr><th scope="row">{{.Username}}</th><td>{{.Status}}</td><td><form method="post" action="/admin/groups/{{$.ID}}/members/remove" class="inline"><input type="hidden" name="csrf" value="{{$.CSRF}}"><input type="hidden" name="user" value="{{.UserID}}"><button type="submit">Remove<span class="visually-hidden"> {{.Username}}</span></button></form></td></tr>
+{{end}}</tbody>
+</table>
+{{else}}<p>This group has no members.</p>
+{{end}}<form method="post" action="/admin/groups/{{.ID}}/members/add" class="form">
+<input type="hidden" name="csrf" value="{{.CSRF}}">
+<p><label for="add-member">Add a member (username)</label>
+<input type="text" id="add-member" name="username" maxlength="32" required autocomplete="off" autocapitalize="none" spellcheck="false" value="{{.AddName}}"{{if .AddError}} aria-invalid="true" aria-describedby="add-member-error"{{end}}></p>
+{{if .AddError}}<p class="error" id="add-member-error">{{.AddError}}</p>
+{{end}}<p><button type="submit">Add</button></p>
+</form>
+</section>
+{{if not .Builtin}}<section aria-labelledby="delete-heading">
+<h2 id="delete-heading">Delete</h2>
+<form method="post" action="/admin/groups/{{.ID}}/delete" class="form">
+<input type="hidden" name="csrf" value="{{.CSRF}}">
+<p><label><input type="checkbox" name="confirm" value="yes" required> Yes, delete {{.Name}}. Its members lose its permissions.</label></p>
+<p><button type="submit">Delete the group</button></p>
+</form>
+</section>
+{{end}}<p><a href="/admin/groups">All groups</a></p>{{end}}

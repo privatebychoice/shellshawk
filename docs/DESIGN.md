@@ -700,6 +700,17 @@ that a prefetching browser cannot trigger and that never reaches a URL.
 `web.Config.Privacy` (nil leaves erasure and email out) is the same
 service as SSH uses.
 
+Web groups: `GET /admin/groups` (table and create form through the
+generic renderer), `POST /admin/groups/new`, `GET /admin/groups/{id}`, and
+POSTs `/grant`, `/revoke` (`perm=`), `/members/add` (`username=`),
+`/members/remove` (`user=<id>`) and `/delete` (ticked box), for holders of
+`core.groups.manage`. `perm.Service` enforces escalation (only what the
+actor holds), built-in group protection and the last-administrator guard,
+and audits; refusals come back on the group's page. Revoking and removing
+are single buttons, as over SSH, since both can be undone. Permissions a
+group still holds but no installed plugin provides are listed so they can
+be revoked.
+
 ## 12. Core plugins — notable design points
 
 | Plugin | Notes |
