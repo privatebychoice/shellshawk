@@ -163,6 +163,8 @@ func (s *Server) routes() http.Handler {
 		mux.HandleFunc("GET /admin/online", s.handleOnline)
 		mux.HandleFunc("GET /admin/online/{id}", s.handleOnlineConfirm)
 		mux.HandleFunc("POST /admin/online/{id}/end", s.handleOnlineEnd)
+		mux.HandleFunc("GET /admin/web-sessions/{id}", s.handleWebSessionConfirm)
+		mux.HandleFunc("POST /admin/web-sessions/{id}/end", s.handleWebSessionEnd)
 	}
 	if s.cfg.Plugins != nil {
 		for _, p := range s.cfg.Plugins.Plugins() {

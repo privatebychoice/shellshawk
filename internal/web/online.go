@@ -18,8 +18,15 @@ import (
 // onlineNotices are confirmations after a redirect (?done=…): fixed text
 // only, never echoed from the URL.
 var onlineNotices = map[string]string{
-	"ended": "The connection has been ended.",
-	"gone":  "That connection had already closed.",
+	"ended":     "The connection has been ended.",
+	"gone":      "That connection had already closed.",
+	"web-ended": "The web session has been logged out.",
+	"web-gone":  "That web session had already ended.",
+}
+
+type webRow struct {
+	ID, Who, Active, Since, Expires string
+	Own                             bool // the viewer's own session
 }
 
 type onlineRow struct {
@@ -54,13 +61,24 @@ func (s *Server) handleOnline(w http.ResponseWriter, r *http.Request) {
 		s.connectionError(w, r, err)
 		return
 	}
+	webs, err := s.cfg.Connections.WebSessions(r.Context(), sess.UserID)
+	if err != nil {
+		s.connectionError(w, r, err)
+		return
+	}
 	now := time.Now()
 	rows := make([]onlineRow, 0, len(conns))
 	for _, c := range conns {
 		rows = append(rows, onlineRow{ID: c.ID, Who: c.Who(), Uses: c.Uses(), Idle: c.Idle(now), Since: fmtSince(c.Started)})
 	}
+	webRows := make([]webRow, 0, len(webs))
+	for _, ws := range webs {
+		webRows = append(webRows, webRow{ID: ws.ID, Who: ws.Who(), Active: ws.Active(now), Since: fmtSince(ws.Created),
+			Expires: fmtSince(ws.Expires), Own: ws.ID == sess.ID})
+	}
 	s.render(w, r, http.StatusOK, "Who is online", "online", map[string]any{
 		"Notice": onlineNotices[r.URL.Query().Get("done")], "Count": len(rows), "Rows": rows,
+		"Web": s.cfg.Connections.HasWeb(), "WebRows": webRows,
 	})
 }
 
@@ -144,4 +162,78 @@ func (s *Server) connectionError(w http.ResponseWriter, r *http.Request, err err
 	}
 	LoggerFrom(r.Context()).Error("who is online", "err", err)
 	s.renderError(w, r, http.StatusInternalServerError, "Something went wrong. Please try again.")
+}
+
+// webSessionFor finds a web session by its path ID; the viewer's own
+// session is not offered, as logging out does that.
+func (s *Server) webSessionFor(r *http.Request, sess *websess.Session) (sessions.WebSession, bool, error) {
+	id := r.PathValue("id")
+	if id == sess.ID {
+		return sessions.WebSession{}, false, nil
+	}
+	webs, err := s.cfg.Connections.WebSessions(r.Context(), sess.UserID)
+	if err != nil {
+		return sessions.WebSession{}, false, err
+	}
+	for _, ws := range webs {
+		if ws.ID == id {
+			return ws, true, nil
+		}
+	}
+	return sessions.WebSession{}, false, nil
+}
+
+func (s *Server) renderWebEnd(w http.ResponseWriter, r *http.Request, status int, sess *websess.Session, ws sessions.WebSession, msg string) {
+	s.render(w, r, status, "Log out a web session", "web-session-end", map[string]any{
+		"ID": ws.ID, "Who": ws.Who(), "Since": fmtSince(ws.Created), "Active": ws.Active(time.Now()), "CSRF": sess.CSRF, "Error": msg,
+	})
+}
+
+func (s *Server) handleWebSessionConfirm(w http.ResponseWriter, r *http.Request) {
+	sess := s.staff(w, r)
+	if sess == nil {
+		return
+	}
+	ws, ok, err := s.webSessionFor(r, sess)
+	switch {
+	case err != nil:
+		s.connectionError(w, r, err)
+	case !ok:
+		http.Redirect(w, r, "/admin/online?done=web-gone#web", http.StatusSeeOther)
+	default:
+		s.renderWebEnd(w, r, http.StatusOK, sess, ws, "")
+	}
+}
+
+func (s *Server) handleWebSessionEnd(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, maxFormBytes)
+	sess := s.staff(w, r)
+	if sess == nil {
+		return
+	}
+	if r.ParseForm() != nil || !websess.CheckCSRF(*sess, r.PostForm.Get("csrf")) {
+		s.renderError(w, r, http.StatusForbidden, "Your session has ended. Please log in again.")
+		return
+	}
+	ws, ok, err := s.webSessionFor(r, sess)
+	switch {
+	case err != nil:
+		s.connectionError(w, r, err)
+		return
+	case !ok:
+		http.Redirect(w, r, "/admin/online?done=web-gone#web", http.StatusSeeOther)
+		return
+	case r.PostForm.Get("confirm") != "yes":
+		s.renderWebEnd(w, r, http.StatusUnprocessableEntity, sess, ws, "Tick the box to confirm, then try again.")
+		return
+	}
+	switch err := s.cfg.Connections.EndWeb(r.Context(), sess.UserID, ws.ID); {
+	case errors.Is(err, sessions.ErrNotFound):
+		http.Redirect(w, r, "/admin/online?done=web-gone#web", http.StatusSeeOther)
+	case err != nil:
+		s.connectionError(w, r, err)
+	default:
+		LoggerFrom(r.Context()).Info("web session ended from the web", "actor", sess.UserID)
+		http.Redirect(w, r, "/admin/online?done=web-ended#web", http.StatusSeeOther)
+	}
 }

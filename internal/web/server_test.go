@@ -125,11 +125,13 @@ func setup(t *testing.T, insecure bool) *env {
 	mod := newUser(modInv, "mod1")
 	conns := presence.NewConns(nil)
 	sessions := websess.NewService(db, as, nil, log)
+	staff := sshsessions.NewService(db, conns, nil, log)
+	staff.SetWeb(sessions)
 	srv, err := New(Config{
 		Log: log, SiteName: func(context.Context) string { return "Test BBS" }, Auth: as, Perms: ps, Sessions: sessions,
 		Prefs: prefs.NewService(db, cat, nil), Themes: cat, Plugins: reg, SSHAddress: "bbs.example.net:2222",
 		HostKeyFingerprint: "SHA256:testfingerprint", InviteUser: "new", InsecureCookies: insecure, ChatDays: 90, AuditDays: 365, GraceDays: 14,
-		Connections: sshsessions.NewService(db, conns, nil, log),
+		Connections: staff,
 	})
 	if err != nil {
 		t.Fatal(err)

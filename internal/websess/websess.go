@@ -27,6 +27,8 @@ import (
 const (
 	CodeTTL    = 5 * time.Minute
 	SessionTTL = 12 * time.Hour
+	// touchEvery bounds how often a session's last activity is written.
+	touchEvery = time.Minute
 	codeBytes  = 5 // 40 bits: 8 characters, single use, short-lived, rate limited
 )
 
@@ -131,6 +133,7 @@ func (s *Service) Redeem(ctx context.Context, username, code string) (int64, err
 
 // Session is a logged-in web session.
 type Session struct {
+	ID        string // random and not secret; names the session to staff
 	UserID    int64
 	CSRF      string
 	ExpiresAt time.Time
@@ -159,8 +162,13 @@ func (s *Service) Create(ctx context.Context, userID int64) (string, Session, er
 	if _, err := s.db.ExecContext(ctx, `DELETE FROM web_sessions WHERE expires_at <= ?`, store.FormatTime(now)); err != nil {
 		return "", Session{}, err
 	}
-	if _, err := s.db.ExecContext(ctx, `INSERT INTO web_sessions (token_hash, user_id, csrf, created_at, expires_at) VALUES (?, ?, ?, ?, ?)`,
-		hash(tok), userID, csrf, store.FormatTime(now), store.FormatTime(sess.ExpiresAt)); err != nil {
+	pub := make([]byte, 9)
+	if _, err := rand.Read(pub); err != nil {
+		return "", Session{}, err
+	}
+	sess.ID = hex.EncodeToString(pub)
+	if _, err := s.db.ExecContext(ctx, `INSERT INTO web_sessions (token_hash, user_id, csrf, created_at, expires_at, last_seen_at, public_id) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		hash(tok), userID, csrf, store.FormatTime(now), store.FormatTime(sess.ExpiresAt), store.FormatTime(now), sess.ID); err != nil {
 		return "", Session{}, fmt.Errorf("websess: create: %w", err)
 	}
 	s.log.Info("web session started", "user_id", userID)
@@ -175,8 +183,9 @@ func (s *Service) Lookup(ctx context.Context, tok string) (Session, error) {
 	}
 	var sess Session
 	var expires string
-	err := s.db.QueryRowContext(ctx, `SELECT user_id, csrf, expires_at FROM web_sessions WHERE token_hash = ?`, hash(tok)).
-		Scan(&sess.UserID, &sess.CSRF, &expires)
+	var seen sql.NullString
+	err := s.db.QueryRowContext(ctx, `SELECT public_id, user_id, csrf, expires_at, last_seen_at FROM web_sessions WHERE token_hash = ?`, hash(tok)).
+		Scan(&sess.ID, &sess.UserID, &sess.CSRF, &expires, &seen)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Session{}, ErrNoSession
 	}
@@ -193,7 +202,86 @@ func (s *Service) Lookup(ctx context.Context, tok string) (Session, error) {
 	if err != nil || u.Status != auth.StatusActive {
 		return Session{}, ErrNoSession
 	}
+	s.touch(ctx, sess.ID, seen)
 	return sess, nil
+}
+
+// touch records that a session was used, at most once per touchEvery so
+// most requests write nothing. A failure only costs accuracy.
+func (s *Service) touch(ctx context.Context, id string, seen sql.NullString) {
+	now := s.now()
+	if seen.Valid {
+		if t, err := store.ParseTime(seen.String); err == nil && now.Sub(t) < touchEvery {
+			return
+		}
+	}
+	if _, err := s.db.ExecContext(ctx, `UPDATE web_sessions SET last_seen_at = ? WHERE public_id = ?`, store.FormatTime(now), id); err != nil {
+		s.log.Warn("record web session activity", "err", err)
+	}
+}
+
+// Info describes a web session for staff. It never includes the token.
+type Info struct {
+	ID       string
+	UserID   int64
+	Created  time.Time
+	LastSeen time.Time // Created for sessions from before activity was recorded
+	Expires  time.Time
+}
+
+// List returns the unexpired web sessions, oldest first.
+func (s *Service) List(ctx context.Context) ([]Info, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT public_id, user_id, created_at, ifnull(last_seen_at, created_at), expires_at
+		FROM web_sessions WHERE expires_at > ? ORDER BY created_at, public_id`, store.FormatTime(s.now()))
+	if err != nil {
+		return nil, fmt.Errorf("websess: list: %w", err)
+	}
+	defer rows.Close()
+	var out []Info
+	for rows.Next() {
+		var i Info
+		var created, seen, expires string
+		if err := rows.Scan(&i.ID, &i.UserID, &created, &seen, &expires); err != nil {
+			return nil, err
+		}
+		for _, f := range []struct {
+			s string
+			t *time.Time
+		}{{created, &i.Created}, {seen, &i.LastSeen}, {expires, &i.Expires}} {
+			if *f.t, err = store.ParseTime(f.s); err != nil {
+				return nil, err
+			}
+		}
+		out = append(out, i)
+	}
+	return out, rows.Err()
+}
+
+// Get returns one unexpired web session, or ErrNoSession.
+func (s *Service) Get(ctx context.Context, id string) (Info, error) {
+	all, err := s.List(ctx)
+	if err != nil {
+		return Info{}, err
+	}
+	for _, i := range all {
+		if i.ID == id {
+			return i, nil
+		}
+	}
+	return Info{}, ErrNoSession
+}
+
+// DeleteByID ends one session, or reports ErrNoSession.
+func (s *Service) DeleteByID(ctx context.Context, id string) error {
+	res, err := s.db.ExecContext(ctx, `DELETE FROM web_sessions WHERE public_id = ?`, id)
+	if err != nil {
+		return fmt.Errorf("websess: delete: %w", err)
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrNoSession
+	}
+	return nil
 }
 
 // Delete ends a session.

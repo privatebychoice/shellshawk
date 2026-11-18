@@ -218,3 +218,37 @@ func TestLogoutEntryRemoved(t *testing.T) {
 		t.Errorf("entries = %d, logout entries = %d, logout seeded = %d; want 2, 0, 1", entries, logouts, seeded)
 	}
 }
+
+func TestWebSessionsGetPublicIDs(t *testing.T) {
+	ctx := context.Background()
+	db, err := sql.Open("sqlite", dsn(filepath.Join(t.TempDir(), "up.db")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { db.Close() })
+	migs, err := LoadMigrations(coreMigrationFS, "migrations")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := Migrate(ctx, db, CoreOwner, migs[:7], discard()); err != nil {
+		t.Fatal(err)
+	}
+	for _, q := range []string{
+		`INSERT INTO users (id, username, password_hash, status, created_at) VALUES (1, 'a', 'x', 'active', '2026-01-01T00:00:00Z')`,
+		`INSERT INTO web_sessions (token_hash, user_id, csrf, created_at, expires_at) VALUES
+			('h1', 1, 'c', '2026-01-01T00:00:00Z', '2026-01-01T12:00:00Z'),
+			('h2', 1, 'c', '2026-01-01T00:00:00Z', '2026-01-01T12:00:00Z')`,
+	} {
+		if _, err := db.ExecContext(ctx, q); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := Migrate(ctx, db, CoreOwner, migs, discard()); err != nil {
+		t.Fatal(err)
+	}
+	var n, distinct, seen int
+	db.QueryRowContext(ctx, `SELECT count(*), count(DISTINCT public_id), count(last_seen_at) FROM web_sessions WHERE length(public_id) = 18`).Scan(&n, &distinct, &seen)
+	if n != 2 || distinct != 2 || seen != 0 {
+		t.Errorf("sessions with an 18-character ID = %d, distinct = %d, with activity = %d; want 2, 2, 0", n, distinct, seen)
+	}
+}

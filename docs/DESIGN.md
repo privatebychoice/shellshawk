@@ -602,6 +602,17 @@ Descriptions (`Connection.Who`, `Uses`, `Idle`, `Describe`) are shared with
 the SSH screen. A connection that has closed meanwhile redirects with
 `?done=gone`; notices use fixed codes only.
 
+Web sessions on Who is online: migration 0008 adds `last_seen_at`
+(written by `Lookup` at most once a minute) and a random 18-hex-character
+`public_id` (backfilled for existing sessions) to `web_sessions`, so staff
+pages name a session without its token or a `rowid` that `VACUUM` could
+renumber. `sessions.Service.SetWeb` enables `WebSessions` and `EndWeb`
+(same permission, rank rule and confirmation as connections; audited as
+`web_session.ended`). Routes: `GET /admin/web-sessions/{id}` and `POST
+/admin/web-sessions/{id}/end`. The viewer's own session is marked and not
+offered; logging out ends it. The privacy policy says last activity is
+recorded while logged in.
+
 ## 12. Core plugins — notable design points
 
 | Plugin | Notes |

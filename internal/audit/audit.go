@@ -40,6 +40,7 @@ const (
 	UserErased         = "user.erased"
 	PluginSettingSet   = "plugin.setting.changed"
 	ConnectionEnded    = "connection.ended"
+	WebSessionEnded    = "web_session.ended"
 )
 
 // SystemActor marks an action taken by the system or operator CLI rather

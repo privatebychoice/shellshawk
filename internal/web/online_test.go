@@ -69,7 +69,7 @@ func TestWhoIsOnlinePage(t *testing.T) {
 	list := e.do(req{method: "GET", path: "/admin/online", cookie: admin})
 	b := list.Body.String()
 	for _, want := range []string{
-		"2 SSH connection(s) open. Addresses are never shown.",
+		"Addresses are never shown.", "<h2 id=\"ssh\">SSH connections</h2>", "2 SSH connection(s) open.",
 		"<caption>Open SSH connections, oldest first</caption>",
 		`<th scope="col">Account</th>`,
 		`<tr><th scope="row">alice</th><td>1 terminal</td><td>under a minute</td>`,
@@ -135,5 +135,82 @@ func TestWhoIsOnlinePage(t *testing.T) {
 	res := end(mod, adminConn, url.Values{"csrf": {modCSRF}, "confirm": {"yes"}})
 	if res.StatusCode != http.StatusForbidden || ended[adminConn] != nil {
 		t.Errorf("moderator ending admin's = %d, ended %v", res.StatusCode, ended[adminConn])
+	}
+}
+
+func TestWhoIsOnlineWebSessions(t *testing.T) {
+	e := setup(t, false)
+	alice := e.login(t, e.alice, "alice")
+	admin := e.login(t, e.admin, "admin1")
+	mod := e.login(t, e.mod, "mod1")
+	ctx := context.Background()
+	all, _ := e.sessions.List(ctx)
+	ids := map[int64]string{}
+	for _, i := range all {
+		ids[i.UserID] = i.ID
+	}
+
+	b := e.do(req{method: "GET", path: "/admin/online", cookie: admin}).Body.String()
+	for _, want := range []string{
+		`<h2 id="web">Web sessions</h2>`, "3 web session(s) logged in.",
+		"<caption>Logged-in web sessions, oldest first</caption>",
+		`<tr><th scope="row">alice</th><td>under a minute ago</td>`,
+		`<a href="/admin/web-sessions/` + ids[e.alice] + `">End<span class="visually-hidden"> alice's web session</span></a>`,
+		`<th scope="row">admin1 (this session)</th>`, "Log out to end it",
+	} {
+		if !strings.Contains(b, want) {
+			t.Errorf("missing %q in:\n%s", want, b)
+		}
+	}
+	if strings.Contains(b, `/admin/web-sessions/`+ids[e.admin]+`"`) {
+		t.Error("own session offered for ending")
+	}
+	if strings.Contains(b, "token") {
+		t.Error("page mentions a token")
+	}
+
+	confirm := e.do(req{method: "GET", path: "/admin/web-sessions/" + ids[e.alice], cookie: admin}).Body.String()
+	if !strings.Contains(confirm, "Log out this web session? <strong>alice</strong>") {
+		t.Errorf("confirm page:\n%s", confirm)
+	}
+	csrf := csrfFrom(t, confirm)
+	post := func(cookie *http.Cookie, id string, form url.Values) *http.Response {
+		return e.do(req{method: "POST", path: "/admin/web-sessions/" + id + "/end", cookie: cookie, origin: origin, form: form}).Result()
+	}
+	mods, _ := e.perms.GroupByName(ctx, perm.GroupModerator)
+	if err := e.perms.Grant(ctx, e.admin, mods.ID, perm.SessionsManage); err != nil {
+		t.Fatal(err)
+	}
+	modCSRF := csrfFrom(t, e.do(req{method: "GET", path: "/admin/online", cookie: mod}).Body.String())
+
+	tests := []struct {
+		name     string
+		cookie   *http.Cookie
+		id       string
+		form     url.Values
+		status   int
+		location string
+	}{
+		{"member refused", alice, ids[e.admin], url.Values{"confirm": {"yes"}}, http.StatusForbidden, ""},
+		{"box not ticked", admin, ids[e.alice], url.Values{"csrf": {csrf}}, http.StatusUnprocessableEntity, ""},
+		{"own session is not offered", admin, ids[e.admin], url.Values{"csrf": {csrf}, "confirm": {"yes"}}, http.StatusSeeOther, "/admin/online?done=web-gone#web"},
+		{"moderator cannot log out an administrator", mod, ids[e.admin], url.Values{"csrf": {modCSRF}, "confirm": {"yes"}}, http.StatusForbidden, ""},
+		{"logged out", admin, ids[e.alice], url.Values{"csrf": {csrf}, "confirm": {"yes"}}, http.StatusSeeOther, "/admin/online?done=web-ended#web"},
+		{"already ended", admin, ids[e.alice], url.Values{"csrf": {csrf}, "confirm": {"yes"}}, http.StatusSeeOther, "/admin/online?done=web-gone#web"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			res := post(tt.cookie, tt.id, tt.form)
+			if res.StatusCode != tt.status || res.Header.Get("Location") != tt.location {
+				t.Errorf("= %d %q, want %d %q", res.StatusCode, res.Header.Get("Location"), tt.status, tt.location)
+			}
+		})
+	}
+	// Alice is logged out; the administrator is not.
+	if rec := e.do(req{method: "GET", path: "/home", cookie: alice}); rec.Code != http.StatusSeeOther {
+		t.Errorf("alice still logged in: %d", rec.Code)
+	}
+	if rec := e.do(req{method: "GET", path: "/home", cookie: admin}); rec.Code != http.StatusOK {
+		t.Errorf("admin logged out: %d", rec.Code)
 	}
 }

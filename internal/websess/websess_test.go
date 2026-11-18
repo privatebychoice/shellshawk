@@ -161,3 +161,65 @@ func TestLockClearsSessions(t *testing.T) {
 		t.Errorf("new session after unlock: %v", err)
 	}
 }
+
+func TestActivityListAndDelete(t *testing.T) {
+	s, _, c, admin, alice := setup(t)
+	ctx := context.Background()
+	c.mu.Lock()
+	c.t = c.t.Truncate(time.Second) // stored times are whole seconds
+	c.mu.Unlock()
+	start := c.now()
+	tok, sess, _ := s.Create(ctx, alice)
+	other, _, _ := s.Create(ctx, admin)
+	if len(sess.ID) != 18 {
+		t.Errorf("public ID = %q", sess.ID)
+	}
+	if i, _ := s.Get(ctx, sess.ID); !i.LastSeen.Equal(start) {
+		t.Errorf("last seen at login = %v, want %v", i.LastSeen, start)
+	}
+
+	// Each step uses the session after advancing the clock; activity is
+	// written at most once a minute.
+	steps := []struct {
+		advance, wantSeen time.Duration // wantSeen: last seen, after start
+	}{
+		{30 * time.Second, 0},
+		{30 * time.Second, time.Minute},
+		{59 * time.Second, time.Minute},
+		{time.Second, 2 * time.Minute},
+	}
+	for n, st := range steps {
+		c.add(st.advance)
+		if _, err := s.Lookup(ctx, tok); err != nil {
+			t.Fatal(err)
+		}
+		i, err := s.Get(ctx, sess.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := i.LastSeen.Sub(start); got != st.wantSeen {
+			t.Errorf("step %d: last seen = start+%v, want start+%v", n, got, st.wantSeen)
+		}
+	}
+
+	all, err := s.List(ctx)
+	if err != nil || len(all) != 2 || all[0].ID != sess.ID || all[0].UserID != alice || all[1].UserID != admin {
+		t.Fatalf("List = %+v, %v", all, err)
+	}
+	if err := s.DeleteByID(ctx, sess.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.DeleteByID(ctx, sess.ID); !errors.Is(err, ErrNoSession) {
+		t.Errorf("second delete err = %v", err)
+	}
+	if _, err := s.Lookup(ctx, tok); !errors.Is(err, ErrNoSession) {
+		t.Error("deleted session still valid")
+	}
+	if _, err := s.Lookup(ctx, other); err != nil {
+		t.Errorf("other session ended: %v", err)
+	}
+	c.add(SessionTTL)
+	if all, _ := s.List(ctx); len(all) != 0 {
+		t.Errorf("expired sessions listed: %+v", all)
+	}
+}

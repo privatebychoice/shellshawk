@@ -60,3 +60,19 @@ func plural(n int, one, many string) string {
 	}
 	return strconv.Itoa(n) + " " + many
 }
+
+// Who names the web session's account for staff.
+func (w WebSession) Who() string {
+	if w.Username == "" {
+		return "Deleted account"
+	}
+	return w.Username
+}
+
+// Active says when the web session was last used, to the minute.
+func (w WebSession) Active(now time.Time) string {
+	if m := int(now.Sub(w.LastSeen) / time.Minute); m >= 1 {
+		return plural(m, "minute", "minutes") + " ago"
+	}
+	return "under a minute ago"
+}

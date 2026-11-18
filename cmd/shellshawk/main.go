@@ -214,6 +214,7 @@ func (a *app) serve(ctx context.Context) error {
 	// interface is off: sessions from an earlier run stay in the database.
 	webSessions := websess.NewService(a.db, a.auth, nil, log)
 	webSessions.Subscribe(a.bus)
+	handler.Sessions.SetWeb(webSessions)
 	if cfg.WebEnabled() {
 		handler.WebLogin = webSessions
 	}

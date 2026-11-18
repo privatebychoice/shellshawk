@@ -40,7 +40,10 @@ never treated as consent. Support is declared at
   default is {{.ChatDays}} days). Server logs never contain IP addresses.
   Administrative actions are kept in an audit log for {{.AuditDays}} days.
 - **Website**: one cookie, only after you log in, to keep you logged in for
-  up to 12 hours. It is never used for anything else.
+  up to 12 hours. It is never used for anything else. While you are logged
+  in, the time you last used the website is recorded (to the minute) so
+  administrators can see who is online; it is deleted when you log out or
+  the session ends.
 
 # Your rights
 

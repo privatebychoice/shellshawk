@@ -16,6 +16,7 @@ import (
 	"go.privatebychoice.com/shellshawk/internal/perm"
 	"go.privatebychoice.com/shellshawk/internal/presence"
 	"go.privatebychoice.com/shellshawk/internal/store"
+	"go.privatebychoice.com/shellshawk/internal/websess"
 )
 
 // ErrNotFound is returned when a connection is no longer open.
@@ -42,6 +43,7 @@ type Connection struct {
 type Service struct {
 	db    *sql.DB
 	conns *presence.Conns
+	web   *websess.Service // nil: web sessions are not listed
 	now   func() time.Time
 	log   *slog.Logger
 }
@@ -54,6 +56,92 @@ func NewService(db *sql.DB, conns *presence.Conns, now func() time.Time, log *sl
 	return &Service{db: db, conns: conns, now: now, log: log.With("component", "sessions")}
 }
 
+// SetWeb lets the service list and end web sessions too.
+func (s *Service) SetWeb(w *websess.Service) { s.web = w }
+
+// HasWeb reports whether web sessions can be listed.
+func (s *Service) HasWeb() bool { return s.web != nil }
+
+// username looks up account names, caching them in names.
+func (s *Service) username(ctx context.Context, names map[int64]string, id int64) (string, error) {
+	if id == 0 {
+		return "", nil
+	}
+	if n, ok := names[id]; ok {
+		return n, nil
+	}
+	var n string
+	err := s.db.QueryRowContext(ctx, `SELECT username FROM users WHERE id = ?`, id).Scan(&n)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return "", fmt.Errorf("sessions: username: %w", err)
+	}
+	names[id] = n
+	return n, nil
+}
+
+// WebSession is a logged-in web session with the account's name.
+type WebSession struct {
+	websess.Info
+	Username string
+}
+
+// WebSessions returns the web sessions that have not expired, oldest
+// first. It requires core.sessions.manage.
+func (s *Service) WebSessions(ctx context.Context, actor int64) ([]WebSession, error) {
+	if err := perm.RequireTx(ctx, s.db, actor, perm.SessionsManage); err != nil {
+		return nil, err
+	}
+	if s.web == nil {
+		return nil, nil
+	}
+	all, err := s.web.List(ctx)
+	if err != nil {
+		return nil, err
+	}
+	names := map[int64]string{}
+	out := make([]WebSession, 0, len(all))
+	for _, i := range all {
+		n, err := s.username(ctx, names, i.UserID)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, WebSession{Info: i, Username: n})
+	}
+	return out, nil
+}
+
+// EndWeb logs a web session out, under the same rules as End. The member's
+// next request finds them logged out, and open live streams close within
+// the stream re-check interval.
+func (s *Service) EndWeb(ctx context.Context, actor int64, id string) error {
+	if s.web == nil {
+		return ErrNotFound
+	}
+	ws, err := s.web.Get(ctx, id)
+	if errors.Is(err, websess.ErrNoSession) {
+		return ErrNotFound
+	}
+	if err != nil {
+		return err
+	}
+	err = store.WithTx(ctx, s.db, func(tx *sql.Tx) error {
+		if err := perm.RequireOutranks(ctx, tx, actor, ws.UserID, perm.SessionsManage); err != nil {
+			return err
+		}
+		return audit.Record(ctx, tx, s.now(), audit.Entry{Actor: actor, Action: audit.WebSessionEnded, TargetType: "user", TargetID: ws.UserID})
+	})
+	if err != nil {
+		return err
+	}
+	if err := s.web.DeleteByID(ctx, id); errors.Is(err, websess.ErrNoSession) {
+		return ErrNotFound
+	} else if err != nil {
+		return err
+	}
+	s.log.Info("web session ended by staff", "actor", actor, "user_id", ws.UserID)
+	return nil
+}
+
 // List returns every open connection, oldest first. It requires
 // core.sessions.manage.
 func (s *Service) List(ctx context.Context, actor int64) ([]Connection, error) {
@@ -63,17 +151,11 @@ func (s *Service) List(ctx context.Context, actor int64) ([]Connection, error) {
 	names := map[int64]string{}
 	var out []Connection
 	for _, c := range s.conns.List() {
-		if c.UserID != 0 {
-			if _, ok := names[c.UserID]; !ok {
-				var n string
-				err := s.db.QueryRowContext(ctx, `SELECT username FROM users WHERE id = ?`, c.UserID).Scan(&n)
-				if err != nil && !errors.Is(err, sql.ErrNoRows) {
-					return nil, fmt.Errorf("sessions: username: %w", err)
-				}
-				names[c.UserID] = n
-			}
+		n, err := s.username(ctx, names, c.UserID)
+		if err != nil {
+			return nil, err
 		}
-		out = append(out, Connection{ConnInfo: c, Username: names[c.UserID]})
+		out = append(out, Connection{ConnInfo: c, Username: n})
 	}
 	return out, nil
 }
