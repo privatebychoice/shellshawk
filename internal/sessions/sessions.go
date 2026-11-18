@@ -28,6 +28,10 @@ const EndedMessage = "Your connection was ended by an administrator or moderator
 // they are connected.
 const LockedMessage = "Your account has been locked, so this connection has ended."
 
+// RejectedMessage is what someone waiting for approval sees when their
+// account is rejected while they are connected.
+const RejectedMessage = "Your account was not approved and has been removed, so this connection has ended."
+
 // Connection is an open connection with the account's name.
 type Connection struct {
 	presence.ConnInfo
@@ -106,14 +110,17 @@ func (s *Service) End(ctx context.Context, actor int64, id uint64) error {
 	return nil
 }
 
-// Subscribe makes locking an account end its open SSH connections. Web
-// sessions need nothing: every request and live stream re-checks that the
-// account is active.
+// Subscribe makes locking an account, or rejecting one awaiting approval,
+// end its open SSH connections. Web sessions need nothing: every request
+// and live stream re-checks that the account is active, and pending
+// accounts cannot use the web.
 func (s *Service) Subscribe(bus *events.Bus) {
-	bus.Subscribe(events.UserLocked, "sessions", func(_ context.Context, e events.Event) error {
-		if n := s.conns.EndUser(e.UserID, &presence.Disconnect{Message: LockedMessage}); n > 0 {
-			s.log.Info("connections of locked account ended", "user_id", e.UserID, "count", n)
-		}
-		return nil
-	})
+	for topic, msg := range map[string]string{events.UserLocked: LockedMessage, events.UserRejected: RejectedMessage} {
+		bus.Subscribe(topic, "sessions", func(_ context.Context, e events.Event) error {
+			if n := s.conns.EndUser(e.UserID, &presence.Disconnect{Message: msg}); n > 0 {
+				s.log.Info("connections ended", "event", topic, "user_id", e.UserID, "count", n)
+			}
+			return nil
+		})
+	}
 }

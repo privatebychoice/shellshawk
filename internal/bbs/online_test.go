@@ -145,3 +145,33 @@ func TestLockEndsConnections(t *testing.T) {
 		}
 	}
 }
+
+func TestRejectEndsConnections(t *testing.T) {
+	e := startBBS(t)
+	_ = e.accessibleAdmin(t, "ada")
+	ctx := context.Background()
+	ada, _ := e.auth.UserByUsername(ctx, "ada")
+	code, _, err := e.auth.CreateInvite(ctx, ada.ID, auth.InviteOptions{RequireApproval: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	key, line := newUserKey(t)
+	pat, err := e.auth.Register(ctx, code, auth.Registration{Username: "pat", Password: testPassword, PublicKey: line})
+	if err != nil || pat.Status != auth.StatusPending {
+		t.Fatalf("register = %+v, %v", pat, err)
+	}
+
+	waiting := e.interactive(t, "pat", ssh.PublicKeys(key))
+	waiting.waitFor("waiting for approval")
+	if err := e.auth.Reject(ctx, ada.ID, pat.ID); err != nil {
+		t.Fatal(err)
+	}
+	waiting.waitFor(sessions.RejectedMessage)
+	done := make(chan error, 1)
+	go func() { done <- waiting.sess.Wait() }()
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		t.Fatal("rejected account's connection still open")
+	}
+}
