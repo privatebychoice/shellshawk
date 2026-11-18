@@ -1,0 +1,18 @@
+{{define "online"}}{{if .Notice}}<p class="notice" role="status">{{.Notice}}</p>
+{{end}}<p>{{.Count}} SSH connection(s) open. Addresses are never shown. <a href="/admin/online">Refresh</a></p>
+{{if .Rows}}<table class="online">
+<caption>Open SSH connections, oldest first</caption>
+<thead><tr><th scope="col">Account</th><th scope="col">Using</th><th scope="col">Idle</th><th scope="col">Connected since</th><th scope="col">Action</th></tr></thead>
+<tbody>
+{{range .Rows}}<tr><th scope="row">{{.Who}}</th><td>{{.Uses}}</td><td>{{.Idle}}</td><td>{{.Since}}</td><td><a href="/admin/online/{{.ID}}">End<span class="visually-hidden"> {{.Who}}'s connection</span></a></td></tr>
+{{end}}</tbody>
+</table>
+{{end}}{{end}}
+{{define "online-end"}}{{if .Error}}<p class="error" role="alert">{{.Error}}</p>
+{{end}}<p>End this connection? <strong>{{.Describe}}</strong>, connected since {{.Since}}.</p>
+<p>They are told it was ended by an administrator or moderator. The action is recorded in the audit log.</p>
+<form method="post" action="/admin/online/{{.ID}}/end" class="form">
+<input type="hidden" name="csrf" value="{{.CSRF}}">
+<p><label><input type="checkbox" name="confirm" value="yes" required> Yes, end this connection</label></p>
+<p><button type="submit">End connection</button> <a href="/admin/online">Cancel</a></p>
+</form>{{end}}

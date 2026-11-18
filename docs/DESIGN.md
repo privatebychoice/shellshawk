@@ -588,6 +588,20 @@ POST handler may return a page instead of a redirect; the core sends it
 with status 422). Confirmations after a redirect use fixed codes
 (`?done=invite`), never text the member typed.
 
+Web who is online (after stage 10): the first core staff page, not a
+plugin route. `web.Config.Connections` (a `sessions.Service`; nil leaves
+the routes out) serves `GET /admin/online` (an accessible table: caption,
+column and row headers, an End link per row whose name includes the
+account for screen readers), `GET /admin/online/{id}` (confirmation) and
+`POST /admin/online/{id}/end` (CSRF token, Origin, ticked box; 422
+without it). The navigation shows *Who is online* only to holders of
+`core.sessions.manage`; the pages answer 403 to anyone else, and
+`sessions.Service` re-checks the permission and rank on every request, so
+a moderator cannot end an administrator's connection from the web either.
+Descriptions (`Connection.Who`, `Uses`, `Idle`, `Describe`) are shared with
+the SSH screen. A connection that has closed meanwhile redirects with
+`?done=gone`; notices use fixed codes only.
+
 ## 12. Core plugins — notable design points
 
 | Plugin | Notes |

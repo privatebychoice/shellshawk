@@ -24,6 +24,8 @@ import (
 	"go.privatebychoice.com/shellshawk/internal/perm"
 	"go.privatebychoice.com/shellshawk/internal/plugin"
 	"go.privatebychoice.com/shellshawk/internal/prefs"
+	"go.privatebychoice.com/shellshawk/internal/presence"
+	sshsessions "go.privatebychoice.com/shellshawk/internal/sessions"
 	"go.privatebychoice.com/shellshawk/internal/store"
 	"go.privatebychoice.com/shellshawk/internal/theme"
 	"go.privatebychoice.com/shellshawk/internal/version"
@@ -84,6 +86,9 @@ type env struct {
 	sessions *websess.Service
 	alice    int64
 	admin    int64
+	mod      int64 // a moderator; their group does not hold core.sessions.manage
+	perms    *perm.Service
+	conns    *presence.Conns
 }
 
 func setup(t *testing.T, insecure bool) *env {
@@ -116,16 +121,20 @@ func setup(t *testing.T, insecure bool) *env {
 	admin := newUser(code, "admin1")
 	inv, _, _ := as.CreateInvite(ctx, admin, auth.InviteOptions{})
 	alice := newUser(inv, "alice")
+	modInv, _, _ := as.CreateInvite(ctx, admin, auth.InviteOptions{Groups: []string{perm.GroupModerator}})
+	mod := newUser(modInv, "mod1")
+	conns := presence.NewConns(nil)
 	sessions := websess.NewService(db, as, nil, log)
 	srv, err := New(Config{
 		Log: log, SiteName: func(context.Context) string { return "Test BBS" }, Auth: as, Perms: ps, Sessions: sessions,
 		Prefs: prefs.NewService(db, cat, nil), Themes: cat, Plugins: reg, SSHAddress: "bbs.example.net:2222",
 		HostKeyFingerprint: "SHA256:testfingerprint", InviteUser: "new", InsecureCookies: insecure, ChatDays: 90, AuditDays: 365, GraceDays: 14,
+		Connections: sshsessions.NewService(db, conns, nil, log),
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	return &env{srv: srv, h: srv.Handler(), sessions: sessions, alice: alice, admin: admin}
+	return &env{srv: srv, h: srv.Handler(), sessions: sessions, alice: alice, admin: admin, mod: mod, perms: ps, conns: conns}
 }
 
 type req struct {

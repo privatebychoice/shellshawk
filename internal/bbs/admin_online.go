@@ -11,7 +11,6 @@ import (
 	"go.privatebychoice.com/shellshawk/internal/form"
 	"go.privatebychoice.com/shellshawk/internal/sessions"
 	"go.privatebychoice.com/shellshawk/internal/settings"
-	"go.privatebychoice.com/shellshawk/internal/sshd"
 	"go.privatebychoice.com/shellshawk/internal/tui"
 )
 
@@ -26,7 +25,7 @@ func (s *session) whoIsOnline(ctx context.Context) error {
 		now := time.Now()
 		var items []tui.MenuItem
 		for _, c := range conns {
-			label := describeConn(c, now)
+			label := c.Describe(now)
 			if c.ID == s.conn.ConnSerial {
 				label += " (this connection)"
 			}
@@ -58,7 +57,7 @@ func (s *session) whoIsOnline(ctx context.Context) error {
 				c = x
 			}
 		}
-		ok, err := tui.Confirm(ctx, s.ui, title, "End this connection? "+describeConn(c, time.Now())+". They are told it was ended by an administrator or moderator.")
+		ok, err := tui.Confirm(ctx, s.ui, title, "End this connection? "+c.Describe(time.Now())+". They are told it was ended by an administrator or moderator.")
 		if err != nil {
 			return err
 		}
@@ -79,52 +78,6 @@ func (s *session) whoIsOnline(ctx context.Context) error {
 		if err := tui.Message(ctx, s.ui, title, msg); err != nil {
 			return err
 		}
-	}
-}
-
-// describeConn says who a connection belongs to, what it is doing and how
-// long it has been idle.
-func describeConn(c sessions.Connection, now time.Time) string {
-	who := c.Username
-	switch {
-	case c.UserID == 0:
-		who = "Someone registering with an invite"
-	case who == "":
-		who = "Deleted account"
-	}
-	var uses []string
-	switch sshd.Mode(c.Mode) {
-	case sshd.ModePending:
-		uses = append(uses, "awaiting approval")
-	case sshd.ModeAddKey:
-		uses = append(uses, "adding a key")
-	}
-	if c.Terminals > 0 {
-		uses = append(uses, plural(c.Terminals, "terminal", "terminals"))
-	}
-	if c.Transfers > 0 {
-		uses = append(uses, plural(c.Transfers, "file transfer", "file transfers"))
-	}
-	if len(uses) == 0 {
-		uses = append(uses, "connecting")
-	}
-	return fmt.Sprintf("%s: %s, idle %s", who, strings.Join(uses, " and "), idleFor(now.Sub(c.LastActive)))
-}
-
-func plural(n int, one, many string) string {
-	if n == 1 {
-		return "1 " + one
-	}
-	return strconv.Itoa(n) + " " + many
-}
-
-// idleFor describes an idle time in whole minutes.
-func idleFor(d time.Duration) string {
-	switch m := int(d / time.Minute); {
-	case m < 1:
-		return "under a minute"
-	default:
-		return plural(m, "minute", "minutes")
 	}
 }
 

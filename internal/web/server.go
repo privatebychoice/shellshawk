@@ -28,6 +28,7 @@ import (
 	"go.privatebychoice.com/shellshawk/internal/perm"
 	"go.privatebychoice.com/shellshawk/internal/plugin"
 	"go.privatebychoice.com/shellshawk/internal/prefs"
+	"go.privatebychoice.com/shellshawk/internal/sessions"
 	"go.privatebychoice.com/shellshawk/internal/theme"
 	"go.privatebychoice.com/shellshawk/internal/version"
 	"go.privatebychoice.com/shellshawk/internal/websess"
@@ -57,6 +58,9 @@ type Config struct {
 	Themes   *theme.Catalog
 	Plugins  *plugin.Registry // may be nil
 	Grader   markdown.Grader  // may be nil
+	// Connections lists and ends SSH connections (Who is online); nil
+	// leaves the pages out.
+	Connections *sessions.Service
 
 	// SSHAddress is the public host:port members connect to, shown on the
 	// start page (optional).
@@ -155,6 +159,11 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("POST /login", s.handleLogin)
 	mux.HandleFunc("POST /logout", s.handleLogout)
 	mux.HandleFunc("GET /home", s.handleDashboard)
+	if s.cfg.Connections != nil {
+		mux.HandleFunc("GET /admin/online", s.handleOnline)
+		mux.HandleFunc("GET /admin/online/{id}", s.handleOnlineConfirm)
+		mux.HandleFunc("POST /admin/online/{id}/end", s.handleOnlineEnd)
+	}
 	if s.cfg.Plugins != nil {
 		for _, p := range s.cfg.Plugins.Plugins() {
 			for _, r := range p.Manifest.Web {
@@ -352,22 +361,24 @@ func (s *Server) layout(r *http.Request, title string, body template.HTML) layou
 	return d
 }
 
-// nav lists the plugin pages the member may open.
+// nav lists the pages the member may open: plugin pages, then staff pages.
 func (s *Server) nav(ctx context.Context, user int64) []navItem {
-	if s.cfg.Plugins == nil {
-		return nil
-	}
 	set, err := s.cfg.Perms.Permissions(ctx, user)
 	if err != nil {
 		return nil
 	}
 	var out []navItem
-	for _, p := range s.cfg.Plugins.Plugins() {
-		for _, r := range p.Manifest.Web {
-			if r.Nav != "" && allowed(set, r.AnyOf) {
-				out = append(out, navItem{Label: r.Nav, Href: "/p/" + p.Manifest.ID + r.Path})
+	if s.cfg.Plugins != nil {
+		for _, p := range s.cfg.Plugins.Plugins() {
+			for _, r := range p.Manifest.Web {
+				if r.Nav != "" && allowed(set, r.AnyOf) {
+					out = append(out, navItem{Label: r.Nav, Href: "/p/" + p.Manifest.ID + r.Path})
+				}
 			}
 		}
+	}
+	if s.cfg.Connections != nil && set.Has(perm.SessionsManage) {
+		out = append(out, navItem{Label: "Who is online", Href: "/admin/online"})
 	}
 	return out
 }

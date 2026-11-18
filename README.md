@@ -300,7 +300,7 @@ every request, so locking an account takes effect immediately.
 Optional (`SHELLSHAWK_HTTP_ADDR`); serve it behind a TLS-terminating
 reverse proxy. You can read, write, reply to and delete private messages,
 chat live in any channel you may join, start and run private chats, and
-vote in polls; conference posting, creating polls, channel management,
+vote in polls, and staff can see who is online and end a connection; conference posting, creating polls, channel management,
 slash commands and settings stay in the SSH interface.
 
 | Path | Description |
@@ -313,6 +313,7 @@ slash commands and settings stay in the SSH interface.
 | `/p/messages/` | Inbox, Sent and Deleted, with unread marks and counts; opening a message marks it read. Write a message (to usernames and your contact groups; markdown) or reply, with the same limits and privacy rules as over SSH. Delete (to Deleted, restorable), move back to the inbox, delete permanently, remove from Sent and empty the Deleted folder; the ones that cannot be undone need a ticked confirmation box |
 | `/p/polls/` | Open polls (pinned first) and closed polls; vote or change your vote, and see results under the same rules as over SSH |
 | `/p/wall/` | The wall (read-only); the message of the day is on `/home` |
+| `/admin/online` | Who is online, for staff with `core.sessions.manage` (linked in the navigation only for them): a table of open SSH connections with account, what is open, idle time and connection time, never addresses. **End** opens a confirmation page; ending needs a ticked box, follows the same rank rule as over SSH and is audited |
 | `/privacy` | Privacy policy (built in, or `SHELLSHAWK_PRIVACY_POLICY_FILE`) |
 | `/.well-known/gpc.json` | Global Privacy Control declaration |
 | `/version` | `{"version","commit","buildDate"}` to confirm a deploy |
