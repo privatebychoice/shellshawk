@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"go.privatebychoice.com/shellshawk/internal/auth"
 	"go.privatebychoice.com/shellshawk/internal/perm"
@@ -125,7 +126,11 @@ func TestWebSessions(t *testing.T) {
 		}
 	}
 	ps := perm.NewService(db, perm.NewRegistry(), nil, log)
-	web := websess.NewService(db, auth.NewService(db, ps, "new", nil, log), nil, log)
+	// Sessions are listed oldest first and stored to the second, so each
+	// is created a second after the last for a fixed order.
+	clock := time.Date(2026, 11, 19, 12, 0, 0, 0, time.UTC)
+	tick := func() time.Time { clock = clock.Add(time.Second); return clock }
+	web := websess.NewService(db, auth.NewService(db, ps, "new", nil, log), tick, log)
 	s := NewService(db, presence.NewConns(nil), nil, log)
 	if list, err := s.WebSessions(ctx, 1); err != nil || list != nil || s.HasWeb() {
 		t.Fatalf("without web: %v, %v", list, err)
