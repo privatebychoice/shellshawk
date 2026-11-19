@@ -17,8 +17,10 @@ import (
 
 	"go.privatebychoice.com/shellshawk/internal/auth"
 	"go.privatebychoice.com/shellshawk/internal/events"
+	"go.privatebychoice.com/shellshawk/internal/notify"
 	"go.privatebychoice.com/shellshawk/internal/perm"
 	"go.privatebychoice.com/shellshawk/internal/plugin"
+	"go.privatebychoice.com/shellshawk/internal/presence"
 	"go.privatebychoice.com/shellshawk/internal/privacy"
 	"go.privatebychoice.com/shellshawk/internal/store"
 )
@@ -36,7 +38,9 @@ type Env struct {
 	Events   *events.Bus
 	Registry *plugin.Registry
 	Privacy  *privacy.Service
-	Admin    int64 // bootstrap administrator "admin1"
+	Notify   *notify.Service
+	Presence *presence.Tracker // nobody is online until a test calls Enter
+	Admin    int64             // bootstrap administrator "admin1"
 	Log      *slog.Logger
 }
 
@@ -60,9 +64,11 @@ func New(t *testing.T, plugins ...plugin.Plugin) *Env {
 			priv.SetFriends(fc)
 		}
 	}
-	e := &Env{t: t, Ctx: ctx, DB: db, Auth: as, Perms: ps, Events: bus, Privacy: priv, Log: log}
+	nt := notify.NewService(db, as, nil, log)
+	nt.Subscribe(bus)
+	e := &Env{t: t, Ctx: ctx, DB: db, Auth: as, Perms: ps, Events: bus, Privacy: priv, Notify: nt, Presence: presence.New(nil), Log: log}
 
-	reg, err := plugin.Load(ctx, plugin.Deps{DB: db, Perms: ps, Auth: as, Events: bus, Privacy: priv, Log: log}, plugins...)
+	reg, err := plugin.Load(ctx, plugin.Deps{DB: db, Perms: ps, Auth: as, Events: bus, Privacy: priv, Notify: nt, Presence: e.Presence, Log: log}, plugins...)
 	if err != nil {
 		t.Fatalf("load plugins: %v", err)
 	}

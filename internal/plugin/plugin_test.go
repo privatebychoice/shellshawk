@@ -92,6 +92,7 @@ func TestValidate(t *testing.T) {
 	page := func(*http.Request, WebSession) (WebPage, error) { return WebPage{}, nil }
 	stream := func(http.ResponseWriter, *http.Request, WebSession) error { return nil }
 	webRoute := func(r WebRoute) Manifest { return mod(func(m *Manifest) { m.Web = []WebRoute{r} }) }
+	notes := func(k ...NotificationKind) Manifest { return mod(func(m *Manifest) { m.Notifications = k }) }
 	tests := []struct {
 		name string
 		m    Manifest
@@ -127,6 +128,10 @@ func TestValidate(t *testing.T) {
 		{"web stream by POST", webRoute(WebRoute{Path: "/live", Method: "POST", Stream: stream}), "invalid web route"},
 		{"web route other method", webRoute(WebRoute{Path: "/", Method: "DELETE", Handle: page}), "invalid web route"},
 		{"web route relative path", webRoute(WebRoute{Path: "x", Handle: page}), "invalid web route"},
+		{"notification kind", notes(NotificationKind{Key: "due", Label: "Due notes"}), ""},
+		{"notification kind without label", notes(NotificationKind{Key: "due"}), "invalid or duplicate notification kind"},
+		{"notification kind bad key", notes(NotificationKind{Key: "Due!", Label: "Due"}), "invalid or duplicate notification kind"},
+		{"duplicate notification kind", notes(NotificationKind{Key: "due", Label: "A"}, NotificationKind{Key: "due", Label: "B"}), "invalid or duplicate notification kind"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

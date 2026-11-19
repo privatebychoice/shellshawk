@@ -67,6 +67,7 @@ type Plugin struct {
 	// threadAccess decides who may enter thread channels, by the context
 	// prefix of the plugin that owns them (see SetThreadAccess).
 	threadAccess map[string]ThreadAccessFunc
+	pages        pager
 }
 
 // ThreadAccessFunc reports whether user may enter the thread channel with
@@ -98,7 +99,9 @@ func (p *Plugin) Manifest() plugin.Manifest {
 			{Name: PermUse, Description: "Join chat channels and talk", DefaultGroups: []string{perm.GroupMember, perm.GroupModerator}},
 			{Name: PermCreate, Description: "Start private ad hoc chats", DefaultGroups: []string{perm.GroupMember, perm.GroupModerator}},
 			{Name: PermModerate, Description: "Manage channels; kick members, set topics and close chats anywhere", DefaultGroups: []string{perm.GroupModerator}},
+			{Name: PermPage, Description: "Page members: ask them to come and talk in a chat", DefaultGroups: []string{perm.GroupMember, perm.GroupModerator}},
 		},
+		Settings: []plugin.Setting{pageSetting()},
 		Migrations: []store.Migration{{Version: 1, Name: "chat", SQL: `
 			-- permission: extra permission needed to join (persistent and
 			-- thread channels). retention_days 0 means messages are not
@@ -157,10 +160,11 @@ func (p *Plugin) Manifest() plugin.Manifest {
 				JOIN access_group_permissions gp ON gp.permission = c.permission
 				WHERE c.permission <> '' AND c.kind <> 'adhoc';
 			ALTER TABLE chat_channels DROP COLUMN permission;`}},
-		MenuItems: []plugin.MenuItem{{Key: "main", Label: "Chat", Help: "Live chat channels", AnyOf: []string{PermUse}, Run: p.run}},
-		Web:       p.webRoutes(),
-		SFTP:      []sftpd.Mount{{Name: "chat", AnyOf: []string{PermUse}, FS: &logFS{p: p}}},
-		Export:    p.export,
+		MenuItems:     []plugin.MenuItem{{Key: "main", Label: "Chat", Help: "Live chat channels", AnyOf: []string{PermUse}, Run: p.run}},
+		Web:           p.webRoutes(),
+		SFTP:          []sftpd.Mount{{Name: "chat", AnyOf: []string{PermUse}, FS: &logFS{p: p}}},
+		Export:        p.export,
+		Notifications: p.notificationKinds(),
 	}
 }
 

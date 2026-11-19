@@ -83,6 +83,27 @@ func (h *hub) broadcast(channel int64, l tui.Line) {
 	}
 }
 
+// tell delivers l to every chat user is in, and reports whether any
+// session received it.
+func (h *hub) tell(user int64, l tui.Line) bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	told := false
+	for _, room := range h.rooms {
+		for m := range room {
+			if m.userID != user {
+				continue
+			}
+			select {
+			case m.out <- l:
+				told = true
+			default:
+			}
+		}
+	}
+	return told
+}
+
 // who returns the distinct usernames in channel, sorted.
 func (h *hub) who(channel int64) []string {
 	h.mu.Lock()

@@ -14,6 +14,7 @@ import (
 	"go.privatebychoice.com/shellshawk/internal/auth"
 	"go.privatebychoice.com/shellshawk/internal/events"
 	"go.privatebychoice.com/shellshawk/internal/export"
+	"go.privatebychoice.com/shellshawk/internal/notify"
 	"go.privatebychoice.com/shellshawk/internal/perm"
 	"go.privatebychoice.com/shellshawk/internal/presence"
 	"go.privatebychoice.com/shellshawk/internal/privacy"
@@ -42,6 +43,7 @@ type Deps struct {
 	Events   *events.Bus
 	Presence *presence.Tracker
 	Privacy  *privacy.Service
+	Notify   *notify.Service // nil sends no notifications
 	Log      *slog.Logger
 	Now      func() time.Time // nil = time.Now
 }
@@ -58,6 +60,7 @@ type Registry struct {
 	items   map[string]Item // "<id>:<key>" → item
 	mounts  []sftpd.Mount
 	exports []export.Source
+	openers map[string]NotificationKind // "<id>:<key>" → kind
 }
 
 // Item is a menu item with its owning plugin.
@@ -112,6 +115,13 @@ func Validate(m Manifest) error {
 			return fmt.Errorf("plugin %s: menu item %q needs a label and Run", m.ID, it.Key)
 		}
 	}
+	seen = map[string]bool{}
+	for _, k := range m.Notifications {
+		if !keyPattern.MatchString(k.Key) || seen[k.Key] || k.Label == "" {
+			return fmt.Errorf("plugin %s: invalid or duplicate notification kind %q", m.ID, k.Key)
+		}
+		seen[k.Key] = true
+	}
 	for _, wr := range m.Web {
 		validKind := (wr.Handle != nil) != (wr.Stream != nil) &&
 			(wr.Method == "" || wr.Method == http.MethodGet || (wr.Method == http.MethodPost && wr.Handle != nil))
@@ -154,7 +164,7 @@ func Load(ctx context.Context, d Deps, plugins ...Plugin) (*Registry, error) {
 	if d.Now == nil {
 		d.Now = time.Now
 	}
-	r := &Registry{items: map[string]Item{}}
+	r := &Registry{items: map[string]Item{}, openers: map[string]NotificationKind{}}
 	ids := map[string]bool{}
 	for _, p := range plugins {
 		m := p.Manifest()
@@ -179,7 +189,17 @@ func Load(ctx context.Context, d Deps, plugins ...Plugin) (*Registry, error) {
 			return nil, err
 		}
 		st := &Settings{id: m.ID, defs: m.Settings, db: d.DB, now: d.Now, log: log}
-		h := &Host{ID: m.ID, DB: d.DB, Perms: d.Perms, Auth: d.Auth, Events: d.Events, Presence: d.Presence, Privacy: d.Privacy, Settings: st, Log: log}
+		for _, k := range m.Notifications {
+			name := m.ID + ":" + k.Key
+			if d.Notify != nil {
+				if err := d.Notify.Register(notify.Kind{Name: name, Label: k.Label, Help: k.Help, Default: k.Default}); err != nil {
+					return nil, fmt.Errorf("plugin %s: %w", m.ID, err)
+				}
+			}
+			r.openers[name] = k
+		}
+		h := &Host{ID: m.ID, DB: d.DB, Perms: d.Perms, Auth: d.Auth, Events: d.Events, Presence: d.Presence, Privacy: d.Privacy,
+			Notify: d.Notify, Settings: st, Log: log}
 		if err := p.Init(ctx, h); err != nil {
 			return nil, fmt.Errorf("plugin %s: init: %w", m.ID, err)
 		}
@@ -195,6 +215,13 @@ func Load(ctx context.Context, d Deps, plugins ...Plugin) (*Registry, error) {
 		log.Info("plugin started", "version", m.Version, "menu_items", len(m.MenuItems), "permissions", len(m.Permissions))
 	}
 	return r, nil
+}
+
+// NotificationKind returns the plugin kind of notification named
+// "<id>:<key>".
+func (r *Registry) NotificationKind(name string) (NotificationKind, bool) {
+	k, ok := r.openers[name]
+	return k, ok
 }
 
 // ExportSources returns the plugins' data-export functions in load order.

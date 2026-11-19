@@ -75,6 +75,9 @@ func (p *Plugin) run(ctx context.Context, s plugin.Session) error {
 		if set.Has(PermCreate) {
 			actions = append(actions, tui.Action{Key: 'n', Value: "new", Label: "Start a private chat"})
 		}
+		if set.Has(PermCreate) && set.Has(PermPage) && p.h.Notify != nil {
+			actions = append(actions, tui.Action{Key: 'p', Value: "page", Label: "Page someone"})
+		}
 		if set.Has(PermModerate) {
 			actions = append(actions, tui.Action{Key: 'm', Value: "manage", Label: "Manage channels"})
 		}
@@ -100,6 +103,8 @@ func (p *Plugin) run(ctx context.Context, s plugin.Session) error {
 			if id, err = p.createAdHocForm(ctx, s); err == nil {
 				err = p.Enter(ctx, s, id)
 			}
+		case "page":
+			err = p.pageForm(ctx, s)
 		case "manage":
 			err = p.manage(ctx, s)
 		case "find":
@@ -339,6 +344,7 @@ const helpText = `Commands:
 /join NAME             switch to another channel
 /topic [TEXT]          show or change the topic
 /invite USER           let someone into this private chat
+/page USER             ask someone to come and talk here
 /kick USER             remove someone from this chat
 /createchat NAME [USERS]  start a private chat, inviting USERS (comma-separated)
 /destroychat           close this private chat for everyone
@@ -424,6 +430,19 @@ func (p *Plugin) submit(ctx context.Context, s plugin.Session, u auth.User, chID
 			return fail(err), false, 0
 		}
 		return say("%s can now join #%s from the Chat menu.", acct.Username, c.Name), false, 0
+	case "/page":
+		acct, err := p.Page(ctx, u, arg, c)
+		if err != nil {
+			name := acct.Username
+			if name == "" {
+				name = strings.TrimPrefix(arg, "@")
+			}
+			if msg := pageMessage(name, err); msg != "" {
+				return say("%s", msg), false, 0
+			}
+			return fail(err), false, 0
+		}
+		return say("%s has been paged to #%s.", acct.Username, c.Name), false, 0
 	case "/kick":
 		acct, err := userArg()
 		if err == nil && acct.ID == u.ID {

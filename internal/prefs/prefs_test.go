@@ -25,7 +25,7 @@ func TestPrefs(t *testing.T) {
 	s := NewService(db, cat, nil)
 
 	got, err := s.Get(ctx, 1)
-	if err != nil || got != Default() {
+	if err != nil || got != Default() || !got.Notifications {
 		t.Fatalf("Get default = %+v, %v", got, err)
 	}
 
@@ -52,7 +52,7 @@ func TestPrefs(t *testing.T) {
 		})
 	}
 	got, _ = s.Get(ctx, 1)
-	if got.Profile != theme.ProfilePutty || got.Theme != "amber" || !got.ASCIIOnly || got.Bold != theme.EmphColor || got.Transitions {
+	if got.Profile != theme.ProfilePutty || got.Theme != "amber" || !got.ASCIIOnly || got.Bold != theme.EmphColor || got.Transitions || got.Notifications {
 		t.Errorf("round trip = %+v", got)
 	}
 

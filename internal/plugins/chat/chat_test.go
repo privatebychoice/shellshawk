@@ -501,14 +501,14 @@ func TestFindChannelTUI(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Chat menu (1 gardening, 2 lobby; f Find a channel, n Start a private
-	// chat, q Back): Find, search "plant", pick the match (1), leave the
+	// chat, p Page someone, q Back): Find, search "plant", pick the match (1), leave the
 	// channel, back.
 	s := f.Session(f.alice, strings.Join([]string{"f", "plant", "1", "/quit", "q"}, "\r")+"\r")
 	if err := f.p.run(f.Ctx, s); err != nil {
 		t.Fatalf("run: %v\n%s", err, s.Out)
 	}
 	out := s.Out.String()
-	for _, want := range []string{"Actions: f Find a channel; n Start a private chat; q Back.", "Find a channel: 1 match(es)", "1. #gardening [P]", "#gardening, channel."} {
+	for _, want := range []string{"Actions: f Find a channel; n Start a private chat; p Page someone; q Back.", "Find a channel: 1 match(es)", "1. #gardening [P]", "#gardening, channel."} {
 		if !strings.Contains(out, want) {
 			t.Errorf("output missing %q", want)
 		}

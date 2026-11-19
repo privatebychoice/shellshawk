@@ -130,6 +130,16 @@ lack, so a moderator cannot lock an administrator.
   item and when you return to the menu; press any key to continue. Turn
   them off under *Display settings → Show transition screens*. They are
   never shown in screen reader mode.
+- **Notifications**: a notice when someone pages you, sends you a private
+  message or replies to a thread you started. New ones are listed between
+  screens — when you open a menu item and when you return to the menu,
+  after any transition art, never in the middle of a screen — in both
+  full-screen and screen reader mode; choose one to open it, or `q` to
+  continue. The main menu says how many are new (*Notifications (2 new)*).
+  *Notifications* in the main menu lists them all (kept 30 days, at most
+  100), opens or deletes one, marks all as seen or deletes them all. Its
+  *Notification settings* (`s`) turn the between-screens list off (they
+  then wait under *Notifications*) and choose which kinds you receive.
 - **Themes**: Classic BBS, Amber Terminal, Green Phosphor, Dark, Light and
   High Contrast. Text colours meet WCAG AA contrast (AAA for High Contrast),
   enforced by tests.
@@ -312,8 +322,21 @@ every request, so locking an account takes effect immediately.
   started by any member; `[T]` thread chats belong to conference threads.
   *Find a channel* searches the names and topics of the channels you can
   join.
+  **Paging** asks someone to come and talk: *Page someone* (`p` in the
+  Chat menu) opens a private chat `#talk-<you>-<them>` (the same one again
+  next time, from either side), invites them, pages them and waits there
+  for them; `/page USER` in any chat pages someone into that chat (a
+  private chat invites them; other channels must already be open to
+  them). The member gets a notification — or, if they are in a chat, a
+  line there straight away — that takes them to the chat. Only members
+  who are online, accept pages from you (privacy setting *Who can page
+  you*, default *Friends only*) and have page notifications on can be
+  paged; the refusal does not say which. You can page the same person
+  again after 5 minutes (admin setting in *Plugin settings → Chat*).
+  Paging needs `chat.page` (members and moderators by default); the menu
+  action also needs `chat.create`.
   Commands: `/help`, `/who`, `/channels`, `/join`, `/topic`, `/invite`,
-  `/kick`, `/createchat`, `/destroychat`, `/quit`. Logging is on by default
+  `/page`, `/kick`, `/createchat`, `/destroychat`, `/quit`. Logging is on by default
   (90 days) and every channel says so when you join; logs are downloadable
   over SFTP at `/chat/<channel>/<YYYYMMDD>.log` by members who can enter
   the channel. Joins and leaves are shown live but never logged. Flood
@@ -424,18 +447,19 @@ is imported anywhere.
 - **Who can see what**: for each of full name, email, phone, status, last
   login time and online status — *Everyone*, *Friends only* (members who
   have each other as contacts) or *No one* — plus who may send you private
-  messages. Defaults: *No one*, except status, online status and messages,
-  which are *Friends only*. Administrators can view an email address for
+  messages and who may page you. Defaults: *No one*, except status, online
+  status, messages and pages, which are *Friends only*. Administrators can view an email address for
   account recovery; each view is recorded in the audit log.
 - **Download my data**: over SFTP, `/me/export/account.json` and one folder
-  per feature (`messages`, `conferences`, `contacts`, `polls`, `chat`),
-  generated when you download them.
+  per feature (`notifications`, `messages`, `conferences`, `contacts`,
+  `polls`, `chat`), generated when you download them.
 - **Erase my account**: needs a key login from the last 15 minutes and your
   username typed to confirm; you choose whether your posts and chat messages
   are deleted or kept anonymously. The account is locked at once and erased
   after the grace period (an administrator can cancel until then). Erasure
   removes keys, password, email, profile, preferences, groups, contacts
-  (both ways) and received messages, and unlinks poll votes (totals are
+  (both ways), received messages and notifications (yours and those you
+  caused), and unlinks poll votes (totals are
   kept). The account becomes an anonymous `former-xxxxxxxx` name, so
   messages you sent and content you chose to keep are credited to it. Text
   others wrote that mentions you (for example quotes) is not changed.

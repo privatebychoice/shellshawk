@@ -128,10 +128,11 @@ func (p *Plugin) Manifest() plugin.Manifest {
 				PRIMARY KEY (message_id, user_id)
 			) STRICT;
 			CREATE INDEX messages_recipients_user ON messages_recipients (user_id, deleted_at, read_at);`}},
-		MenuItems: []plugin.MenuItem{{Key: "main", Label: "Messages", Help: "Your private messages", Run: p.run}},
-		SFTP:      []sftpd.Mount{{Name: "messages", FS: &mailFS{p: p}}},
-		Export:    p.export,
-		Web:       p.webRoutes(),
+		MenuItems:     []plugin.MenuItem{{Key: "main", Label: "Messages", Help: "Your private messages", Run: p.run}},
+		SFTP:          []sftpd.Mount{{Name: "messages", FS: &mailFS{p: p}}},
+		Export:        p.export,
+		Web:           p.webRoutes(),
+		Notifications: p.notificationKinds(),
 	}
 }
 
@@ -268,6 +269,7 @@ func (p *Plugin) Send(ctx context.Context, from int64, d Draft) (int64, error) {
 	})
 	if err == nil {
 		p.h.Log.Info("message sent", "from", from, "recipients", len(to), "message_id", id)
+		p.notifyRecipients(ctx, from, id, subject, to)
 	}
 	return id, err
 }

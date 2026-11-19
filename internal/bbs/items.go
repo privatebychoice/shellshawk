@@ -39,6 +39,8 @@ type coreItem struct {
 // not a variable, because the items' handlers refer back to the menu.
 func coreItems() []coreItem {
 	return []coreItem{
+		{key: "notifications", label: "Notifications", help: "Pages, new messages and replies to your threads", run: (*session).notifications,
+			enabled: func(h *Handler) bool { return h.Notify != nil }},
 		{key: "settings", label: "Display settings", help: "Terminal type, colour theme and accessibility", run: (*session).settings},
 		{key: "privacy", label: "Privacy and profile", help: "Your profile, who can see it, your data, erasing your account", run: (*session).privacyMenu},
 		{key: "keys", label: "SSH keys", help: "Add or remove the keys you log in with", run: (*session).keys},
@@ -161,6 +163,7 @@ func (s *session) menuLoop(ctx context.Context, parent int64, title string) erro
 		if err != nil {
 			return err
 		}
+		fresh := s.newCount(ctx)
 		byID := map[string]menu.Entry{}
 		var items []tui.MenuItem
 		for _, e := range entries {
@@ -173,7 +176,11 @@ func (s *session) menuLoop(ctx context.Context, parent int64, title string) erro
 			if info, ok := s.h.item(e.Target); ok {
 				help = info.help
 			}
-			items = append(items, tui.MenuItem{Value: id, Label: e.Label, Help: help})
+			label := e.Label
+			if e.Target == notificationsTarget && fresh > 0 {
+				label += fmt.Sprintf(" (%d new)", fresh)
+			}
+			items = append(items, tui.MenuItem{Value: id, Label: label, Help: help})
 		}
 		intro, back := "", ""
 		if parent == 0 {
@@ -182,6 +189,12 @@ func (s *session) menuLoop(ctx context.Context, parent int64, title string) erro
 				return err
 			}
 			intro, back = "Welcome, "+u.Username+".", "Log out"
+			switch {
+			case fresh == 1:
+				intro += " You have 1 new notification."
+			case fresh > 1:
+				intro += fmt.Sprintf(" You have %d new notifications.", fresh)
+			}
 		}
 		choice, err := s.ui.Choose(ctx, tui.Menu{Title: s.Title(title), Intro: intro, Items: items, Back: back})
 		if errors.Is(err, tui.ErrCancelled) {
@@ -235,15 +248,25 @@ func (s *session) loginHooks(ctx context.Context) error {
 	return nil
 }
 
-// openItem runs a menu item between its transition screens.
+// openItem runs a menu item between its transition screens, each followed
+// by any new notifications.
 func (s *session) openItem(ctx context.Context, target string) error {
-	if err := s.transition(ctx, target, transition.Enter); err != nil {
+	between := func(moment string) error {
+		if err := s.transition(ctx, target, moment); err != nil {
+			return err
+		}
+		if target == notificationsTarget {
+			return nil
+		}
+		return s.notices(ctx)
+	}
+	if err := between(transition.Enter); err != nil {
 		return err
 	}
 	if err := s.runItem(ctx, target); err != nil {
 		return err
 	}
-	return s.transition(ctx, target, transition.Exit)
+	return between(transition.Exit)
 }
 
 // runItem runs a core or plugin menu item. Plugin failures (errors or

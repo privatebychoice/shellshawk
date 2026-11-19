@@ -19,6 +19,7 @@ import (
 	"go.privatebychoice.com/shellshawk/internal/events"
 	"go.privatebychoice.com/shellshawk/internal/export"
 	"go.privatebychoice.com/shellshawk/internal/form"
+	"go.privatebychoice.com/shellshawk/internal/notify"
 	"go.privatebychoice.com/shellshawk/internal/perm"
 	"go.privatebychoice.com/shellshawk/internal/presence"
 	"go.privatebychoice.com/shellshawk/internal/privacy"
@@ -75,6 +76,27 @@ type Manifest struct {
 	// WebHome, if set, adds a panel to the logged-in web home page; ""
 	// shows nothing. The HTML must be built with html/template.
 	WebHome func(r *http.Request, s WebSession) (template.HTML, error)
+	// Notifications are the kinds of notification the plugin sends
+	// through Host.Notify. Members choose which kinds they receive.
+	Notifications []NotificationKind
+}
+
+// NotificationKind is a kind of notification a plugin sends. Its name is
+// "<id>:<key>".
+type NotificationKind struct {
+	Key   string
+	Label string // plural, e.g. "Pages", shown in members' settings
+	Help  string
+	// Default is whether members receive it until they choose otherwise.
+	Default bool
+	// OpenLabel names opening it, e.g. "Read the message" ("Open" if
+	// empty).
+	OpenLabel string
+	// Open, if set, shows what the notification is about (e.g. the
+	// message) when the member opens it. It must check that the member
+	// may still see it. Errors and panics are logged and reported as a
+	// generic failure.
+	Open func(ctx context.Context, s Session, n notify.Notification) error
 }
 
 // Permission is a permission a plugin defines.
@@ -160,5 +182,6 @@ type Host struct {
 	Presence *presence.Tracker // who has a BBS session open; may be nil in tests
 	Privacy  *privacy.Service  // visibility rules; may be nil in tests
 	Settings *Settings         // this plugin's settings only
+	Notify   *notify.Service   // members' notifications; may be nil in tests
 	Log      *slog.Logger
 }

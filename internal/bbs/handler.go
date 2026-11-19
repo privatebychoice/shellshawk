@@ -17,6 +17,7 @@ import (
 	"go.privatebychoice.com/shellshawk/internal/form"
 	"go.privatebychoice.com/shellshawk/internal/markdown"
 	"go.privatebychoice.com/shellshawk/internal/menu"
+	"go.privatebychoice.com/shellshawk/internal/notify"
 	"go.privatebychoice.com/shellshawk/internal/perm"
 	"go.privatebychoice.com/shellshawk/internal/plugin"
 	"go.privatebychoice.com/shellshawk/internal/prefs"
@@ -45,9 +46,11 @@ type Handler struct {
 	// Transitions holds the transition screens; nil shows none and hides
 	// the editor.
 	Transitions *transition.Service
-	Perms       *perm.Service
-	Prefs       *prefs.Service
-	Log         *slog.Logger
+	// Notify holds members' notifications; nil hides them.
+	Notify *notify.Service
+	Perms  *perm.Service
+	Prefs  *prefs.Service
+	Log    *slog.Logger
 }
 
 var _ sshd.SessionHandler = (*Handler)(nil)

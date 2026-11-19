@@ -233,6 +233,7 @@ Each field has a visibility setting: **Public**, **Friends Only**, **No One**.
 | Status | Friends Only |
 | Last login timestamp | No One |
 | Direct messages (who may DM me) | Friends Only |
+| Pages (who may page me, §6.6) | Friends Only |
 
 Defaults are privacy-first; users opt *in* to sharing.
 
@@ -424,6 +425,56 @@ Package `transition`; tables `transition_profiles`, `transition_files` and
   records at info level. Uploading to a missing folder creates the profile
   in the same transaction. Every change is audited as `transition.changed`
   (target type `transition`, the profile ID).
+
+### 6.6 Notifications and paging
+
+Short notices for a member about something that happened elsewhere.
+Package `notify`; tables `notifications` and `notification_settings`, and
+`user_prefs.notifications` (migration 0010).
+
+- **Kinds** are declared by plugins (`plugin.Manifest.Notifications`, named
+  `<plugin>:<key>`, with a label, a default and an optional `Open` that
+  shows the thing and checks access again). The registry registers them
+  with `notify.Service` at load and keeps the openers. Built in:
+  `chat:page`, `messages:new` (each recipient but the sender) and
+  `conferences:reply` (the thread's author, when someone else replies and
+  the author can still read the thread). Plugins send through
+  `Host.Notify`; a failure to notify is logged and never fails the action.
+- **Stored**: recipient, kind, actor (`ON DELETE SET NULL`, the username
+  is looked up when shown, so renames follow), a short description (one
+  line, control characters removed, at most 120 characters, e.g. the
+  message subject or thread title), a plugin reference (e.g. message ID)
+  and `seen_at`. A member keeps at most 100, for 30 days; older ones are
+  deleted when a new one arrives and when the list is read.
+- **Members choose** per kind whether they receive it (`Add` stores nothing
+  for a kind turned off) and whether new ones are listed between screens.
+- **Display**: `bbs.session.openItem` shows, after each transition
+  screen (opening an item and returning to the menu), the new
+  notifications (up to the latest 10; all are marked seen once listed) as a
+  menu: choosing one opens it, `q` continues. It works in both modes — line
+  mode gets them as a plain numbered list — and is never shown in the
+  middle of a screen, nor around the Notifications item itself. The main
+  menu's intro and the Notifications entry show the new count. The
+  Notifications item lists all, opens or deletes one, marks all seen,
+  deletes all, and holds the settings.
+- **Paging** (chat): `chat.Page` asks a member to come and talk in a
+  channel the pager can enter. A private chat invites them; other
+  channels must already admit them. Refused alike (`ErrCannotPage`, "cannot
+  be paged right now") when the member is offline (presence), does not
+  accept pages from the pager (privacy field `pages`, default friends) or
+  has page notifications off, so a page reveals nothing their settings
+  hide. One page per pair per admin-set interval (chat setting
+  `page_minutes`, default 5; in memory). A member who is in any chat gets
+  a live line there too, and the notification is then marked seen.
+  *Page someone* (Chat menu, needs `chat.create` too) reuses or creates
+  the private chat `talk-<a>-<b>` whose creator is one of the pair and
+  whose only invitee is the other. Permission `chat.page` (members and
+  moderators by default). Opening a page enters the chat if it still
+  exists and the member may enter it.
+- **Privacy**: erasure deletes the member's notifications, their settings
+  and every notification they caused; the data export has
+  `notifications/notifications.json` (list and settings).
+- **Web** pages for notifications are not built yet.
 
 ---
 
@@ -779,7 +830,7 @@ audits, as for SSH and SFTP.
 | **Polls** | Single/multi choice, open/close dates, **anonymous by default** (creator may make a poll named; voters are told before voting), pinned polls, results view (bar rendering in TUI, a table in accessible mode and as the web fallback). |
 | | *Web (added after stage 10):* `/p/polls/` lists Polls-menu polls (context `''`) and shows one with a vote form (`<fieldset>` of radios or checkboxes; the anonymity notice beside the button) and results under `CanSeeResults` (counts and percentages in text; a `<meter>` hidden from screen readers is only decoration). Attached polls are never served there: `polls.WebPanel` and `polls.WebVote` are called by the owning plugin after its own access check. Conferences show each post's polls in the thread (question `<h3>` under the post's `<h2>`) and accept votes at `/t/{id}/poll/{poll}` only for a poll on a post of that thread. Creating, closing, pinning and deleting stay on SSH. |
 | **Contacts** | Personal lists and user-defined contact groups. Exposes `IsContact`, `IsMutual` (→ "friend"), `ListGroup` to other plugins. |
-| **Messages** | Subject + markdown body, threaded replies, per-user unread/read/deleted counters (computed, with a restorable Deleted folder; copies there are removed permanently after an admin-set period, default 30 days, checked hourly, or sooner by the member — one message or the whole folder; a message's text is deleted once no recipient copy and no Sent copy remain, including after the sender's erasure), recipients by username or contact group, admin-set limits (recipients, per hour, length), read-only SFTP `/messages/{inbox,sent}`. Honouring the recipient's DM privacy setting arrives with the privacy settings (stage 9). |
+| **Messages** | Subject + markdown body, threaded replies, per-user unread/read/deleted counters (computed, with a restorable Deleted folder; copies there are removed permanently after an admin-set period, default 30 days, checked hourly, or sooner by the member — one message or the whole folder; a message's text is deleted once no recipient copy and no Sent copy remain, including after the sender's erasure), recipients by username or contact group, admin-set limits (recipients, per hour, length), read-only SFTP `/messages/{inbox,sent}`. Honouring the recipient's DM privacy setting arrives with the privacy settings (stage 9). Each recipient but the sender gets a `messages:new` notification (§6.6). |
 | **User list** | All users (respecting privacy), my contacts, contact groups, online now. Stage 8: shows usernames and join dates only; online status (in-memory presence of open BBS sessions) only between friends until the privacy settings define it. |
 | **Message of the day** | Added after stage 10. One markdown message (`motd_message`, versioned) set by `motd.edit` (moderators by default). Shown once after SSH login via the plugin `OnLogin` hook until the member has seen the current version (`motd_seen`); clearing it bumps the version so a later message is shown again. Readable from the menu; shown on the web home page via the `WebHome` hook. Erasure forgets what a member saw and their name on the message. |
 | **Wall** | Added after stage 10. One line per member (`wall_entries`, keyed by user), at most 200 characters, emphasis only: `**bold**`, `*italic*`/`_italic_` (own parser: unmatched markers shown as typed, `_` only at word boundaries, backslash escapes, everything else plain text; HTML is escaped with only `<strong>`/`<em>` added). Expires an admin-set time after its last edit (default 168 hours), filtered on read and deleted at startup and hourly. `wall.write` for members, `wall.moderate` for moderators by default; administrators pick the groups for each from the Wall menu, which grants and revokes those permissions through the audited group permissions (the admin group is not offered: administrators can always do both). Username prefix search for finding lines and for moderators' removal. Read-only web page. |
@@ -795,6 +846,8 @@ the member now and, in ad hoc chats, withdraws the invitation; join/leave
 events are broadcast but not logged (only messages and topic changes are);
 retention 0 = not logged at all; a direct-message chat is an ad hoc chat
 with one invitee (no separate [D] type); live delivery is in-process.
+Paging (`/page`, *Page someone*) is described in §6.6. A thread's author
+gets a `conferences:reply` notification when someone else replies.
 
 ---
 

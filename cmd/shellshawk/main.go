@@ -33,6 +33,7 @@ import (
 	"go.privatebychoice.com/shellshawk/internal/linkgrade"
 	"go.privatebychoice.com/shellshawk/internal/logging"
 	"go.privatebychoice.com/shellshawk/internal/menu"
+	"go.privatebychoice.com/shellshawk/internal/notify"
 	"go.privatebychoice.com/shellshawk/internal/perm"
 	"go.privatebychoice.com/shellshawk/internal/plugin"
 	"go.privatebychoice.com/shellshawk/internal/plugins/chat"
@@ -84,6 +85,7 @@ type app struct {
 	plugins  *plugin.Registry
 	presence *presence.Tracker
 	privacy  *privacy.Service
+	notify   *notify.Service
 	bus      *events.Bus
 }
 
@@ -143,7 +145,10 @@ func run(args []string) error {
 			a.privacy.SetFriends(fc)
 		}
 	}
-	plugins, err := plugin.Load(ctx, plugin.Deps{DB: db, Perms: perms, Auth: a.auth, Events: bus, Presence: a.presence, Privacy: a.privacy, Log: log}, installed...)
+	a.notify = notify.NewService(db, a.auth, nil, log)
+	a.notify.Subscribe(bus)
+	plugins, err := plugin.Load(ctx, plugin.Deps{DB: db, Perms: perms, Auth: a.auth, Events: bus, Presence: a.presence, Privacy: a.privacy,
+		Notify: a.notify, Log: log}, installed...)
 	if err != nil {
 		return err
 	}
@@ -208,7 +213,7 @@ func (a *app) serve(ctx context.Context) error {
 	handler := &bbs.Handler{
 		Auth: a.auth, Settings: siteSettings, Grader: a.grade, Perms: a.perms, Prefs: a.prefs,
 		Menu: menu.NewService(a.db, a.perms, nil, log), Plugins: a.plugins, Presence: a.presence, Privacy: a.privacy,
-		Sessions: sessions.NewService(a.db, conns, nil, log), Transitions: transition.NewService(a.db, nil, log), Log: log,
+		Sessions: sessions.NewService(a.db, conns, nil, log), Transitions: transition.NewService(a.db, nil, log), Notify: a.notify, Log: log,
 	}
 	handler.Sessions.Subscribe(a.bus)
 	// Locking an account clears its web sessions even while the web
@@ -238,7 +243,7 @@ func (a *app) serve(ctx context.Context) error {
 		hostKeyFP = ssh.FingerprintSHA256(hostKey.PublicKey())
 		sftpSrv, err := sftpd.New(a.auth, a.perms, cfg.SFTPMaxUpload, log,
 			append([]sftpd.Mount{
-				sftpd.MeMount(a.auth, a.perms, append([]export.Source{a.privacy.ExportSource()}, a.plugins.ExportSources()...)...),
+				sftpd.MeMount(a.auth, a.perms, append([]export.Source{a.privacy.ExportSource(), a.notify.ExportSource()}, a.plugins.ExportSources()...)...),
 				handler.Transitions.Mount(),
 			}, a.plugins.Mounts()...)...)
 		if err != nil {

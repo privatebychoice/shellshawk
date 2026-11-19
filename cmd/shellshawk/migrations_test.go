@@ -30,6 +30,7 @@ var releasedMigrations = map[string]string{
 	"core/0007_logout_entry.sql":         "78190a52e5a186521dead9d741ade38c7fd039fddb35fde4cfeab93c671236d0",
 	"core/0008_web_session_activity.sql": "bffe80d841ec72b3524c96ce7a783982cc583634759bcc5f4e05a70ec472c371",
 	"core/0009_transitions.sql":          "4505640bd8955853269e6f3037b34602bf13dd079995324725f2ef80115b4468",
+	"core/0010_notifications.sql":        "ce0bd9289d527e05cff5a4230b87f6c13770c45885cbd3c1e5a24c1642f67edf",
 	"messages/1":                         "707e773939df8ae3387875601608315023fdc67b84e8407c570b069d69a9ea46",
 	"motd/1":                             "22a08fd572c12f6134c500c0eac866db860218e7d65e0f3843d725bf5e837ff2",
 	"polls/1":                            "167f6165706151b216eaaca7367bd83b06eb3fbed2bc9927c4b97217ef4831c8",

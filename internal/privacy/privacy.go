@@ -51,6 +51,7 @@ const (
 	Status    Field = "status"
 	LastLogin Field = "last_login"
 	Messages  Field = "messages" // who may send me private messages
+	Pages     Field = "pages"    // who may page me (ask to talk in chat)
 	Online    Field = "online"   // who may see that I am online
 )
 
@@ -66,12 +67,13 @@ var Fields = []struct {
 	{LastLogin, "Last login time"},
 	{Online, "That you are online now"},
 	{Messages, "Who can send you private messages"},
+	{Pages, "Who can page you (ask you to talk in chat)"},
 }
 
 // Defaults are privacy-first: members opt in to sharing.
 var Defaults = map[Field]Level{
 	FullName: NoOne, Email: NoOne, Phone: NoOne, Status: Friends,
-	LastLogin: NoOne, Messages: Friends, Online: Friends,
+	LastLogin: NoOne, Messages: Friends, Online: Friends, Pages: Friends,
 }
 
 // Profile limits.
@@ -207,8 +209,8 @@ func (s *Service) Update(ctx context.Context, userID int64, p Profile) error {
 	})
 }
 
-// Allows reports whether viewer may see field of owner (or, for Messages,
-// send owner a private message). Members always see their own data.
+// Allows reports whether viewer may see field of owner (or, for Messages
+// and Pages, send owner a private message or page them). Members always see their own data.
 func (s *Service) Allows(ctx context.Context, viewer, owner int64, f Field) (bool, error) {
 	if viewer == owner {
 		return true, nil
