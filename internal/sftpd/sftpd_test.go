@@ -89,12 +89,102 @@ func (readOnlyFS) Read(_ context.Context, _ User, f []string) ([]byte, time.Time
 	return nil, time.Time{}, ErrNotExist
 }
 
+// boxFS is a ManagedFS of directories holding files, one level deep.
+type boxFS struct {
+	mu    sync.Mutex
+	boxes map[string]map[string][]byte
+}
+
+func (b *boxFS) List(_ context.Context, _ User, dir []string) ([]Entry, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	var out []Entry
+	switch len(dir) {
+	case 0:
+		for n := range b.boxes {
+			out = append(out, Entry{Name: n, Dir: true})
+		}
+	case 1:
+		box, ok := b.boxes[dir[0]]
+		if !ok {
+			return nil, ErrNotExist
+		}
+		for n, d := range box {
+			out = append(out, Entry{Name: n, Size: int64(len(d))})
+		}
+	default:
+		return nil, ErrNotExist
+	}
+	return out, nil
+}
+
+func (b *boxFS) Read(_ context.Context, _ User, file []string) ([]byte, time.Time, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if len(file) == 2 {
+		if d, ok := b.boxes[file[0]][file[1]]; ok {
+			return d, time.Now(), nil
+		}
+	}
+	return nil, time.Time{}, ErrNotExist
+}
+
+func (b *boxFS) Write(_ context.Context, _ User, file []string, data []byte) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if len(file) != 2 || b.boxes[file[0]] == nil {
+		return ErrPermission
+	}
+	b.boxes[file[0]][file[1]] = data
+	return nil
+}
+
+func (b *boxFS) Remove(_ context.Context, _ User, file []string) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if len(file) != 2 {
+		return ErrPermission
+	}
+	if _, ok := b.boxes[file[0]][file[1]]; !ok {
+		return ErrNotExist
+	}
+	delete(b.boxes[file[0]], file[1])
+	return nil
+}
+
+func (b *boxFS) Mkdir(_ context.Context, _ User, dir []string) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if len(dir) != 1 {
+		return ErrPermission
+	}
+	if strings.ToLower(dir[0]) != dir[0] {
+		return fmt.Errorf("%w: lowercase names only (internal detail)", ErrRefused)
+	}
+	b.boxes[dir[0]] = map[string][]byte{}
+	return nil
+}
+
+func (b *boxFS) Rmdir(_ context.Context, _ User, dir []string) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if len(dir) != 1 {
+		return ErrPermission
+	}
+	if len(b.boxes[dir[0]]) > 0 {
+		return fmt.Errorf("%w: not empty", ErrRefused)
+	}
+	delete(b.boxes, dir[0])
+	return nil
+}
+
 type env struct {
 	addr     string
 	hostKey  ssh.PublicKey
 	auth     *auth.Service
 	perms    *perm.Service
 	mem      *memFS
+	boxes    *boxFS
 	admin    ssh.Signer
 	adminID  int64
 	member   ssh.Signer
@@ -121,7 +211,8 @@ func start(t *testing.T, maxUpload int64) *env {
 	reg.Register("vault.read", "read the vault")
 	ps := perm.NewService(db, reg, nil, log)
 	as := auth.NewService(db, ps, "new", nil, log)
-	e := &env{auth: as, perms: ps, mem: &memFS{files: map[string][]byte{"hello.txt": []byte("hi")}}}
+	e := &env{auth: as, perms: ps, mem: &memFS{files: map[string][]byte{"hello.txt": []byte("hi")}},
+		boxes: &boxFS{boxes: map[string]map[string][]byte{}}}
 
 	code, _ := as.CreateBootstrapInvite(ctx)
 	var line string
@@ -150,6 +241,7 @@ func start(t *testing.T, maxUpload int64) *env {
 		),
 		Mount{Name: "files", FS: e.mem},
 		Mount{Name: "vault", AnyOf: []string{"vault.read"}, FS: readOnlyFS{}},
+		Mount{Name: "boxes", AnyOf: []string{"vault.read"}, FS: e.boxes},
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -378,6 +470,59 @@ func TestCommandsRefused(t *testing.T) {
 		t.Error("file disappeared")
 	}
 }
+
+func TestManagedCommands(t *testing.T) {
+	e := start(t, DefaultMaxUpload)
+	admin, err := e.client(t, "admin1", ssh.PublicKeys(e.admin))
+	if err != nil {
+		t.Fatal(err)
+	}
+	steps := []struct {
+		name string
+		do   func() error
+		want error // nil = success; os.ErrPermission, os.ErrNotExist, or errFailure
+	}{
+		{"mkdir", func() error { return admin.Mkdir("/boxes/art") }, nil},
+		{"mkdir refused by the mount", func() error { return admin.Mkdir("/boxes/Art") }, errFailure},
+		{"mkdir deeper", func() error { return admin.Mkdir("/boxes/art/sub") }, os.ErrPermission},
+		{"mkdir at the root", func() error { return admin.Mkdir("/newmount") }, os.ErrNotExist},
+		{"upload", func() error { return writeFile(admin, "/boxes/art/a.txt", []byte("hi")) }, nil},
+		{"rmdir not empty", func() error { return admin.RemoveDirectory("/boxes/art") }, errFailure},
+		{"rename still refused", func() error { return admin.Rename("/boxes/art/a.txt", "/boxes/art/b.txt") }, os.ErrPermission},
+		{"remove", func() error { return admin.Remove("/boxes/art/a.txt") }, nil},
+		{"remove missing", func() error { return admin.Remove("/boxes/art/a.txt") }, os.ErrNotExist},
+		{"rmdir", func() error { return admin.RemoveDirectory("/boxes/art") }, nil},
+		{"rmdir the mount", func() error { return admin.RemoveDirectory("/boxes") }, os.ErrPermission},
+		{"remove in an unmanaged mount", func() error { return admin.Remove("/files/hello.txt") }, os.ErrPermission},
+	}
+	for _, st := range steps {
+		err := st.do()
+		switch {
+		case st.want == nil && err != nil:
+			t.Errorf("%s: %v", st.name, err)
+		case st.want == errFailure && (err == nil || errors.Is(err, os.ErrPermission) || errors.Is(err, os.ErrNotExist) || strings.Contains(err.Error(), "internal detail")):
+			t.Errorf("%s: err = %v, want a plain failure", st.name, err)
+		case st.want != nil && st.want != errFailure && !errors.Is(err, st.want):
+			t.Errorf("%s: err = %v, want %v", st.name, err, st.want)
+		}
+	}
+	if len(e.boxes.boxes) != 0 {
+		t.Errorf("boxes left: %v", e.boxes.boxes)
+	}
+	// Directories of a writable mount are shown as writable.
+	admin.Mkdir("/boxes/x")
+	if fi, err := admin.Stat("/boxes/x"); err != nil || fi.Mode().Perm() != 0o755 {
+		t.Errorf("dir mode = %v, %v", fi, err)
+	}
+	// A member without the mount's permission cannot see it.
+	member, _ := e.client(t, "member1", ssh.PublicKeys(e.member))
+	if err := member.Mkdir("/boxes/y"); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("member mkdir = %v", err)
+	}
+}
+
+// errFailure marks a step expected to fail with a plain SFTP failure.
+var errFailure = errors.New("failure")
 
 func TestSFTPRequiresMemberKeyLogin(t *testing.T) {
 	e := start(t, DefaultMaxUpload)

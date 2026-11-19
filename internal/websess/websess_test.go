@@ -6,7 +6,9 @@ import (
 	"crypto/rand"
 	"errors"
 	"log/slog"
+	"maps"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -202,8 +204,14 @@ func TestActivityListAndDelete(t *testing.T) {
 		}
 	}
 
+	// Both sessions were created in the same second, so their order in the
+	// list depends on their random public IDs.
 	all, err := s.List(ctx)
-	if err != nil || len(all) != 2 || all[0].ID != sess.ID || all[0].UserID != alice || all[1].UserID != admin {
+	users := map[string]int64{}
+	for _, i := range all {
+		users[i.ID] = i.UserID
+	}
+	if err != nil || len(all) != 2 || users[sess.ID] != alice || !slices.Contains(slices.Collect(maps.Values(users)), admin) {
 		t.Fatalf("List = %+v, %v", all, err)
 	}
 	if err := s.DeleteByID(ctx, sess.ID); err != nil {

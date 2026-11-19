@@ -126,6 +126,10 @@ lack, so a moderator cannot lock an administrator.
   colour), Basic (16 colours, ASCII), Screen reader. Bold and italic can each
   be shown as real bold/italic, a highlight colour, underline, or not at all —
   use *Terminal test* to see what your terminal supports.
+- **Transition screens**: text art the BBS may show when you open a menu
+  item and when you return to the menu; press any key to continue. Turn
+  them off under *Display settings → Show transition screens*. They are
+  never shown in screen reader mode.
 - **Themes**: Classic BBS, Amber Terminal, Green Phosphor, Dark, Light and
   High Contrast. Text colours meet WCAG AA contrast (AAA for High Contrast),
   enforced by tests.
@@ -162,6 +166,7 @@ main menu, showing only the sections they may use:
 | Connection limits (idle timeout, connections per account) | `core.settings.manage` |
 | Plugin settings | `core.plugins.settings` (admins and moderators) |
 | Menu editor | `core.menu.manage` |
+| Transitions (text art between the menu and applications) | `core.transitions.manage` |
 | Audit log | `core.audit.view` |
 
 `admin` has every permission. The member menu can be rearranged, renamed,
@@ -200,6 +205,37 @@ have; give it to moderators by granting it to their group under *Groups
 and permissions*. Nobody can end the connection of an account holding
 permissions they lack, so a moderator cannot end an administrator's.
 
+### Transition screens
+
+Classic BBSes showed ANSI or ASCII art between screens. *Administration →
+Transitions* sets this up; it needs `core.transitions.manage`, which
+administrators have; grant it to moderators (or any group) under *Groups
+and permissions*.
+
+- A **profile** is a named set of text files. It shows either a random one
+  of its files each time or always one chosen file.
+- **Where they are shown**: each menu item has two transition points,
+  opening it and returning from it to the menu. Each can show a profile,
+  nothing, or the default; the default (one profile for opening, one for
+  leaving) applies to every item set to it. Nothing is shown until a
+  profile is chosen somewhere.
+- **Files** can be written in the editor (*Write a new file*, or choose a
+  file and *Edit*) or uploaded over SFTP to `/text/<profile>/<file>`.
+  Uploading into a folder that does not exist creates the profile; `mkdir`
+  creates an empty profile; `rm` deletes a file and `rmdir` an empty
+  profile. Profile names use lowercase letters, digits and hyphens; file
+  names letters, digits, dots, hyphens and underscores. Up to 50 files of
+  64 KiB per profile.
+- Files are **stored as plain text**: files that are not UTF-8 are read as
+  code page 437 (classic DOS art), a SAUCE record is dropped, ANSI escape
+  codes are removed (so colours are not shown), tabs are expanded and other
+  control characters removed. Reading a file back over SFTP returns the
+  cleaned text.
+- Art is centred on screen, cut at the right and bottom edges if it is too
+  big, and stays until the member presses a key. Members whose terminal
+  is set to ASCII get line and block characters approximated (`+ - | #`).
+- Every change is audited as `transition.changed`.
+
 ## Plugins
 
 Plugins are Go packages compiled into the binary (no runtime loading). Each
@@ -218,11 +254,13 @@ nothing maps to the server's files:
 |------|----------|
 | `/me/profile.md` | Your account details (read-only) |
 | `/me/keys.pub` | Your public keys in `authorized_keys` format (read-only) |
+| `/text/<profile>/<file>` | Transition screen art, for members with `core.transitions.manage` (see *Transition screens*) |
 | `/<plugin>/…` | Plugin data, e.g. conference threads (later stages) |
 
 Directories you lack permission for do not appear. Uploads are accepted only
 where a plugin allows them, up to the configured size, and are stored only
-if the transfer completes. `mkdir`, `rm`, `rename` and links are refused.
+if the transfer completes. `rename` and links are refused, and so are
+`mkdir`, `rm` and `rmdir` except under `/text`.
 Password (add-key) logins cannot use SFTP. Permissions are re-checked on
 every request, so locking an account takes effect immediately.
 
@@ -307,8 +345,8 @@ vote in polls. Staff can manage users, groups and permissions, create and
 revoke invites, approve or reject new accounts, see who is online and end
 a connection, set the connection limits, the BBS name and plugin settings,
 edit the member menu and read the audit log. Conference posting, creating
-polls, channel management, slash commands and your own settings stay in
-the SSH interface.
+polls, channel management, slash commands, transition screens and your own
+settings stay in the SSH interface.
 
 | Path | Description |
 |------|-------------|

@@ -39,6 +39,7 @@ func (s *session) admin(ctx context.Context) error {
 		addIf(set.Has(perm.SettingsManage), "limits", "Connection limits", "Idle timeout and connections per account")
 		addIf(set.Has(perm.PluginSettings), "plugins", "Plugin settings", "Settings of installed plugins")
 		addIf(set.Has(perm.MenuManage), "menu", "Menu editor", "Arrange the member menu")
+		addIf(set.Has(perm.TransitionsManage) && s.h.Transitions != nil, "transitions", "Transitions", "Text art shown between the menu and applications")
 		addIf(set.Has(perm.AuditView), "audit", "Audit log", "Recent administrative actions")
 
 		choice, err := s.ui.Choose(ctx, tui.Menu{Title: s.Title("Administration"), Items: items})
@@ -71,6 +72,8 @@ func (s *session) admin(ctx context.Context) error {
 			err = s.menuEditor(ctx, 0, "Main menu")
 		case "audit":
 			err = s.auditLog(ctx)
+		case "transitions":
+			err = s.adminTransitions(ctx)
 		}
 		if msg := adminErrorMessage(err); msg != "" {
 			err = tui.Message(ctx, s.ui, s.Title("Administration"), msg)

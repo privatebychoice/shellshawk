@@ -38,10 +38,14 @@ const (
 )
 
 // Errors a mount returns. They map to the SFTP "no such file" and
-// "permission denied" statuses.
+// "permission denied" statuses. ErrRefused (wrapped with the reason) marks
+// a request the mount turned down as invalid, such as a bad file name: the
+// client gets a plain failure and the reason is logged at info level, not
+// as a fault.
 var (
 	ErrNotExist   = fs.ErrNotExist
 	ErrPermission = fs.ErrPermission
+	ErrRefused    = errors.New("request refused")
 )
 
 // User is the member making a request.
@@ -71,6 +75,16 @@ type FS interface {
 type WritableFS interface {
 	FS
 	Write(ctx context.Context, u User, file []string, data []byte) error
+}
+
+// ManagedFS also lets members remove files and create and remove
+// directories. Paths are relative to the mount; the mount's own root is
+// never passed.
+type ManagedFS interface {
+	WritableFS
+	Remove(ctx context.Context, u User, file []string) error
+	Mkdir(ctx context.Context, u User, dir []string) error
+	Rmdir(ctx context.Context, u User, dir []string) error
 }
 
 // Mount is a top-level directory.
@@ -245,6 +259,10 @@ func (h *handler) mountErr(op, p string, err error) error {
 	if errors.Is(err, ErrNotExist) || errors.Is(err, ErrPermission) {
 		return err
 	}
+	if errors.Is(err, ErrRefused) {
+		h.log.Info("sftp request refused", "op", op, "reason", err)
+		return sftp.ErrSSHFxFailure
+	}
 	h.log.Error("sftp mount error", "op", op, "err", err)
 	return sftp.ErrSSHFxFailure
 }
@@ -359,6 +377,8 @@ func (f fileInfo) IsDir() bool { return f.Dir }
 func (f fileInfo) Sys() any    { return nil }
 func (f fileInfo) Mode() os.FileMode {
 	switch {
+	case f.Dir && f.writable:
+		return os.ModeDir | 0o755
 	case f.Dir:
 		return os.ModeDir | 0o555
 	case f.writable:
@@ -447,12 +467,46 @@ func (w *upload) Close() error {
 }
 
 // filecmd serves sftp.FileCmder. Setstat (sent by clients after an
-// upload to set times) is accepted and ignored; everything else — mkdir,
-// rmdir, rename, remove, links — is refused.
+// upload to set times) is accepted and ignored. Remove, Mkdir and Rmdir
+// are passed to mounts that implement ManagedFS; everything else —
+// rename, links — is refused.
 func (h *handler) filecmd(r *sftp.Request) error {
-	if r.Method == "Setstat" {
+	switch r.Method {
+	case "Setstat":
 		return nil
+	case "Remove", "Mkdir", "Rmdir":
+		return h.manage(r)
 	}
 	h.log.Debug("sftp command refused", "method", r.Method)
 	return ErrPermission
+}
+
+// manage serves Remove, Mkdir and Rmdir.
+func (h *handler) manage(r *sftp.Request) error {
+	u, err := h.user()
+	if err != nil {
+		return err
+	}
+	m, rel, root, err := h.resolve(r.Filepath, u)
+	if err != nil {
+		return err
+	}
+	fs, ok := m.FS.(ManagedFS)
+	if root || !ok || len(rel) == 0 || !validName(rel[len(rel)-1]) {
+		h.log.Debug("sftp command refused", "method", r.Method)
+		return ErrPermission
+	}
+	switch r.Method {
+	case "Remove":
+		err = fs.Remove(h.ctx, u, rel)
+	case "Mkdir":
+		err = fs.Mkdir(h.ctx, u, rel)
+	default:
+		err = fs.Rmdir(h.ctx, u, rel)
+	}
+	if err != nil {
+		return h.mountErr(strings.ToLower(r.Method), r.Filepath, err)
+	}
+	h.log.Info("sftp command done", "method", r.Method, "mount", m.Name)
+	return nil
 }

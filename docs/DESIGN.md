@@ -386,6 +386,45 @@ help, arrow/Home/End/PgUp/PgDn, a help bar on the bottom two lines (hidden in
 accessible mode; `^G` prints the help instead). Markdown-aware syntax colouring
 in Modern/PuTTY profiles. `^P` toggles preview through the TUI renderer.
 
+### 6.5 Transition screens
+
+Text art shown between the menu and an application, as classic BBSes did.
+Package `transition`; tables `transition_profiles`, `transition_files` and
+`transition_points` (migration 0009).
+
+- **Profiles** are named (`[a-z0-9][a-z0-9-]{0,39}`, also the SFTP folder
+  name) sets of up to 50 files, mode `random` (a random file each time) or
+  `single` (one chosen file; if that file is deleted the profile goes back
+  to random).
+- **Points**: `(target, moment)` where target is a menu item or `*` (the
+  default) and moment is `enter` or `exit`. No row = use the default (items)
+  or nothing (`*`); a row with a NULL profile = nothing, overriding the
+  default. Deleting a profile deletes its rows, so those points fall back
+  to the default. Submenus have no transitions.
+- **Display**: `bbs.session.openItem` shows the enter screen, runs the
+  item, then the exit screen (not if the session ended). Only the
+  full-screen UI shows them (`tui.Screen.Splash`: centred, no wrapping, cut
+  at the edges, any key continues, a resize redraws). Line mode never does:
+  art read out character by character is noise. Members turn them off with
+  `user_prefs.transitions` (*Display settings*, default on). ASCII-only
+  profiles get `transition.ASCII` (box drawing → `+ - |`, blocks → `#`,
+  anything else non-ASCII → `?`). A failure to load a transition is logged
+  and skipped, never shown.
+- **Text** is cleaned once, on save (`transition.Clean`): input over 64 KiB
+  is refused; everything from the first Ctrl-Z (SAUCE) is dropped; invalid
+  UTF-8 is decoded as CP437; ANSI escape sequences are stripped (colour is
+  not supported yet); tabs expand to 8 columns; control and bidi characters
+  are removed; trailing spaces and leading/trailing blank lines are trimmed;
+  empty results are refused. The display sanitises again.
+- **Editing**: *Administration → Transitions* (`core.transitions.manage`,
+  admins only by default) and SFTP `/text/<slug>/<file>`. `sftpd.ManagedFS`
+  adds `Remove`, `Mkdir` and `Rmdir` to a writable mount (the only one is
+  `/text`); a mount refuses a request it finds invalid with
+  `sftpd.ErrRefused`, which the client sees as a plain failure and the log
+  records at info level. Uploading to a missing folder creates the profile
+  in the same transaction. Every change is audited as `transition.changed`
+  (target type `transition`, the profile ID).
+
 ---
 
 ## 7. Standardised input controls
@@ -508,6 +547,9 @@ TOML/JSON files; admins can add more.
   declare them in `Manifest.SFTP` (name = plugin ID or `<id>-…`). Hidden
   mounts report "no such file". Only key logins to active accounts get the
   `sftp` subsystem. `/me/export/` arrives with the privacy work (stage 9).
+- `/text/<profile>/<file>` (`core.transitions.manage`) is the one mount that
+  also accepts `mkdir`, `rm` and `rmdir` (`sftpd.ManagedFS`, §6.5). Its
+  directories are listed as writable (0755).
 - **SFTP library:** `github.com/pkg/sftp`, `RequestServer` API only (virtual
   handlers; the OS-backed `Server` type is never used — enforced by a test).
 

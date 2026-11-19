@@ -57,6 +57,8 @@ func (s *session) settings(ctx context.Context) error {
 			{Name: "ascii", Label: "Use plain ASCII symbols only", Kind: form.Boolean},
 			{Name: "pagesize", Label: "Lines per page in screen reader mode", Kind: form.SingleLine, Subtype: form.Int,
 				Required: true, Min: form.Bound(prefs.MinPageSize), Max: form.Bound(prefs.MaxPageSize)},
+			{Name: "transitions", Label: "Show transition screens", Kind: form.Boolean,
+				Help: "Text art shown when you open a menu item and when you return to the menu. Never shown in screen reader mode."},
 		},
 	}
 	emph := func(e theme.Emphasis) string {
@@ -68,6 +70,7 @@ func (s *session) settings(ctx context.Context) error {
 	vals := form.Values{
 		"profile": cur.Profile, "theme": cur.Theme, "bold": emph(cur.Bold), "italic": emph(cur.Italic),
 		"ascii": strconv.FormatBool(cur.ASCIIOnly), "pagesize": strconv.Itoa(cur.PageSize),
+		"transitions": strconv.FormatBool(cur.Transitions),
 	}
 	v, err := s.Form(ctx, fm, vals, nil)
 	if err != nil {
@@ -82,12 +85,12 @@ func (s *session) settings(ctx context.Context) error {
 	size, _ := strconv.Atoi(v["pagesize"])
 	next := prefs.Prefs{
 		Profile: v["profile"], Theme: v["theme"], Bold: unemph(v["bold"]), Italic: unemph(v["italic"]),
-		ASCIIOnly: v["ascii"] == form.True, PageSize: size,
+		ASCIIOnly: v["ascii"] == form.True, PageSize: size, Transitions: v["transitions"] == form.True,
 	}
 	if err := s.h.Prefs.Set(ctx, s.userID, next); err != nil {
 		return err
 	}
-	s.log.Info("display settings changed", "profile", next.Profile, "theme", next.Theme)
+	s.log.Info("display settings changed", "profile", next.Profile, "theme", next.Theme, "transitions", next.Transitions)
 	s.openUI(next)
 	msg := "Your settings have been saved."
 	if s.conn.PTY == nil && next.Profile != theme.ProfileAccessible {

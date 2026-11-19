@@ -52,7 +52,7 @@ func TestPrefs(t *testing.T) {
 		})
 	}
 	got, _ = s.Get(ctx, 1)
-	if got.Profile != theme.ProfilePutty || got.Theme != "amber" || !got.ASCIIOnly || got.Bold != theme.EmphColor {
+	if got.Profile != theme.ProfilePutty || got.Theme != "amber" || !got.ASCIIOnly || got.Bold != theme.EmphColor || got.Transitions {
 		t.Errorf("round trip = %+v", got)
 	}
 

@@ -668,3 +668,43 @@ func TestMenuActions(t *testing.T) {
 		}
 	}
 }
+
+func TestScreenSplash(t *testing.T) {
+	wide := strings.Repeat("w", 100)
+	tests := []struct {
+		name  string
+		text  string
+		input string
+		want  []string
+		not   []string
+		err   bool
+	}{
+		{"centred, any key continues", "AB\nCDEF", "x",
+			[]string{term.MoveTo(13, 38) + "AB", term.MoveTo(14, 38) + "CDEF", "Press any key to continue"}, nil, false},
+		{"wider than the screen is cut", wide, "\r",
+			[]string{term.MoveTo(14, 0) + strings.Repeat("w", 80)}, []string{strings.Repeat("w", 81)}, false},
+		{"escape sequences in the art are removed", "a\x1b[2Jb", " ",
+			[]string{"a[2Jb"}, []string{"a\x1b[2Jb"}, false},
+		{"connection closed", "art", "", nil, nil, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ui, out := newTestScreen(tt.input)
+			err := ui.Splash(ctxT(t), tt.text)
+			if (err != nil) != tt.err {
+				t.Fatalf("Splash err = %v", err)
+			}
+			o := out.String()
+			for _, w := range tt.want {
+				if !strings.Contains(o, w) {
+					t.Errorf("output missing %q", w)
+				}
+			}
+			for _, n := range tt.not {
+				if strings.Contains(o, n) {
+					t.Errorf("output contains %q", n)
+				}
+			}
+		})
+	}
+}

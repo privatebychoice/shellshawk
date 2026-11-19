@@ -212,6 +212,42 @@ func (u *Screen) Show(ctx context.Context, p Page) error {
 	}
 }
 
+// ---- Splash ---------------------------------------------------------------
+
+// Splash shows text art (a transition screen) until any key is pressed.
+// The art is drawn as is, without wrapping: centred when it fits, and cut
+// at the right and bottom edges when it does not. The last row says how
+// to continue. Line mode has no equivalent; callers skip it there.
+func (u *Screen) Splash(ctx context.Context, text string) error {
+	lines := strings.Split(term.Sanitize(text, true), "\n")
+	for {
+		cols, rows := u.dims()
+		u.t.WriteString(u.st.SGR(theme.Style{}) + term.CursorHide + term.ClearScreen)
+		width := 0
+		for _, l := range lines {
+			width = max(width, term.Width(l))
+		}
+		area := rows - 1 // the last row is the help bar
+		left := max(0, (cols-width)/2)
+		top := max(0, (area-len(lines))/2)
+		for i := 0; i < area && i < len(lines); i++ {
+			u.t.WriteString(term.MoveTo(top+i, left) + term.Truncate(lines[i], cols-left))
+		}
+		f := &frame{u: u, cols: cols, rows: rows, curRow: -1}
+		f.put(rows-1, 0, " Press any key to continue", theme.Style{FG: theme.TitleFG, BG: theme.TitleBG}, cols)
+		if err := f.flush(); err != nil {
+			return err
+		}
+		ev, err := u.t.Next(ctx)
+		if err != nil {
+			return err
+		}
+		if ev.Key != term.KeyResize {
+			return nil
+		}
+	}
+}
+
 // ---- Choose ---------------------------------------------------------------
 
 // Choose implements UI. Items are numbered; actions are shown on a line of

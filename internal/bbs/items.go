@@ -11,6 +11,7 @@ import (
 	"go.privatebychoice.com/shellshawk/internal/menu"
 	"go.privatebychoice.com/shellshawk/internal/perm"
 	"go.privatebychoice.com/shellshawk/internal/plugin"
+	"go.privatebychoice.com/shellshawk/internal/transition"
 	"go.privatebychoice.com/shellshawk/internal/tui"
 )
 
@@ -21,7 +22,7 @@ var errLogout = errors.New("log out")
 // adminPermissions: holding any of these shows the Administration item.
 var adminPermissions = []string{
 	perm.UsersApprove, perm.UsersManage, perm.GroupsManage, perm.InviteCreate, perm.InviteManage,
-	perm.SettingsManage, perm.PluginSettings, perm.MenuManage, perm.AuditView,
+	perm.SettingsManage, perm.PluginSettings, perm.MenuManage, perm.AuditView, perm.TransitionsManage,
 }
 
 // coreItem is a menu item provided by the BBS itself.
@@ -196,7 +197,7 @@ func (s *session) menuLoop(ctx context.Context, parent int64, title string) erro
 		if e.Kind == menu.KindSubmenu {
 			err = s.menuLoop(ctx, e.ID, e.Label)
 		} else {
-			err = s.runItem(ctx, e.Target)
+			err = s.openItem(ctx, e.Target)
 		}
 		if err != nil {
 			return err
@@ -232,6 +233,17 @@ func (s *session) loginHooks(ctx context.Context) error {
 		}
 	}
 	return nil
+}
+
+// openItem runs a menu item between its transition screens.
+func (s *session) openItem(ctx context.Context, target string) error {
+	if err := s.transition(ctx, target, transition.Enter); err != nil {
+		return err
+	}
+	if err := s.runItem(ctx, target); err != nil {
+		return err
+	}
+	return s.transition(ctx, target, transition.Exit)
 }
 
 // runItem runs a core or plugin menu item. Plugin failures (errors or

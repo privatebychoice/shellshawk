@@ -25,6 +25,7 @@ import (
 	"go.privatebychoice.com/shellshawk/internal/sessions"
 	"go.privatebychoice.com/shellshawk/internal/settings"
 	"go.privatebychoice.com/shellshawk/internal/sshd"
+	"go.privatebychoice.com/shellshawk/internal/transition"
 	"go.privatebychoice.com/shellshawk/internal/tui"
 	"go.privatebychoice.com/shellshawk/internal/tui/term"
 	"go.privatebychoice.com/shellshawk/internal/websess"
@@ -41,9 +42,12 @@ type Handler struct {
 	Privacy  *privacy.Service
 	Sessions *sessions.Service // who is online; nil hides the screen
 	WebLogin *websess.Service  // nil when the web interface is disabled
-	Perms    *perm.Service
-	Prefs    *prefs.Service
-	Log      *slog.Logger
+	// Transitions holds the transition screens; nil shows none and hides
+	// the editor.
+	Transitions *transition.Service
+	Perms       *perm.Service
+	Prefs       *prefs.Service
+	Log         *slog.Logger
 }
 
 var _ sshd.SessionHandler = (*Handler)(nil)

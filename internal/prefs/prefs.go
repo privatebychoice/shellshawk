@@ -28,11 +28,14 @@ type Prefs struct {
 	Italic    theme.Emphasis // "" = profile default
 	ASCIIOnly bool
 	PageSize  int
+	// Transitions shows transition screens between the menu and an
+	// application (full-screen mode only).
+	Transitions bool
 }
 
 // Default returns the preferences for a user who has not set any.
 func Default() Prefs {
-	return Prefs{Profile: theme.DefaultProfile, Theme: theme.DefaultTheme, PageSize: DefaultPageSize}
+	return Prefs{Profile: theme.DefaultProfile, Theme: theme.DefaultTheme, PageSize: DefaultPageSize, Transitions: true}
 }
 
 // ErrInvalid is returned for preferences that name unknown profiles,
@@ -78,8 +81,8 @@ func (s *Service) Validate(p Prefs) error {
 func (s *Service) Get(ctx context.Context, userID int64) (Prefs, error) {
 	var p Prefs
 	var bold, italic string
-	err := s.db.QueryRowContext(ctx, `SELECT profile, theme, bold, italic, ascii_only, page_size FROM user_prefs WHERE user_id = ?`, userID).
-		Scan(&p.Profile, &p.Theme, &bold, &italic, &p.ASCIIOnly, &p.PageSize)
+	err := s.db.QueryRowContext(ctx, `SELECT profile, theme, bold, italic, ascii_only, page_size, transitions FROM user_prefs WHERE user_id = ?`, userID).
+		Scan(&p.Profile, &p.Theme, &bold, &italic, &p.ASCIIOnly, &p.PageSize, &p.Transitions)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Default(), nil
 	}
@@ -102,12 +105,13 @@ func (s *Service) Set(ctx context.Context, userID int64, p Prefs) error {
 		return err
 	}
 	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO user_prefs (user_id, profile, theme, bold, italic, ascii_only, page_size, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO user_prefs (user_id, profile, theme, bold, italic, ascii_only, page_size, transitions, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT (user_id) DO UPDATE SET
 			profile = excluded.profile, theme = excluded.theme, bold = excluded.bold, italic = excluded.italic,
-			ascii_only = excluded.ascii_only, page_size = excluded.page_size, updated_at = excluded.updated_at`,
-		userID, p.Profile, p.Theme, string(p.Bold), string(p.Italic), p.ASCIIOnly, p.PageSize, store.FormatTime(s.now()))
+			ascii_only = excluded.ascii_only, page_size = excluded.page_size, transitions = excluded.transitions,
+			updated_at = excluded.updated_at`,
+		userID, p.Profile, p.Theme, string(p.Bold), string(p.Italic), p.ASCIIOnly, p.PageSize, p.Transitions, store.FormatTime(s.now()))
 	if err != nil {
 		return fmt.Errorf("prefs: set: %w", err)
 	}
