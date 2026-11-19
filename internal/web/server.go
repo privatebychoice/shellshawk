@@ -33,6 +33,7 @@ import (
 	"go.privatebychoice.com/shellshawk/internal/sessions"
 	"go.privatebychoice.com/shellshawk/internal/settings"
 	"go.privatebychoice.com/shellshawk/internal/theme"
+	"go.privatebychoice.com/shellshawk/internal/transition"
 	"go.privatebychoice.com/shellshawk/internal/version"
 	"go.privatebychoice.com/shellshawk/internal/websess"
 )
@@ -74,6 +75,9 @@ type Config struct {
 	// Settings edits the connection limits and branding; nil leaves those
 	// pages out.
 	Settings *settings.Service
+	// Transitions edits the transition screens; nil (or a nil MenuItems)
+	// leaves the pages out.
+	Transitions *transition.Service
 
 	// SSHAddress is the public host:port members connect to, shown on the
 	// start page (optional).
@@ -219,6 +223,19 @@ func (s *Server) routes() http.Handler {
 		mux.HandleFunc("POST /admin/menu/{id}", s.handleMenuUpdate)
 		mux.HandleFunc("POST /admin/menu/{id}/move", s.handleMenuMove)
 		mux.HandleFunc("POST /admin/menu/{id}/delete", s.handleMenuDelete)
+	}
+	if s.transitionsEnabled() {
+		mux.HandleFunc("GET /admin/transitions", s.handleTransitions)
+		mux.HandleFunc("POST /admin/transitions/new", s.handleTransitionCreate)
+		mux.HandleFunc("POST /admin/transitions/points", s.handleTransitionPoints)
+		mux.HandleFunc("GET /admin/transitions/{id}", s.handleTransitionProfile)
+		mux.HandleFunc("POST /admin/transitions/{id}", s.handleTransitionProfileSave)
+		mux.HandleFunc("POST /admin/transitions/{id}/upload", s.handleTransitionUpload)
+		mux.HandleFunc("POST /admin/transitions/{id}/write", s.handleTransitionWrite)
+		mux.HandleFunc("POST /admin/transitions/{id}/delete", s.handleTransitionDelete)
+		mux.HandleFunc("GET /admin/transitions/{id}/files/{name}", s.handleTransitionFile)
+		mux.HandleFunc("POST /admin/transitions/{id}/files/{name}", s.handleTransitionFileSave)
+		mux.HandleFunc("POST /admin/transitions/{id}/files/{name}/delete", s.handleTransitionFileDelete)
 	}
 	if len(s.configurable()) > 0 {
 		mux.HandleFunc("GET /admin/plugins", s.handlePluginSettingsList)
@@ -460,6 +477,9 @@ func (s *Server) nav(ctx context.Context, user int64) []navItem {
 	}
 	if s.menuEnabled() && set.Has(perm.MenuManage) {
 		out = append(out, navItem{Label: "Menu editor", Href: "/admin/menu"})
+	}
+	if s.transitionsEnabled() && set.Has(perm.TransitionsManage) {
+		out = append(out, navItem{Label: "Transitions", Href: "/admin/transitions"})
 	}
 	if len(s.configurable()) > 0 && set.Has(perm.PluginSettings) {
 		out = append(out, navItem{Label: "Plugin settings", Href: "/admin/plugins"})

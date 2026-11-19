@@ -1,0 +1,133 @@
+{{define "transitions"}}{{if .Notice}}<p class="notice" role="status">{{.Notice}}</p>
+{{end}}<p>Transition screens show text art when a member opens a menu item and when they return to the menu, until they press a key. They are shown only in the SSH interface's full-screen mode: never in screen reader mode, and members can turn them off in their display settings.</p>
+<section aria-labelledby="profiles-heading">
+<h2 id="profiles-heading">Profiles</h2>
+<p>A profile is a set of text files. Upload them here, write them here, or upload them over SFTP to <code>/text/&lt;profile&gt;/</code> (a new folder there creates a profile).</p>
+{{if .Profiles}}<table class="online">
+<caption>Profiles</caption>
+<thead><tr><th scope="col">Profile</th><th scope="col">Files</th><th scope="col">Shows</th></tr></thead>
+<tbody>
+{{range .Profiles}}<tr><th scope="row"><a href="/admin/transitions/{{.ID}}">{{.Slug}}</a></th><td>{{.Files}}</td><td>{{.Shows}}</td></tr>
+{{end}}</tbody>
+</table>
+{{else}}<p>There are no profiles yet.</p>
+{{end}}<form method="post" action="/admin/transitions/new" class="form">
+<input type="hidden" name="csrf" value="{{.CSRF}}">
+{{if .NewError}}<p class="error" role="alert">The profile was not created. {{.NewError}}</p>
+{{end}}<p><label for="new-slug">Add a profile (name)</label>
+<input type="text" id="new-slug" name="slug" maxlength="{{.MaxSlug}}" required autocomplete="off" autocapitalize="none" spellcheck="false" value="{{.NewSlug}}" aria-describedby="new-slug-help"{{if .NewError}} aria-invalid="true"{{end}}>
+<span class="meta" id="new-slug-help">Lowercase letters, digits and hyphens, starting with a letter or digit. It is also the SFTP folder name.</span></p>
+<p><button type="submit">Add the profile</button></p>
+</form>
+</section>
+<section aria-labelledby="points-heading">
+<h2 id="points-heading">Where they are shown</h2>
+{{if .PointsError}}<p class="error" role="alert">{{.PointsError}}</p>
+{{end}}<p>Each menu item can show a profile when it is opened and when the member returns to the menu, nothing, or the default. Nothing is shown anywhere until a profile is chosen.</p>
+<form method="post" action="/admin/transitions/points" class="form">
+<input type="hidden" name="csrf" value="{{.CSRF}}">
+<table class="online">
+<caption>Transition screens for each menu item</caption>
+<thead><tr><th scope="col">Menu item</th><th scope="col">When opening it</th><th scope="col">When returning to the menu</th></tr></thead>
+<tbody>
+{{range $i, $row := .Points}}<tr><th scope="row">{{$row.Label}}</th>
+<td><label class="visually-hidden" for="enter-{{$i}}">When opening {{$row.Label}}</label><select id="enter-{{$i}}" name="enter/{{$row.Target}}">
+{{range $row.Enter}}<option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{.Label}}</option>
+{{end}}</select></td>
+<td><label class="visually-hidden" for="exit-{{$i}}">When returning from {{$row.Label}}</label><select id="exit-{{$i}}" name="exit/{{$row.Target}}">
+{{range $row.Exit}}<option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{.Label}}</option>
+{{end}}</select></td></tr>
+{{end}}</tbody>
+</table>
+<p><button type="submit">Save where transitions are shown</button></p>
+</form>
+</section>{{end}}
+{{define "transition"}}{{if .Notice}}<p class="notice" role="status">{{.Notice}}</p>
+{{end}}<p>Shows {{.Shows}}. SFTP folder: <code>/text/{{.Slug}}/</code></p>
+<section aria-labelledby="files-heading">
+<h2 id="files-heading">Files</h2>
+{{if .Files}}<table class="online">
+<caption>Files in {{.Slug}}</caption>
+<thead><tr><th scope="col">File</th><th scope="col">Size</th><th scope="col">Changed</th></tr></thead>
+<tbody>
+{{range .Files}}<tr><th scope="row"><a href="/admin/transitions/{{$.ID}}/files/{{.Name}}">{{.Name}}</a></th><td>{{.Size}} bytes</td><td>{{.Updated.UTC.Format "2006-01-02 15:04 UTC"}}</td></tr>
+{{end}}</tbody>
+</table>
+<p>Open a file to see it, edit it or delete it.</p>
+{{else}}<p>This profile has no files, so it shows nothing.</p>
+{{end}}</section>
+<section aria-labelledby="upload-heading">
+<h2 id="upload-heading">Upload a file</h2>
+{{if .UploadError}}<p class="error" role="alert" id="upload-error">{{.UploadError}}</p>
+{{end}}<form method="post" action="/admin/transitions/{{.ID}}/upload" enctype="multipart/form-data" class="form">
+<input type="hidden" name="csrf" value="{{.CSRF}}">
+<p><label for="upload-file">Text file</label>
+<input type="file" id="upload-file" name="file" required aria-describedby="upload-file-help{{if .UploadError}} upload-error{{end}}"{{if .UploadError}} aria-invalid="true"{{end}}>
+<span class="meta" id="upload-file-help">Up to {{.MaxKiB}} KiB; at most {{.MaxFiles}} files in a profile. UTF-8 or code page 437 (classic DOS art). Colour codes are removed. A file with the same name is replaced.</span></p>
+<p><label for="upload-name">Save as (optional)</label>
+<input type="text" id="upload-name" name="name" maxlength="{{.MaxName}}" autocomplete="off" autocapitalize="none" spellcheck="false" aria-describedby="upload-name-help">
+<span class="meta" id="upload-name-help">Leave empty to keep the file's own name. Letters, digits, dots, hyphens and underscores.</span></p>
+<p><button type="submit">Upload</button></p>
+</form>
+</section>
+<section aria-labelledby="write-heading">
+<h2 id="write-heading">Write a new file</h2>
+{{if .WriteError}}<p class="error" role="alert">{{.WriteError}}</p>
+{{end}}<form method="post" action="/admin/transitions/{{.ID}}/write" class="form">
+<input type="hidden" name="csrf" value="{{.CSRF}}">
+<p><label for="write-name">File name</label>
+<input type="text" id="write-name" name="name" maxlength="{{.MaxName}}" required autocomplete="off" autocapitalize="none" spellcheck="false" value="{{.WriteName}}" aria-describedby="write-name-help{{if .WriteNameError}} write-name-error{{end}}"{{if .WriteNameError}} aria-invalid="true"{{end}}>
+<span class="meta" id="write-name-help">Letters, digits, dots, hyphens and underscores, e.g. welcome.txt.</span></p>
+{{if .WriteNameError}}<p class="error" id="write-name-error">{{.WriteNameError}}</p>
+{{end}}<p><label for="write-text">Text</label>
+<textarea id="write-text" name="text" class="art-input" rows="16" cols="80" wrap="off" required spellcheck="false" aria-describedby="write-text-help">{{.WriteText}}</textarea>
+<span class="meta" id="write-text-help">Shown as typed in a monospace font, centred on the member's screen.</span></p>
+<p><button type="submit">Save the file</button></p>
+</form>
+</section>
+<section aria-labelledby="settings-heading">
+<h2 id="settings-heading">Name and which file to show</h2>
+{{if .SettingsError}}<p class="error" role="alert">{{.SettingsError}}</p>
+{{end}}<form method="post" action="/admin/transitions/{{.ID}}" class="form">
+<input type="hidden" name="csrf" value="{{.CSRF}}">
+{{template "fields" .Fields}}<p><button type="submit">Save the profile</button></p>
+</form>
+</section>
+<section aria-labelledby="delete-heading">
+<h2 id="delete-heading">Delete</h2>
+{{if .DeleteError}}<p class="error" role="alert">{{.DeleteError}}</p>
+{{end}}<form method="post" action="/admin/transitions/{{.ID}}/delete" class="form">
+<input type="hidden" name="csrf" value="{{.CSRF}}">
+<p><label><input type="checkbox" name="confirm" value="yes" required> Yes, delete {{.Slug}} and its files. Places that show it go back to the default.</label></p>
+<p><button type="submit">Delete the profile</button></p>
+</form>
+</section>
+<p><a href="/admin/transitions">All transitions</a></p>{{end}}
+{{define "transition-file"}}{{if .Notice}}<p class="notice" role="status">{{.Notice}}</p>
+{{end}}<p>In profile <a href="/admin/transitions/{{.ID}}">{{.Slug}}</a>. Changed {{.Updated.UTC.Format "2006-01-02 15:04 UTC"}}.</p>
+<section aria-labelledby="preview-heading">
+<h2 id="preview-heading">Preview</h2>
+<p>As saved. Members see it centred on their screen; terminals set to ASCII show line and block characters as + - | #.</p>
+<pre class="art" tabindex="0" role="region" aria-label="Text art {{.Name}}">{{.Saved}}</pre>
+</section>
+<section aria-labelledby="edit-heading">
+<h2 id="edit-heading">Edit</h2>
+{{if .EditError}}<p class="error" role="alert">{{.EditError}}</p>
+{{end}}<form method="post" action="/admin/transitions/{{.ID}}/files/{{.Name}}" class="form">
+<input type="hidden" name="csrf" value="{{.CSRF}}">
+<p><label for="edit-text">Text</label>
+<textarea id="edit-text" name="text" class="art-input" rows="16" cols="80" wrap="off" required spellcheck="false" aria-describedby="edit-text-help">{{.Text}}</textarea>
+<span class="meta" id="edit-text-help">Up to {{.MaxKiB}} KiB. Control characters and colour codes are removed when it is saved.</span></p>
+<p><button type="submit">Save the file</button></p>
+</form>
+</section>
+<section aria-labelledby="delete-heading">
+<h2 id="delete-heading">Delete</h2>
+{{if .DeleteError}}<p class="error" role="alert">{{.DeleteError}}</p>
+{{end}}<form method="post" action="/admin/transitions/{{.ID}}/files/{{.Name}}/delete" class="form">
+<input type="hidden" name="csrf" value="{{.CSRF}}">
+<p><label><input type="checkbox" name="confirm" value="yes" required> Yes, delete {{.Name}}.</label></p>
+<p><button type="submit">Delete the file</button></p>
+</form>
+</section>
+<p><a href="/admin/transitions/{{.ID}}">Back to {{.Slug}}</a></p>{{end}}

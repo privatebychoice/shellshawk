@@ -753,6 +753,23 @@ are single buttons, as over SSH, since both can be undone. Permissions a
 group still holds but no installed plugin provides are listed so they can
 be revoked.
 
+Web transitions: `GET /admin/transitions` (profiles, Add a profile, and
+one form of selects for every transition point, named
+`<moment>/<target>`; `POST /admin/transitions/points` saves only the
+points whose value changed and refuses a value not offered, saving
+nothing), `POST /admin/transitions/new`, `GET|POST /admin/transitions/{id}`
+(name, mode, file through the generic renderer), POSTs `/{id}/upload`
+(multipart, `file=` and an optional `name=`, else the file's own base
+name), `/{id}/write` (a new file only), `/{id}/delete` (ticked box), and
+`GET|POST /admin/transitions/{id}/files/{name}` (preview in a named,
+focusable `<pre>` region that scrolls sideways; editing never creates a
+file) and `/files/{name}/delete` (ticked box), for holders of
+`core.transitions.manage`, only when the transition service and the menu
+item catalogue are configured. Requests carrying a file may be up to three
+times the 64 KiB file limit plus 8 KiB (URL-encoded text); larger bodies
+get 413. `transition.Service` checks the permission, cleans every file and
+audits, as for SSH and SFTP.
+
 ## 12. Core plugins — notable design points
 
 | Plugin | Notes |

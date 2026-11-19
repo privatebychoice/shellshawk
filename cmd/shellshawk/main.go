@@ -274,7 +274,7 @@ func (a *app) serve(ctx context.Context) error {
 	if cfg.WebEnabled() {
 		site, err := web.New(web.Config{
 			Log: log, SiteName: siteSettings.BBSName, Auth: a.auth, Perms: a.perms, Sessions: webSessions, Connections: handler.Sessions, Settings: siteSettings,
-			Menu: handler.Menu, MenuItems: handler, Privacy: a.privacy,
+			Menu: handler.Menu, MenuItems: handler, Privacy: a.privacy, Transitions: handler.Transitions,
 			Prefs: a.prefs, Themes: a.prefs.Themes(), Plugins: a.plugins, Grader: a.grade,
 			SSHAddress: cfg.PublicSSHAddress, HostKeyFingerprint: hostKeyFP, InviteUser: cfg.InviteUser,
 			InsecureCookies: cfg.HTTPInsecureCookies, PrivacyPolicyFile: cfg.PrivacyPolicyFile,

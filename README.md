@@ -220,7 +220,8 @@ and permissions*.
   leaving) applies to every item set to it. Nothing is shown until a
   profile is chosen somewhere.
 - **Files** can be written in the editor (*Write a new file*, or choose a
-  file and *Edit*) or uploaded over SFTP to `/text/<profile>/<file>`.
+  file and *Edit*), managed on the web at `/admin/transitions`, or uploaded
+  over SFTP to `/text/<profile>/<file>`.
   Uploading into a folder that does not exist creates the profile; `mkdir`
   creates an empty profile; `rm` deletes a file and `rmdir` an empty
   profile. Profile names use lowercase letters, digits and hyphens; file
@@ -344,9 +345,9 @@ chat live in any channel you may join, start and run private chats, and
 vote in polls. Staff can manage users, groups and permissions, create and
 revoke invites, approve or reject new accounts, see who is online and end
 a connection, set the connection limits, the BBS name and plugin settings,
-edit the member menu and read the audit log. Conference posting, creating
-polls, channel management, slash commands, transition screens and your own
-settings stay in the SSH interface.
+edit the member menu and the transition screens, and read the audit log.
+Conference posting, creating polls, channel management, slash commands and
+your own settings stay in the SSH interface.
 
 | Path | Description |
 |------|-------------|
@@ -363,6 +364,7 @@ settings stay in the SSH interface.
 | `/admin/invites` | Invites, for staff with `core.invite.create` (their own) or `core.invite.manage` (all, with who created each): state, uses, expiry and note, and Revoke for usable ones (with a ticked confirmation box). **Create an invite** (`core.invite.create`) takes the same options as over SSH (uses, days, approval, groups, note) and shows the new code once, on the page that answers the form: it is never put in a URL and cannot be shown again. You can only attach groups whose permissions you hold |
 | `/admin/pending` | Accounts awaiting approval, for staff with `core.users.approve` (administrators and moderators; linked as *Approvals* only for them): username and registration time, never the email address. Approve with one button; Reject (which deletes the account and its keys, and ends its connections) needs a ticked confirmation box. Nobody can approve or reject an account that would receive permissions they lack |
 | `/admin/audit` | Audit log, for staff with `core.audit.view` (linked in the navigation only for them): administrative actions as a table, newest first, 100 to a page with Older and Newest links; times in UTC. Read-only |
+| `/admin/transitions` | Transition screens, for staff with `core.transitions.manage` (linked in the navigation only for them): the profiles with their file counts and what they show, Add a profile, and a table of every menu item (plus the default) with a select each for opening it and returning to the menu (the default, nothing, or a profile), saved together. A profile's page lists its files, uploads a file (UTF-8 or code page 437, up to 64 KiB, cleaned as over SFTP; a file with the same name is replaced), writes a new one in a monospace text box, sets the name and which file it shows, and deletes the profile (with a ticked box). A file's page shows a preview, edits it and deletes it (with a ticked box). Same rules as *Administration → Transitions* |
 | `/admin/menu` | Menu editor, for staff with `core.menu.manage` (linked in the navigation only for them): the member menu as a table in order, with Move up and Move down, Edit (label and extra permission), Open for submenus, Delete (with a ticked confirmation box; Administration cannot be deleted, and a submenu must be emptied first), Add an entry, and Reset to the default menu. Same rules as *Administration → Menu editor* |
 | `/admin/plugins` | Plugin settings, for staff with `core.plugins.settings` (administrators and moderators; linked in the navigation only for them): each plugin's settings as a form, with each field's rules in words and its help, under the same validation as *Administration → Plugin settings*. A refused value is shown again with the reason next to its field |
 | `/admin/branding` | Branding, for staff with `core.settings.manage` (linked in the navigation only for them): the BBS name, with the same rules as *Administration → Branding* (1 to 40 printable characters) |

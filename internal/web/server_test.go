@@ -33,6 +33,7 @@ import (
 	"go.privatebychoice.com/shellshawk/internal/settings"
 	"go.privatebychoice.com/shellshawk/internal/store"
 	"go.privatebychoice.com/shellshawk/internal/theme"
+	"go.privatebychoice.com/shellshawk/internal/transition"
 	"go.privatebychoice.com/shellshawk/internal/version"
 	"go.privatebychoice.com/shellshawk/internal/websess"
 )
@@ -108,6 +109,7 @@ type env struct {
 	conns    *presence.Conns
 	settings *settings.Service
 	menu     *menu.Service
+	trans    *transition.Service
 }
 
 // testItems is the menu item catalogue for the menu editor tests.
@@ -171,12 +173,12 @@ func setup(t *testing.T, insecure bool) *env {
 		Prefs: prefs.NewService(db, cat, nil), Themes: cat, Plugins: reg, SSHAddress: "bbs.example.net:2222",
 		HostKeyFingerprint: "SHA256:testfingerprint", InviteUser: "new", InsecureCookies: insecure, ChatDays: 90, AuditDays: 365, GraceDays: 14,
 		Connections: staff, Settings: settings.NewService(db, nil, log), Menu: menus, MenuItems: testItems{},
-		Privacy: privacy.NewService(db, as, ps, 14*24*time.Hour, nil, log),
+		Privacy: privacy.NewService(db, as, ps, 14*24*time.Hour, nil, log), Transitions: transition.NewService(db, nil, log),
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	return &env{srv: srv, h: srv.Handler(), sessions: sessions, alice: alice, admin: admin, mod: mod, perms: ps, conns: conns, settings: srv.cfg.Settings, menu: menus}
+	return &env{srv: srv, h: srv.Handler(), sessions: sessions, alice: alice, admin: admin, mod: mod, perms: ps, conns: conns, settings: srv.cfg.Settings, menu: menus, trans: srv.cfg.Transitions}
 }
 
 type req struct {
