@@ -540,9 +540,20 @@ func describeDuration(d time.Duration) string {
 	return strconv.Itoa(n) + " " + unit
 }
 
+// keepaliveRequests are global requests clients send only to check the
+// connection is alive. Any reply, including a refusal, answers them, so
+// they are refused without logging: OpenSSH and JSch-based clients (many
+// Android apps) send one every few seconds.
+var keepaliveRequests = map[string]bool{
+	"keepalive@openssh.com": true,
+	"keepalive@jcraft.com":  true,
+}
+
+// discardGlobalRequests refuses every global request; the server offers
+// none. Requests other than keepalives are logged.
 func discardGlobalRequests(reqs <-chan *ssh.Request, log *slog.Logger) {
 	for r := range reqs {
-		if r.Type != "keepalive@openssh.com" {
+		if !keepaliveRequests[r.Type] {
 			log.Info("global request refused", "type", sanitizeForLog(r.Type))
 		}
 		if r.WantReply {

@@ -757,3 +757,27 @@ func TestZeroSizePTYUsesDefaults(t *testing.T) {
 		t.Errorf("greeting = %q, want default 80x24", got)
 	}
 }
+
+func TestDiscardGlobalRequestsLogging(t *testing.T) {
+	tests := []struct {
+		typ    string
+		logged bool
+	}{
+		{"keepalive@openssh.com", false},
+		{"keepalive@jcraft.com", false},
+		{"tcpip-forward", true},
+		{"keepalive@example.com", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.typ, func(t *testing.T) {
+			var out strings.Builder
+			reqs := make(chan *ssh.Request, 1)
+			reqs <- &ssh.Request{Type: tt.typ}
+			close(reqs)
+			discardGlobalRequests(reqs, slog.New(slog.NewTextHandler(&out, nil)))
+			if got := strings.Contains(out.String(), "global request refused"); got != tt.logged {
+				t.Errorf("logged = %v, want %v\n%s", got, tt.logged, out.String())
+			}
+		})
+	}
+}

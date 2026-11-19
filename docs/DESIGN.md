@@ -37,7 +37,10 @@ These are invariants, enforced in code and covered by tests:
    `pty-req`, `window-change`, `shell` (→ BBS TUI), and `subsystem sftp` (→
    virtual FS). Rejected: `exec`, `env` (except `LANG`, `LC_ALL`,
    `LC_CTYPE`, `COLORTERM`; the terminal type arrives via `pty-req`), `x11-req`, `auth-agent-req@openssh.com`, `direct-tcpip`,
-   `tcpip-forward`, and every other channel/request type. No call to
+   `tcpip-forward`, and every other channel/request type. Refused global
+   requests are logged, except keepalives (`keepalive@openssh.com`, and
+   `keepalive@jcraft.com` from JSch-based clients such as many Android
+   apps), which a refusal answers just as well. No call to
    `os/exec` anywhere in the codebase (enforced by a lint/test that greps the
    module).
 2. **SFTP is fully virtual.** SFTP paths map to plugin-registered handlers that
