@@ -209,55 +209,111 @@ func (s *session) createInvite(ctx context.Context) error {
 	}
 }
 
+// manageInvites lists invites as a menu, each with its state, uses left
+// and note. Choosing one shows all its details, where a usable invite can
+// be revoked.
 func (s *session) manageInvites(ctx context.Context) error {
-	invs, err := s.h.Auth.Invites(ctx, s.userID)
-	if err != nil {
-		return err
+	for {
+		invs, err := s.h.Auth.Invites(ctx, s.userID)
+		if err != nil {
+			return err
+		}
+		if len(invs) == 0 {
+			return tui.Message(ctx, s.ui, s.Title("Invites"), "There are no invites.")
+		}
+		now := time.Now()
+		byID := map[string]auth.Invite{}
+		var items []tui.MenuItem
+		usable := 0
+		for _, inv := range invs {
+			if inviteState(inv, now) == "usable" {
+				usable++
+			}
+			id := strconv.FormatInt(inv.ID, 10)
+			byID[id] = inv
+			items = append(items, tui.MenuItem{Value: id, Label: inviteLabel(inv, now), Help: "Expires " + fmtTime(inv.ExpiresAt)})
+		}
+		intro := fmt.Sprintf("%d invite(s), %d usable. Choose one to see its details or revoke it.", len(invs), usable)
+		choice, err := s.ui.Choose(ctx, tui.Menu{Title: s.Title("Invites"), Intro: intro, Items: items})
+		if errors.Is(err, tui.ErrCancelled) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		if err := s.inviteDetail(ctx, byID[choice]); err != nil && !errors.Is(err, tui.ErrCancelled) {
+			return err
+		}
 	}
+}
+
+// inviteLabel is an invite's line in the list: its state, the uses left
+// while it is usable, and the administrator's note.
+func inviteLabel(inv auth.Invite, now time.Time) string {
+	state := inviteState(inv, now)
+	label := fmt.Sprintf("Invite %d: %s", inv.ID, state)
+	if state == "usable" {
+		label += fmt.Sprintf(", %d of %d uses left", inv.MaxUses-inv.Uses, inv.MaxUses)
+	}
+	if inv.Note != "" {
+		label += ", note: " + inv.Note
+	}
+	return label
+}
+
+// inviteDetail shows everything about an invite. A usable invite can be
+// revoked from here, after a confirmation.
+func (s *session) inviteDetail(ctx context.Context, inv auth.Invite) error {
 	now := time.Now()
-	p := tui.Page{Title: s.Title("Invites")}
-	var items []tui.MenuItem
-	for _, inv := range invs {
-		state := "usable"
-		switch {
-		case inv.RevokedAt != nil:
-			state = "revoked"
-		case inv.Uses >= inv.MaxUses:
-			state = "used up"
-		case inv.ExpiresAt != nil && !now.Before(*inv.ExpiresAt):
-			state = "expired"
-		}
-		desc := fmt.Sprintf("Invite %d: %s, used %d of %d, expires %s", inv.ID, state, inv.Uses, inv.MaxUses, fmtTime(inv.ExpiresAt))
-		if inv.Note != "" {
-			desc += ", note: " + inv.Note
-		}
-		p.Lines = append(p.Lines, tui.Text(desc))
-		if state == "usable" {
-			items = append(items, tui.MenuItem{Value: strconv.FormatInt(inv.ID, 10), Label: desc})
-		}
+	state := inviteState(inv, now)
+	title := s.Title(fmt.Sprintf("Invite %d", inv.ID))
+	approval := "no"
+	if inv.RequireApproval {
+		approval = "yes"
 	}
-	if len(invs) == 0 {
-		p.Lines = append(p.Lines, tui.Text("There are no invites."))
+	note := inv.Note
+	if note == "" {
+		note = "none"
 	}
-	if err := s.ui.Show(ctx, p); err != nil {
+	lines := []string{
+		"State: " + state + ".",
+		fmt.Sprintf("Uses: %d of %d used, %d left.", inv.Uses, inv.MaxUses, max(0, inv.MaxUses-inv.Uses)),
+		"Created: " + fmtTime(&inv.CreatedAt) + ".",
+		"Expires: " + fmtTime(inv.ExpiresAt) + ".",
+	}
+	if inv.RevokedAt != nil {
+		lines = append(lines, "Revoked: "+fmtTime(inv.RevokedAt)+".")
+	}
+	lines = append(lines, "New accounts need approval: "+approval+".", "Note: "+note)
+	if state != "usable" {
+		return tui.Message(ctx, s.ui, title, append(lines, "", "This invite can no longer be used, so there is nothing to revoke.")...)
+	}
+	choice, err := s.ui.Choose(ctx, tui.Menu{Title: title, Intro: strings.Join(lines, " "),
+		Items: []tui.MenuItem{{Value: "revoke", Label: "Revoke this invite", Help: "It can no longer be used to register"}}})
+	if err != nil || choice != "revoke" {
 		return err
 	}
-	if len(items) == 0 {
-		return nil
-	}
-	choice, err := s.ui.Choose(ctx, tui.Menu{Title: s.Title("Revoke an invite"), Intro: "Choose an invite to revoke, or go back.", Items: items})
-	if err != nil {
-		return err
-	}
-	ok, err := tui.Confirm(ctx, s.ui, s.Title("Revoke an invite"), "Revoke this invite? It can no longer be used.")
+	ok, err := tui.Confirm(ctx, s.ui, title, fmt.Sprintf("Revoke invite %d? It can no longer be used.", inv.ID))
 	if err != nil || !ok {
 		return err
 	}
-	id, _ := strconv.ParseInt(choice, 10, 64)
-	if err := s.h.Auth.RevokeInvite(ctx, s.userID, id); err != nil {
+	if err := s.h.Auth.RevokeInvite(ctx, s.userID, inv.ID); err != nil {
 		return err
 	}
-	return tui.Message(ctx, s.ui, s.Title("Revoke an invite"), "Invite revoked.")
+	return tui.Message(ctx, s.ui, title, "Invite revoked.")
+}
+
+// inviteState describes whether an invite can still be used.
+func inviteState(inv auth.Invite, now time.Time) string {
+	switch {
+	case inv.RevokedAt != nil:
+		return "revoked"
+	case inv.Uses >= inv.MaxUses:
+		return "used up"
+	case inv.ExpiresAt != nil && !now.Before(*inv.ExpiresAt):
+		return "expired"
+	}
+	return "usable"
 }
 
 func (s *session) branding(ctx context.Context) error {
