@@ -480,9 +480,11 @@ on) are left out, and so is a submenu with nothing in it for the web.
 - **Sessions**: one `__Host-session` cookie (HttpOnly, Secure,
   SameSite=Strict, 12 hours), CSRF tokens on forms, Origin checks on every
   POST, login rate limits per IP (per /64 for IPv6, the visitor's own
-  address behind a trusted proxy, never cleared by a successful login) and
-  per username. Locking or erasing an
-  account ends its web sessions at once.
+  address behind a trusted proxy, never cleared by a successful login).
+  Wrong codes never lock a member out: after 5 for one username, that
+  member's outstanding code is voided (audited), so there is nothing left
+  to guess, and a new code from the BBS works straight away. Locking or
+  erasing an account ends its web sessions at once.
 - **Themes**: the web uses the member's colour theme; visitors get Classic
   or Light depending on their system preference.
 - The footer shows the build number (`1.0.x`; run `make bump` before each

@@ -636,27 +636,41 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	fail := func(status int, msg string) {
 		s.render(w, r, status, "Log in", "login", map[string]string{"Error": msg, "Username": username})
 	}
-	if s.ipLim.Blocked(ipKey) || s.userLim.Blocked(userKey) {
+	// The attempt is counted against the address before the code is
+	// checked, so parallel requests cannot all get past the limit; a
+	// successful one is given back below.
+	ok, lastTry := s.ipLim.Try(ipKey)
+	if !ok {
 		LoggerFrom(r.Context()).Info("web login rate-limited")
 		fail(http.StatusTooManyRequests, "Too many failed attempts. Please wait a few minutes and get a new code.")
 		return
 	}
 	uid, err := s.cfg.Sessions.Redeem(r.Context(), username, code)
 	if err != nil {
-		if s.ipLim.Fail(ipKey) {
+		if lastTry {
 			s.cfg.Auth.AuditLoginBlocked(r.Context(), auth.BlockedAddress, 0, "web code")
 		}
+		// Wrong codes for one username never lock the member out (anyone
+		// could do that by typing their name). Instead, at the limit their
+		// outstanding code is voided: there is nothing left to guess, and
+		// they get a new one over SSH.
 		if s.userLim.Fail(userKey) {
-			var id int64
-			if u, err := s.cfg.Auth.UserByUsername(r.Context(), username); err == nil {
-				id = u.ID
+			s.userLim.Reset(userKey)
+			if voided, verr := s.cfg.Sessions.VoidCode(r.Context(), username); verr != nil {
+				LoggerFrom(r.Context()).Error("void web login code", "err", verr)
+			} else if voided {
+				var id int64
+				if u, uerr := s.cfg.Auth.UserByUsername(r.Context(), username); uerr == nil {
+					id = u.ID
+				}
+				s.cfg.Auth.AuditLoginBlocked(r.Context(), auth.BlockedAccount, id, "web code voided")
 			}
-			s.cfg.Auth.AuditLoginBlocked(r.Context(), auth.BlockedAccount, id, "web code")
 		}
 		LoggerFrom(r.Context()).Info("web login refused")
 		fail(http.StatusUnauthorized, "That username and code did not work. Codes work once and expire after five minutes.")
 		return
 	}
+	s.ipLim.Forgive(ipKey)
 	tok, sess, err := s.cfg.Sessions.Create(r.Context(), uid)
 	if err != nil {
 		LoggerFrom(r.Context()).Error("create web session", "err", err)

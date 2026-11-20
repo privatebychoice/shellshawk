@@ -102,12 +102,14 @@ func (s *Service) NewCode(ctx context.Context, userID int64) (string, time.Time,
 // works once, only for the member it was issued to, and only while the
 // account is active.
 func (s *Service) Redeem(ctx context.Context, username, code string) (int64, error) {
-	u, err := s.auth.UserByUsername(ctx, username)
-	if err != nil || u.Status != auth.StatusActive {
-		return 0, ErrInvalidCode
+	// An unknown or inactive account still goes through the same lookup
+	// below, so the time taken does not tell whether a username exists.
+	var want int64
+	if u, err := s.auth.UserByUsername(ctx, username); err == nil && u.Status == auth.StatusActive {
+		want = u.ID
 	}
 	var userID int64
-	err = store.WithTx(ctx, s.db, func(tx *sql.Tx) error {
+	err := store.WithTx(ctx, s.db, func(tx *sql.Tx) error {
 		var expires string
 		h := hash(normalizeCode(code))
 		err := tx.QueryRowContext(ctx, `SELECT user_id, expires_at FROM web_login_codes WHERE code_hash = ?`, h).Scan(&userID, &expires)
@@ -120,7 +122,7 @@ func (s *Service) Redeem(ctx context.Context, username, code string) (int64, err
 		if _, err := tx.ExecContext(ctx, `DELETE FROM web_login_codes WHERE code_hash = ?`, h); err != nil {
 			return err
 		}
-		if userID != u.ID || expires <= store.FormatTime(s.now()) {
+		if want == 0 || userID != want || expires <= store.FormatTime(s.now()) {
 			return ErrInvalidCode
 		}
 		return nil
@@ -129,6 +131,26 @@ func (s *Service) Redeem(ctx context.Context, username, code string) (int64, err
 		return 0, err
 	}
 	return userID, nil
+}
+
+// VoidCode deletes the outstanding login code of username's account, if
+// any, after repeated wrong codes for it: whoever is guessing has nothing
+// left to find, and the member simply gets a new code over SSH. It reports
+// whether a code was voided.
+func (s *Service) VoidCode(ctx context.Context, username string) (bool, error) {
+	u, err := s.auth.UserByUsername(ctx, username)
+	if err != nil {
+		return false, nil
+	}
+	res, err := s.db.ExecContext(ctx, `DELETE FROM web_login_codes WHERE user_id = ?`, u.ID)
+	if err != nil {
+		return false, fmt.Errorf("websess: void code: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	if n > 0 {
+		s.log.Info("web login code voided after repeated wrong codes", "user_id", u.ID)
+	}
+	return n > 0, nil
 }
 
 // Session is a logged-in web session.

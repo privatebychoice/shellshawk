@@ -376,12 +376,19 @@ func TestLoginFlow(t *testing.T) {
 		})
 	}
 
-	// Rate limit: after 5 bad codes for alice even a good one is refused.
+	// After 5 bad codes for alice, her outstanding code is voided rather
+	// than her username blocked: the guessed-at code no longer works, and
+	// a fresh one logs her in at once. (Its own address, under its limit.)
+	const from = "203.0.113.5:1000"
+	pending := good()
 	for range loginUserFailures {
-		e.do(req{method: "POST", path: "/login", origin: "https://bbs.example.net", form: url.Values{"username": {"alice"}, "code": {"BAD0-BAD0"}}})
+		e.do(req{method: "POST", path: "/login", origin: "https://bbs.example.net", remote: from, form: url.Values{"username": {"alice"}, "code": {"BAD0-BAD0"}}})
 	}
-	if rec := e.do(req{method: "POST", path: "/login", origin: "https://bbs.example.net", form: good()}); rec.Code != http.StatusTooManyRequests {
-		t.Errorf("rate limited login = %d", rec.Code)
+	if rec := e.do(req{method: "POST", path: "/login", origin: "https://bbs.example.net", remote: from, form: pending}); rec.Code != http.StatusUnauthorized {
+		t.Errorf("the code outstanding during the guessing = %d, want 401 (voided)", rec.Code)
+	}
+	if rec := e.do(req{method: "POST", path: "/login", origin: "https://bbs.example.net", remote: from, form: good()}); rec.Code != http.StatusSeeOther {
+		t.Errorf("a fresh code after the guessing = %d, want 303 (not locked out)", rec.Code)
 	}
 	if c := setup(t, true).login(t, 2, "alice"); c.Name != "session" || c.Secure {
 		t.Errorf("insecure-mode cookie = %+v", c)

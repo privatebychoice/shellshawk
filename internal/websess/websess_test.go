@@ -259,3 +259,47 @@ func TestErasureRequestClearsSessions(t *testing.T) {
 		t.Errorf("another member's session ended: %v", err)
 	}
 }
+
+func TestVoidCode(t *testing.T) {
+	s, _, _, admin, alice := setup(t)
+	ctx := context.Background()
+	code, _, _ := s.NewCode(ctx, alice)
+	adminCode, _, _ := s.NewCode(ctx, admin)
+	if ok, err := s.VoidCode(ctx, "alice"); !ok || err != nil {
+		t.Fatalf("VoidCode = %v, %v", ok, err)
+	}
+	if _, err := s.Redeem(ctx, "alice", code); !errors.Is(err, ErrInvalidCode) {
+		t.Error("a voided code still works")
+	}
+	if ok, _ := s.VoidCode(ctx, "alice"); ok {
+		t.Error("voided a code that was not there")
+	}
+	if ok, err := s.VoidCode(ctx, "nobody"); ok || err != nil {
+		t.Errorf("unknown username = %v, %v", ok, err)
+	}
+	if _, err := s.Redeem(ctx, "admin1", adminCode); err != nil {
+		t.Errorf("another member's code was voided: %v", err)
+	}
+	fresh, _, _ := s.NewCode(ctx, alice)
+	if id, err := s.Redeem(ctx, "alice", fresh); err != nil || id != alice {
+		t.Errorf("a new code after voiding = %d, %v", id, err)
+	}
+}
+
+// TestRedeemUnknownUsername: an unknown username goes through the same code
+// lookup as a known one (so timing does not reveal whether it exists), and
+// is refused the same way: a real code typed with either is refused and
+// left for its owner (the refusal rolls back).
+func TestRedeemUnknownUsername(t *testing.T) {
+	s, _, _, _, alice := setup(t)
+	ctx := context.Background()
+	for _, name := range []string{"nobody", "admin1"} {
+		code, _, _ := s.NewCode(ctx, alice)
+		if _, err := s.Redeem(ctx, name, code); !errors.Is(err, ErrInvalidCode) {
+			t.Errorf("%s with alice's code = %v", name, err)
+		}
+		if id, err := s.Redeem(ctx, "alice", code); err != nil || id != alice {
+			t.Errorf("after %q tried it, alice's code = %d, %v", name, id, err)
+		}
+	}
+}

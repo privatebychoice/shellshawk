@@ -67,6 +67,40 @@ func (l *Limiter) Fail(key string) (blockedNow bool) {
 	return e.failures == l.max
 }
 
+// Try counts an attempt for key before it is checked, and reports whether
+// it may go ahead (false once key has reached the limit). Counting first,
+// under the lock, means parallel attempts cannot all get past the check
+// before any failure is recorded. reachedLimit is true when this attempt
+// uses the last one allowed: if it then fails, key is blocked from now.
+// Call Forgive if the attempt succeeds, so only failures count.
+func (l *Limiter) Try(key string) (ok, reachedLimit bool) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	now := l.now()
+	e, found := l.entries[key]
+	if !found || now.Sub(e.start) >= l.window {
+		if !found && len(l.entries) >= maxLimiterEntries {
+			l.prune(now)
+		}
+		e = &limitEntry{start: now}
+		l.entries[key] = e
+	}
+	if e.failures >= l.max {
+		return false, false
+	}
+	e.failures++
+	return true, e.failures == l.max
+}
+
+// Forgive takes back an attempt counted by Try that succeeded.
+func (l *Limiter) Forgive(key string) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if e, ok := l.entries[key]; ok && e.failures > 0 {
+		e.failures--
+	}
+}
+
 // Reset clears key, e.g. after a successful login.
 func (l *Limiter) Reset(key string) {
 	l.mu.Lock()

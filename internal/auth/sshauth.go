@@ -99,8 +99,11 @@ func (a *SSHAuthenticator) Password(c sshd.ConnInfo, password []byte) (sshd.Iden
 	ctx, cancel := context.WithTimeout(context.Background(), authDBTimeout)
 	defer cancel()
 
+	// Attempts are counted before the (slow) check, so parallel
+	// connections cannot all get past the limits; successes are given back.
 	ipKey := IPLimitKey(c.RemoteIP)
-	if a.ipLim.Blocked(ipKey) {
+	ipOK, ipLast := a.ipLim.Try(ipKey)
+	if !ipOK {
 		a.log.Info("password login rate-limited", "conn_id", c.ConnID, "scope", "ip")
 		return sshd.Identity{}, sshd.ErrDenied
 	}
@@ -109,18 +112,21 @@ func (a *SSHAuthenticator) Password(c sshd.ConnInfo, password []byte) (sshd.Iden
 	if username == a.svc.inviteUser {
 		code := string(password)
 		if _, err := a.svc.CheckInvite(ctx, code); err != nil {
-			if a.ipLim.Fail(ipKey) {
+			if ipLast {
 				a.svc.AuditLoginBlocked(ctx, BlockedAddress, 0, "ssh invite")
 			}
 			a.log.Info("invite login refused", "conn_id", c.ConnID)
 			return sshd.Identity{}, sshd.ErrDenied
 		}
+		a.ipLim.Forgive(ipKey)
 		a.log.Info("invite login accepted", "conn_id", c.ConnID)
 		return sshd.Identity{Mode: sshd.ModeRegister, InviteCode: code}, nil
 	}
 
 	userKey := "user:" + username
-	if a.usrLim.Blocked(userKey) {
+	userOK, userLast := a.usrLim.Try(userKey)
+	if !userOK {
+		a.ipLim.Forgive(ipKey) // refused before any check: not a guess
 		a.log.Info("password login rate-limited", "conn_id", c.ConnID, "scope", "account")
 		return sshd.Identity{}, sshd.ErrDenied
 	}
@@ -143,10 +149,10 @@ func (a *SSHAuthenticator) Password(c sshd.ConnInfo, password []byte) (sshd.Iden
 		ok = false
 	}
 	if !ok || !exists {
-		if a.ipLim.Fail(ipKey) {
+		if ipLast {
 			a.svc.AuditLoginBlocked(ctx, BlockedAddress, 0, "ssh password")
 		}
-		if a.usrLim.Fail(userKey) {
+		if userLast {
 			var id int64
 			if exists {
 				id = userID
@@ -156,7 +162,10 @@ func (a *SSHAuthenticator) Password(c sshd.ConnInfo, password []byte) (sshd.Iden
 		a.log.Info("password login refused", "conn_id", c.ConnID)
 		return sshd.Identity{}, sshd.ErrDenied
 	}
+	// The password was right: neither count keeps this attempt.
+	a.ipLim.Forgive(ipKey)
 	if status == StatusLocked {
+		a.usrLim.Forgive(userKey)
 		a.log.Info("password login refused: account locked", "conn_id", c.ConnID, "user_id", userID)
 		return sshd.Identity{}, sshd.ErrDenied
 	}

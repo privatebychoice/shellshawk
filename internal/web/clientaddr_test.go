@@ -92,12 +92,16 @@ func TestLoginLimitBehindProxy(t *testing.T) {
 	}
 }
 
-// TestWebLoginBlocksAudited: the web login writes one audit row when an
-// account or an address reaches its failure limit, and no address.
+// TestWebLoginBlocksAudited: the web login writes one audit row when wrong
+// codes void a member's code and when an address reaches its limit, and
+// never records an address.
 func TestWebLoginBlocksAudited(t *testing.T) {
 	e := setup(t, false)
 	try := func(remote, user string) {
 		e.do(req{method: "POST", path: "/login", origin: origin, remote: remote, form: url.Values{"username": {user}, "code": {"AAAA-AAAA"}}})
+	}
+	if _, _, err := e.sessions.NewCode(context.Background(), e.alice); err != nil {
+		t.Fatal(err)
 	}
 	for i := range 2 * loginUserFailures {
 		try("192.0.2."+strconv.Itoa(10+i)+":1000", "alice")
@@ -116,7 +120,9 @@ func TestWebLoginBlocksAudited(t *testing.T) {
 		rows.Scan(&s)
 		got = append(got, s)
 	}
-	want := []string{"user:" + strconv.FormatInt(e.alice, 10) + ":web code", "address::web code"}
+	// One voiding: after it alice has no code, so the next five wrong
+	// codes void nothing and are not recorded.
+	want := []string{"user:" + strconv.FormatInt(e.alice, 10) + ":web code voided", "address::web code"}
 	if strings.Join(got, "|") != strings.Join(want, "|") {
 		t.Errorf("audit rows = %q, want %q", got, want)
 	}

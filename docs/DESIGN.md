@@ -696,8 +696,17 @@ client's address (`auth.IPLimitKey`, so IPv6 per /64): the connecting
 address, or, when it is listed in `SHELLSHAWK_HTTP_TRUSTED_PROXIES`, the
 rightmost `X-Forwarded-For` entry that is not a trusted proxy (entries
 further left are client-supplied and ignored). Without the setting, a
-proxy's visitors share one count. As over SSH, a successful login clears
-the username's count but never the address's.
+proxy's visitors share one count. Each attempt is counted against the
+address before the code is checked (`Limiter.Try`, given back by
+`Forgive` on success), so parallel requests cannot all get past the
+limit; as over SSH, a success never clears the address's earlier
+failures. Wrong codes for one username do not block it (anyone could lock
+a member out by typing their name): at 5, `websess.VoidCode` deletes that
+member's outstanding code and `login.blocked` is audited with detail `web
+code voided`; the member gets a new code over SSH. `Redeem` does the same
+code lookup whether or not the username is an active account, so the
+time taken does not reveal it. The SSH password login also counts with
+`Try`/`Forgive`.
 
 Live thread chat (after stage 10): plugin web routes may also be POST
 actions (`Method: "POST"`; the core checks the session, CSRF token and

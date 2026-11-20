@@ -3,6 +3,7 @@ package auth
 import (
 	"net/netip"
 	"strconv"
+	"sync"
 	"testing"
 	"time"
 
@@ -310,5 +311,39 @@ func TestLoginBlocksAudited(t *testing.T) {
 	f.db.QueryRowContext(f.ctx, `SELECT count(*) FROM audit_log WHERE detail LIKE '%198.51.100%' OR target_id LIKE '%198.51.100%' OR detail LIKE '%ghost%'`).Scan(&leaked)
 	if leaked != 0 {
 		t.Error("an address or a typed name reached the audit log")
+	}
+}
+
+// TestLimiterTry: Try counts each attempt before it is checked, so many
+// parallel attempts cannot all get in under the limit; Forgive gives a
+// successful attempt back.
+func TestLimiterTry(t *testing.T) {
+	l := NewLimiter(10, time.Minute, nil)
+	var mu sync.Mutex
+	allowed, last := 0, 0
+	var wg sync.WaitGroup
+	for range 100 {
+		wg.Go(func() {
+			ok, reached := l.Try("k")
+			mu.Lock()
+			defer mu.Unlock()
+			if ok {
+				allowed++
+			}
+			if reached {
+				last++
+			}
+		})
+	}
+	wg.Wait()
+	if allowed != 10 || last != 1 {
+		t.Errorf("allowed %d (want 10), last attempt reported %d times (want 1)", allowed, last)
+	}
+	if !l.Blocked("k") {
+		t.Error("not blocked after using every attempt")
+	}
+	l.Forgive("k")
+	if ok, _ := l.Try("k"); !ok {
+		t.Error("a forgiven attempt was not given back")
 	}
 }
