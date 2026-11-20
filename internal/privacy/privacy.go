@@ -15,6 +15,7 @@ import (
 
 	"go.privatebychoice.com/shellshawk/internal/audit"
 	"go.privatebychoice.com/shellshawk/internal/auth"
+	"go.privatebychoice.com/shellshawk/internal/events"
 	"go.privatebychoice.com/shellshawk/internal/form"
 	"go.privatebychoice.com/shellshawk/internal/perm"
 	"go.privatebychoice.com/shellshawk/internal/store"
@@ -98,6 +99,7 @@ type Service struct {
 	perms   *perm.Service
 	friends FriendChecker
 	grace   time.Duration
+	events  Publisher // may be nil
 	now     func() time.Time
 	log     *slog.Logger
 }
@@ -109,6 +111,20 @@ func NewService(db *sql.DB, a *auth.Service, p *perm.Service, grace time.Duratio
 		now = time.Now
 	}
 	return &Service{db: db, auth: a, perms: p, grace: grace, now: now, log: log.With("component", "privacy")}
+}
+
+// SetPublisher makes the service publish ErasureRequested, and
+// UserUnlocked when a request is cancelled, after each change commits.
+func (s *Service) SetPublisher(p Publisher) { s.events = p }
+
+// publish delivers e after a change has committed. Delivery must finish
+// even if ctx ends meanwhile: a member asking for erasure does so from a
+// session that the ErasureRequested handlers themselves end, and a later
+// handler (such as the one deleting web sessions) still has to run.
+func (s *Service) publish(ctx context.Context, e events.Event) {
+	if s.events != nil {
+		_ = s.events.Publish(context.WithoutCancel(ctx), e)
+	}
 }
 
 // SetFriends installs the friend relation. Without one, "Friends only"

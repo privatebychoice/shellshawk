@@ -231,3 +231,31 @@ func TestActivityListAndDelete(t *testing.T) {
 		t.Errorf("expired sessions listed: %+v", all)
 	}
 }
+
+// TestErasureRequestClearsSessions: an erasure request locks the account,
+// so its web sessions and login code end as for a lock.
+func TestErasureRequestClearsSessions(t *testing.T) {
+	s, _, _, admin, alice := setup(t)
+	ctx := context.Background()
+	bus := events.New(slog.New(slog.DiscardHandler))
+	s.Subscribe(bus)
+	tok, _, _ := s.Create(ctx, alice)
+	adminTok, _, _ := s.Create(ctx, admin)
+	code, _, _ := s.NewCode(ctx, alice)
+
+	if err := bus.Publish(ctx, events.Event{Topic: events.ErasureRequested, UserID: alice, Actor: alice}); err != nil {
+		t.Fatal(err)
+	}
+	if n, err := s.DeleteUser(ctx, alice); n != 0 || err != nil {
+		t.Errorf("sessions left after the request: %d, %v", n, err)
+	}
+	if _, err := s.Lookup(ctx, tok); !errors.Is(err, ErrNoSession) {
+		t.Error("session still valid")
+	}
+	if _, err := s.Redeem(ctx, "alice", code); !errors.Is(err, ErrInvalidCode) {
+		t.Error("login code still works")
+	}
+	if _, err := s.Lookup(ctx, adminTok); err != nil {
+		t.Errorf("another member's session ended: %v", err)
+	}
+}

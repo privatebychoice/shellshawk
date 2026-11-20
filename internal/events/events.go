@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log/slog"
 	"sync"
+	"time"
 )
 
 // Core topics.
@@ -18,6 +19,11 @@ const (
 	UserRejected   = "user.rejected" // account deleted before approval
 	UserLocked     = "user.locked"
 	UserUnlocked   = "user.unlocked"
+	// ErasureRequested is published when a member asks for their account
+	// to be erased. The account is locked from then on, so open
+	// connections and web sessions must end; EraseAfter says when the
+	// erasure will happen. Cancelling the request publishes UserUnlocked.
+	ErasureRequested = "user.erasure_requested"
 	// UserErased is published when an account's grace period ends, before
 	// the account becomes an anonymous tombstone. Plugins must remove or
 	// detach the member's data; DeleteContent says whether the member
@@ -34,6 +40,8 @@ type Event struct {
 	Actor  int64 // who caused it (0 = system)
 	// DeleteContent is set for UserErased only.
 	DeleteContent bool
+	// EraseAfter is set for ErasureRequested only.
+	EraseAfter time.Time
 }
 
 // Handler handles an event. Errors are collected and logged; they do not

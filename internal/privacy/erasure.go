@@ -38,7 +38,9 @@ func (s *Service) Grace() time.Duration { return s.grace }
 
 // RequestErasure locks the member's account at once and schedules its
 // erasure after the grace period. deleteContent records the member's
-// choice for posts and chat lines.
+// choice for posts and chat lines. It then publishes ErasureRequested, so
+// the account's connections, including the one that asked, and its web
+// sessions end, as when an account is locked.
 func (s *Service) RequestErasure(ctx context.Context, userID int64, deleteContent bool) (Erasure, error) {
 	now := s.now()
 	e := Erasure{UserID: userID, RequestedAt: now, EraseAfter: now.Add(s.grace), DeleteContent: deleteContent}
@@ -67,6 +69,7 @@ func (s *Service) RequestErasure(ctx context.Context, userID int64, deleteConten
 		return Erasure{}, err
 	}
 	s.log.Info("erasure requested", "user_id", userID, "erase_after", e.EraseAfter)
+	s.publish(ctx, events.Event{Topic: events.ErasureRequested, UserID: userID, Actor: userID, EraseAfter: e.EraseAfter})
 	return e, nil
 }
 
@@ -97,7 +100,7 @@ func (s *Service) Erasure(ctx context.Context, userID int64) (Erasure, bool, err
 // Members cannot log in while locked, so they ask an administrator, who
 // needs core.users.manage.
 func (s *Service) CancelErasure(ctx context.Context, actor, userID int64) error {
-	return store.WithTx(ctx, s.db, func(tx *sql.Tx) error {
+	err := store.WithTx(ctx, s.db, func(tx *sql.Tx) error {
 		if err := perm.RequireOutranks(ctx, tx, actor, userID, perm.UsersManage); err != nil {
 			return err
 		}
@@ -114,6 +117,10 @@ func (s *Service) CancelErasure(ctx context.Context, actor, userID int64) error 
 		s.log.Info("erasure cancelled", "actor", actor, "user_id", userID)
 		return audit.Record(ctx, tx, s.now(), audit.Entry{Actor: actor, Action: audit.ErasureCancelled, TargetType: "user", TargetID: userID})
 	})
+	if err == nil {
+		s.publish(ctx, events.Event{Topic: events.UserUnlocked, UserID: userID, Actor: actor})
+	}
+	return err
 }
 
 // Publisher delivers the erasure event to plugins. *events.Bus implements it.

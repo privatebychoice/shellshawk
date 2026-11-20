@@ -139,6 +139,7 @@ func run(args []string) error {
 	a.auth.SetPublisher(bus)
 	a.presence = presence.New(nil)
 	a.privacy = privacy.NewService(db, a.auth, perms, time.Duration(cfg.ErasureGraceDays)*24*time.Hour, nil, log)
+	a.privacy.SetPublisher(bus)
 	installed := installedPlugins()
 	for _, p := range installed {
 		if fc, ok := p.(privacy.FriendChecker); ok {

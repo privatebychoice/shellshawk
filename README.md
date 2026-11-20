@@ -485,8 +485,11 @@ is imported anywhere.
   `polls`, `chat`), generated when you download them.
 - **Erase my account**: needs a key login from the last 15 minutes and your
   username typed to confirm; you choose whether your posts and chat messages
-  are deleted or kept anonymously. The account is locked at once and erased
-  after the grace period (an administrator can cancel until then). Erasure
+  are deleted or kept anonymously. The account is locked at once, like a
+  locked account: every open SSH and SFTP connection ends (showing the
+  erasure date) and every web session and login code is deleted. It is
+  erased after the grace period; an administrator can cancel until then,
+  and you then log in afresh. Erasure
   removes keys, password, email, profile, preferences, groups, contacts
   (both ways), received messages and notifications (yours and those you
   caused), and unlinks poll votes (totals are

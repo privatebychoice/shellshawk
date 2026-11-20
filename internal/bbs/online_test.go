@@ -210,3 +210,48 @@ func TestWhoIsOnlineWebSessions(t *testing.T) {
 		t.Errorf("audit entries = %d, want 1", n)
 	}
 }
+
+// TestErasureEndsConnections: asking for erasure locks the account, so
+// every open connection ends with the erasure date and every web session
+// is deleted, and cancelling the request does not bring them back.
+func TestErasureEndsConnections(t *testing.T) {
+	e := startBBS(t)
+	_ = e.accessibleAdmin(t, "ada")
+	melKey := e.member(t, "ada", "mel")
+	ctx := context.Background()
+	ada, _ := e.auth.UserByUsername(ctx, "ada")
+	mel, _ := e.auth.UserByUsername(ctx, "mel")
+	tok, _, err := e.web.Create(ctx, mel.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	first := e.interactive(t, "mel", ssh.PublicKeys(melKey))
+	first.waitFor("or q to log out")
+	second := e.interactive(t, "mel", ssh.PublicKeys(melKey))
+	second.waitFor("or q to log out")
+
+	er, err := e.privacy.RequestErasure(ctx, mel.ID, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, l := range []*live{first, second} {
+		l.waitFor(sessions.ErasureMessage(er.EraseAfter))
+		done := make(chan error, 1)
+		go func() { done <- l.sess.Wait() }()
+		select {
+		case <-done:
+		case <-time.After(10 * time.Second):
+			t.Fatal("connection still open after the erasure request")
+		}
+	}
+	if _, err := e.web.Lookup(ctx, tok); err == nil {
+		t.Error("web session survived the erasure request")
+	}
+	if err := e.privacy.CancelErasure(ctx, ada.ID, mel.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.web.Lookup(ctx, tok); err == nil {
+		t.Error("web session came back after the request was cancelled")
+	}
+}

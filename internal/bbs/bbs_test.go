@@ -90,6 +90,7 @@ func startBBS(t *testing.T, plugins ...plugin.Plugin) *env {
 		plugins = []plugin.Plugin{&helloPlugin{}}
 	}
 	priv := privacy.NewService(db, as, ps, 14*24*time.Hour, nil, log)
+	priv.SetPublisher(bus)
 	for _, p := range plugins {
 		if fc, ok := p.(privacy.FriendChecker); ok {
 			priv.SetFriends(fc)
@@ -107,6 +108,7 @@ func startBBS(t *testing.T, plugins ...plugin.Plugin) *env {
 		Sessions: sessions.NewService(db, conns, nil, log), Log: log}
 	h.Sessions.Subscribe(bus)
 	web := websess.NewService(db, as, nil, log)
+	web.Subscribe(bus)
 	h.Sessions.SetWeb(web)
 	if err := h.Menu.Seed(ctx, h.MenuDefaults()); err != nil {
 		t.Fatal(err)
@@ -709,13 +711,20 @@ func TestEraseAccountEndToEnd(t *testing.T) {
 	p := prefs.Default()
 	p.Profile = theme.ProfileAccessible
 	e.prefs.Set(ctx, olga.ID, p)
+	webTok, _, err := e.web.Create(ctx, olga.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	// Main menu 2 = Privacy and profile; 4 = Erase my account; dismiss the
 	// explanation; content 1 = delete; type a wrong name, then the right
 	// one; confirm 2 = Yes; dismiss the final notice (session ends).
 	input := strings.Join([]string{"2", "4", "", "1", "olgaa", "olga", "2", ""}, "\r") + "\r"
 	out := e.session(t, "olga", ssh.PublicKeys(key), input)
-	for _, want := range []string{"erased after 14 days", "does not match your username", "Your account is locked and will be erased on"} {
+	// The request ends the session that asked, like every other one, with
+	// the date.
+	for _, want := range []string{"erased after 14 days", "does not match your username", "Your account is locked and will be erased on",
+		"To cancel, contact an administrator before then. This connection has ended."} {
 		if !strings.Contains(out, want) {
 			t.Errorf("output missing %q", want)
 		}
@@ -730,6 +739,14 @@ func TestEraseAccountEndToEnd(t *testing.T) {
 	}
 	if er, ok, _ := e.privacy.Erasure(ctx, olga.ID); !ok || !er.DeleteContent {
 		t.Errorf("erasure request = %+v, %v", er, ok)
+	}
+	// Asked from her own session, which the request ends: her web session
+	// must still be deleted, and stay gone after a cancellation.
+	if err := e.privacy.CancelErasure(ctx, admin.ID, olga.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.web.Lookup(ctx, webTok); err == nil {
+		t.Error("web session survived an erasure requested from SSH")
 	}
 }
 

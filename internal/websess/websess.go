@@ -317,14 +317,16 @@ func (s *Service) DeleteUser(ctx context.Context, userID int64) (int64, error) {
 // later does not bring them back; the member logs in afresh. (A locked
 // account's sessions are refused anyway, by Lookup.)
 func (s *Service) Subscribe(bus *events.Bus) {
-	bus.Subscribe(events.UserLocked, "websess", func(ctx context.Context, e events.Event) error {
-		n, err := s.DeleteUser(ctx, e.UserID)
-		if err != nil {
-			return err
-		}
-		if n > 0 {
-			s.log.Info("web sessions of locked account ended", "user_id", e.UserID, "count", n)
-		}
-		return nil
-	})
+	for _, topic := range []string{events.UserLocked, events.ErasureRequested} {
+		bus.Subscribe(topic, "websess", func(ctx context.Context, e events.Event) error {
+			n, err := s.DeleteUser(ctx, e.UserID)
+			if err != nil {
+				return err
+			}
+			if n > 0 {
+				s.log.Info("web sessions of locked account ended", "event", topic, "user_id", e.UserID, "count", n)
+			}
+			return nil
+		})
+	}
 }

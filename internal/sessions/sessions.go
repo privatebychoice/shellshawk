@@ -29,6 +29,13 @@ const EndedMessage = "Your connection was ended by an administrator or moderator
 // they are connected.
 const LockedMessage = "Your account has been locked, so this connection has ended."
 
+// ErasureMessage is what a member sees on every open connection when they
+// ask for their account to be erased.
+func ErasureMessage(eraseAfter time.Time) string {
+	return "Your account is locked and will be erased on " + eraseAfter.UTC().Format("2006-01-02 15:04 UTC") +
+		". To cancel, contact an administrator before then. This connection has ended."
+}
+
 // RejectedMessage is what someone waiting for approval sees when their
 // account is rejected while they are connected.
 const RejectedMessage = "Your account was not approved and has been removed, so this connection has ended."
@@ -205,4 +212,10 @@ func (s *Service) Subscribe(bus *events.Bus) {
 			return nil
 		})
 	}
+	bus.Subscribe(events.ErasureRequested, "sessions", func(_ context.Context, e events.Event) error {
+		if n := s.conns.EndUser(e.UserID, &presence.Disconnect{Message: ErasureMessage(e.EraseAfter)}); n > 0 {
+			s.log.Info("connections ended", "event", events.ErasureRequested, "user_id", e.UserID, "count", n)
+		}
+		return nil
+	})
 }

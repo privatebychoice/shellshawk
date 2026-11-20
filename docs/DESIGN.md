@@ -167,11 +167,13 @@ to use. The web navigation follows the same tree (§11).
   needs the rank rule (`RequireOutranks`). An actor can only
   approve/reject/lock accounts whose permissions they fully hold. The last
   active administrator cannot be removed or locked.
-- Locking an account publishes `user.locked`, and rejecting a pending one
-  `user.rejected`; on either, `sessions.Service` ends every open SSH
-  connection of the account (`presence.Conns.EndUser`) with a
-  `*presence.Disconnect` cause, so the member is told why. On
-  `user.locked`, `websess.Service` also deletes the account's web sessions
+- Locking an account publishes `user.locked` (an erasure request, which
+  also locks it, publishes `user.erasure_requested`, handled the same way;
+  see §5.2), and rejecting a pending one `user.rejected`; on any of them,
+  `sessions.Service` ends every open SSH connection of the account
+  (`presence.Conns.EndUser`) with a `*presence.Disconnect` cause, so the
+  member is told why. On `user.locked` and `user.erasure_requested`,
+  `websess.Service` also deletes the account's web sessions
   and login codes (subscribed even while the web interface is off, since
   sessions from an earlier run remain), so an unlock does not revive them.
   Until then, `Lookup` refuses any account that is not active, and live
@@ -304,8 +306,13 @@ random `former-xxxxxxxx` username (a reserved prefix), no password, keys,
 email, profile, preferences or groups — so everything kept stays attributed
 to the same anonymous name, including audit entries. Plugins handle
 `user.erased` first; if any fails, the erasure is retried on the next hourly
-run. While a request is pending only "Cancel the erasure request" (admin)
-reactivates the account; a plain unlock is refused. The only active
+run. A request publishes `user.erasure_requested` (with the erasure
+time) after it commits; as for `user.locked`, `sessions.Service` ends
+every open connection of the account, including the one that asked, with
+a message giving the date, and `websess.Service` deletes its web sessions
+and login codes, so cancelling does not bring them back. While a request
+is pending only "Cancel the erasure request" (admin) reactivates the
+account, publishing `user.unlocked`; a plain unlock is refused. The only active
 administrator cannot request erasure. "Fresh login" is implemented as a key
 login less than 15 minutes old. With *delete content*, conference posts are
 blanked to "[removed by author]" (and thread titles replaced) rather than
