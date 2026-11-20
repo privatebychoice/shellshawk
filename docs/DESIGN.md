@@ -196,7 +196,13 @@ to use. The web navigation follows the same tree (§11).
   (`perm.Service.UserGroupIDs`).
 - **Invites**: codes are random 128-bit Crockford base32 in dash-separated
   groups, stored as SHA-256 hashes, with optional expiry, max uses, the inviting user,
-  and default groups to assign.
+  and default groups to assign. Each time a code is used (the invite login
+  and registration, `checkInvite`), it is checked against its creator as
+  they are then: active, holding `core.invite.create`, and able to assign
+  each of its groups (`perm.MayAssign`). So locking, demoting or erasing a
+  member stops their outstanding invites (unlocking them restores them),
+  and a permission added to a group later does not reach invitees through
+  an invite from someone who lacks it. The bootstrap invite has no creator.
 - **Approval**: configurable per invite or globally — new accounts land in
   `pending` until an admin/moderator approves.
 

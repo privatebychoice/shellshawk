@@ -292,7 +292,61 @@ func checkInvite(ctx context.Context, db store.DBTX, code string, now time.Time)
 	if !inv.Usable(now) {
 		return Invite{}, ErrInviteInvalid
 	}
+	if err := creatorStillVouches(ctx, db, inv); err != nil {
+		return Invite{}, err
+	}
 	return inv, nil
+}
+
+// creatorStillVouches checks an invite against its creator as they are
+// now, not as they were when they made it: they must still be active, hold
+// core.invite.create and be able to assign each of its groups
+// (perm.MayAssign). So locking, demoting or erasing a member stops their
+// outstanding invites, and a permission added to a group later does not
+// reach invitees through an invite from someone who lacks it. Invites
+// from the system (the bootstrap invite) have no creator.
+func creatorStillVouches(ctx context.Context, db store.DBTX, inv Invite) error {
+	if inv.CreatedBy == 0 {
+		return nil
+	}
+	set, err := perm.PermissionsTx(ctx, db, inv.CreatedBy) // none unless active
+	if err != nil {
+		return fmt.Errorf("auth: invite creator: %w", err)
+	}
+	if !set.Has(perm.InviteCreate) {
+		return fmt.Errorf("%w: its creator can no longer invite", ErrInviteInvalid)
+	}
+	rows, err := db.QueryContext(ctx, `SELECT group_id FROM invite_groups WHERE invite_id = ?`, inv.ID)
+	if err != nil {
+		return fmt.Errorf("auth: invite groups: %w", err)
+	}
+	var ids []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			return err
+		}
+		ids = append(ids, id)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	for _, id := range ids {
+		g, err := perm.GroupByIDTx(ctx, db, id)
+		if err != nil {
+			return fmt.Errorf("auth: invite group: %w", err)
+		}
+		ok, err := perm.MayAssign(ctx, db, inv.CreatedBy, set, g)
+		if err != nil {
+			return err
+		}
+		if !ok {
+			return fmt.Errorf("%w: its creator can no longer assign group %q", ErrInviteInvalid, g.Name)
+		}
+	}
+	return nil
 }
 
 // Invites lists invites, newest first: all of them for holders of

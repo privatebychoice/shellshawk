@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -522,5 +523,82 @@ func TestUsernamesManyRepeats(t *testing.T) {
 	}
 	if names[alice] != "alice" || names[f.admin] == "" || len(names) != 2 {
 		t.Errorf("names = %v", names)
+	}
+}
+
+// TestInvitesFollowCreator: an invite is checked against its creator as
+// they are when it is used, so locking or demoting them, or a group
+// gaining permissions they lack, stops their outstanding invites.
+func TestInvitesFollowCreator(t *testing.T) {
+	f := newFixture(t)
+	vips, err := f.perms.CreateGroup(f.ctx, f.admin, "vips", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	modGroup, _ := f.perms.GroupByName(f.ctx, perm.GroupModerator)
+	lockMe := f.user("mod1", perm.GroupModerator)
+	demoteMe := f.user("mod2", perm.GroupModerator)
+	leaveVips := f.user("mod3", perm.GroupModerator, "vips")
+	memberGains := f.user("mod4", perm.GroupModerator)
+	stays := f.user("mod5", perm.GroupModerator)
+	codes := map[int64]string{
+		lockMe:      f.invite(lockMe, InviteOptions{MaxUses: 2}),
+		demoteMe:    f.invite(demoteMe, InviteOptions{}),
+		leaveVips:   f.invite(leaveVips, InviteOptions{Groups: []string{"vips"}}),
+		memberGains: f.invite(memberGains, InviteOptions{}), // into member
+		stays:       f.invite(stays, InviteOptions{Groups: []string{perm.GroupModerator}}),
+	}
+	// Each creator changes; the last one does not.
+	if err := f.svc.SetLocked(f.ctx, f.admin, lockMe, true); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.perms.RemoveMember(f.ctx, f.admin, modGroup.ID, demoteMe); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.perms.RemoveMember(f.ctx, f.admin, vips, leaveVips); err != nil {
+		t.Fatal(err)
+	}
+	// member (which needs only its permissions, not membership) gains one
+	// the moderators lack.
+	memberGroup, _ := f.perms.GroupByName(f.ctx, perm.GroupMember)
+	if err := f.perms.Grant(f.ctx, f.admin, memberGroup.ID, perm.AuditView); err != nil {
+		t.Fatal(err)
+	}
+	line, _ := newKeyLine(t, "")
+	tests := []struct {
+		name    string
+		creator int64
+		want    error
+	}{
+		{"creator locked", lockMe, ErrInviteInvalid},
+		{"creator lost core.invite.create", demoteMe, ErrInviteInvalid},
+		{"creator left the group", leaveVips, ErrInviteInvalid},
+		{"its group gained a permission the creator lacks", memberGains, ErrInviteInvalid},
+		{"creator unchanged", stays, nil},
+	}
+	for i, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if _, err := f.svc.CheckInvite(f.ctx, codes[tt.creator]); !errors.Is(err, tt.want) {
+				t.Errorf("CheckInvite = %v, want %v", err, tt.want)
+			}
+			key, _ := newKeyLine(t, "")
+			if tt.want != nil {
+				key = line // never used: registration must fail first
+			}
+			if _, err := f.svc.Register(f.ctx, codes[tt.creator], Registration{Username: "newbie" + strconv.Itoa(i), Password: testPassword, PublicKey: key}); !errors.Is(err, tt.want) {
+				t.Errorf("Register = %v, want %v", err, tt.want)
+			}
+		})
+	}
+	// Unlocking the creator (once member no longer grants more than they
+	// hold) makes their invite work again: the refusals spent nothing.
+	if err := f.perms.Revoke(f.ctx, f.admin, memberGroup.ID, perm.AuditView); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.svc.SetLocked(f.ctx, f.admin, lockMe, false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.svc.CheckInvite(f.ctx, codes[lockMe]); err != nil {
+		t.Errorf("after unlocking the creator: %v", err)
 	}
 }

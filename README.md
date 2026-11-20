@@ -92,7 +92,10 @@ hashed with argon2id. Password attempts are rate-limited: 5 failures per
 account and 10 per IP address in 15 minutes (an IPv6 address counts with
 the rest of its /64 network). Logging in successfully clears only that
 account's count, never the address's. Invite codes are 128-bit,
-stored only as SHA-256 hashes, and shown once.
+stored only as SHA-256 hashes, and shown once. An invite works only while
+its creator could still make it: if they are locked, lose
+`core.invite.create`, or could no longer assign one of its groups, their
+outstanding invites stop working (and start again if that changes back).
 
 A password can add a key, so change it if it may have leaked: *SSH keys →
 Change password*. For your safety this needs a key login less than 15

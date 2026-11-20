@@ -172,6 +172,17 @@ func groupByName(ctx context.Context, db store.DBTX, name string) (Group, error)
 	return g, err
 }
 
+// PermissionsTx is Service.Permissions inside another service's
+// transaction. An account that is not active holds none.
+func PermissionsTx(ctx context.Context, db store.DBTX, userID int64) (Set, error) {
+	return permissions(ctx, db, userID)
+}
+
+// GroupByIDTx is Service.GroupByID inside another service's transaction.
+func GroupByIDTx(ctx context.Context, db store.DBTX, id int64) (Group, error) {
+	return groupByID(ctx, db, id)
+}
+
 func groupByID(ctx context.Context, db store.DBTX, id int64) (Group, error) {
 	var g Group
 	err := db.QueryRowContext(ctx, `SELECT id, name, description, builtin FROM access_groups WHERE id = ?`, id).
