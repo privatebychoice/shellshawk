@@ -97,6 +97,11 @@ type NotificationKind struct {
 	// may still see it. Errors and panics are logged and reported as a
 	// generic failure.
 	Open func(ctx context.Context, s Session, n notify.Notification) error
+	// WebPath, if set, returns the plugin web page showing what the
+	// notification is about, relative to the plugin's pages (e.g.
+	// "/m/12"), or "" if there is none. The page must check that the
+	// member may still see it.
+	WebPath func(n notify.Notification) string
 }
 
 // Permission is a permission a plugin defines.

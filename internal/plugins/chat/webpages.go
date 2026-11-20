@@ -28,6 +28,7 @@ var pagesTmpl = template.Must(template.New("pages").Parse(`
 <button type="submit">Find</button></p>
 </form>
 {{if .Start}}<p><a href="{{.Start}}">Start a private chat</a></p>{{end}}
+{{if .PageLink}}<p><a href="{{.PageLink}}">Page someone</a></p>{{end}}
 {{range .Groups}}<section aria-labelledby="{{.ID}}">
 <h2 id="{{.ID}}">{{.Heading}}</h2>
 <ul class="list">{{range .Channels}}<li><a href="{{.Href}}">#{{.Name}}</a> <span class="meta">{{.Here}}{{if .Topic}} · {{.Topic}}{{end}}</span></li>
@@ -38,7 +39,18 @@ var pagesTmpl = template.Must(template.New("pages").Parse(`
 
 {{define "channel"}}{{template "notice" .Notice}}
 {{.Panel}}
-{{if .Private}}<section aria-labelledby="private-heading">
+{{if .CanPage}}<section aria-labelledby="page-heading">
+<h2 id="page-heading">Page a member</h2>
+<form method="post" action="{{.Actions.page}}" class="form">
+<input type="hidden" name="csrf" value="{{.CSRF}}">
+<p><label for="page-name">Username</label>
+<input type="text" id="page-name" name="username" maxlength="64" required autocomplete="off" autocapitalize="none" spellcheck="false" aria-describedby="page-help{{if .Errors.page}} page-error{{end}}" value="{{.Values.page}}"{{if .Errors.page}} aria-invalid="true"{{end}}>
+<span class="meta" id="page-help">Asks them to come and talk in #{{.Name}}. They must be online and able to join it{{if .Private}}; paging invites them{{end}}.</span></p>
+{{if .Errors.page}}<p class="error" id="page-error" role="alert">{{.Errors.page}}</p>{{end}}
+<p><button type="submit">Page</button></p>
+</form>
+</section>
+{{end}}{{if .Private}}<section aria-labelledby="private-heading">
 <h2 id="private-heading">Private chat</h2>
 <p>Started by {{.Creator}}. Invited: {{if .Invited}}{{.InvitedList}}{{else}}nobody yet{{end}}.</p>
 <form method="post" action="{{.Actions.invite}}" class="form">
@@ -74,6 +86,16 @@ var pagesTmpl = template.Must(template.New("pages").Parse(`
 {{end}}</section>
 {{end}}<p><a href="{{.Back}}">All chats</a></p>{{end}}
 
+{{define "page"}}{{if .Error}}<p class="error" id="page-error" role="alert">{{.Error}}</p>{{end}}
+<p>Ask a member to come and talk to you in a private chat between the two of you. They see it the next time they move between screens over SSH or open a page on the web, or straight away if they are in a chat.</p>
+<form method="post" action="{{.Action}}" class="form"{{if .Error}} aria-describedby="page-error"{{end}}>
+<input type="hidden" name="csrf" value="{{.CSRF}}">
+<p><label for="page-user">Username</label>
+<input type="text" id="page-user" name="username" maxlength="64" required autocomplete="off" autocapitalize="none" spellcheck="false" value="{{.Value}}"{{if .Error}} aria-invalid="true"{{end}}></p>
+<p><button type="submit">Page</button></p>
+</form>
+<p><a href="{{.Back}}">All chats</a></p>{{end}}
+
 {{define "new"}}{{if .Error}}<p class="error" id="new-error" role="alert">{{.Error}}</p>{{end}}
 <form method="post" action="{{.Action}}" class="form"{{if .Error}} aria-describedby="new-error"{{end}}>
 <input type="hidden" name="csrf" value="{{.CSRF}}">
@@ -105,6 +127,7 @@ var notices = map[string]string{
 	"topic":  "Topic changed.",
 	"remove": "Removed from this chat.",
 	"closed": "The chat was closed.",
+	"paged":  "Page sent. They see it the next time they move between screens, or straight away if they are in a chat.",
 }
 
 // webMessage is the text shown for an expected error, or "" if err is not
@@ -166,6 +189,9 @@ func (p *Plugin) listData(r *http.Request, s plugin.WebSession) (map[string]any,
 	data := map[string]any{"FindAction": s.Path("/find"), "MaxQuery": MaxTopic}
 	if set.Has(PermCreate) {
 		data["Start"] = s.Path("/new")
+		if set.Has(PermPage) && p.h.Notify != nil {
+			data["PageLink"] = s.Path("/page")
+		}
 	}
 	return data, nil
 }
@@ -223,11 +249,18 @@ func (p *Plugin) channelPage(r *http.Request, s plugin.WebSession, c Channel, no
 	}
 	data := map[string]any{
 		"Notice": notice, "Panel": panel, "Back": s.Path("/"), "CSRF": s.CSRF(), "MaxTopic": MaxTopic,
-		"Errors": errs, "Values": vals, "Private": c.Kind == KindAdHoc,
+		"Errors": errs, "Values": vals, "Private": c.Kind == KindAdHoc, "Name": c.Name,
 		"Actions": map[string]string{
 			"invite": s.Path(base + "/invite"), "topic": s.Path(base + "/topic"),
-			"remove": s.Path(base + "/remove"), "close": s.Path(base + "/close"),
+			"remove": s.Path(base + "/remove"), "close": s.Path(base + "/close"), "page": s.Path(base + "/page"),
 		},
+	}
+	if p.h.Notify != nil {
+		set, err := s.Permissions(ctx)
+		if err != nil {
+			return plugin.WebPage{}, err
+		}
+		data["CanPage"] = set.Has(PermPage)
 	}
 	if c.Kind == KindAdHoc {
 		invited, err := p.Invited(ctx, c)
@@ -371,4 +404,87 @@ func (p *Plugin) webCreate(r *http.Request, s plugin.WebSession) (plugin.WebPage
 	}
 	p.h.Log.Info("private chat started from the web", "channel_id", id, "actor", s.UserID())
 	return plugin.WebPage{Redirect: s.Path("/c/" + strconv.FormatInt(id, 10))}, nil
+}
+
+// webPageHere pages a member into the channel being viewed.
+func (p *Plugin) webPageHere(r *http.Request, s plugin.WebSession) (plugin.WebPage, error) {
+	c, u, err := p.webChannel(r, s)
+	if err != nil {
+		return plugin.WebPage{}, err
+	}
+	name := strings.TrimSpace(r.PostFormValue("username"))
+	to, err := p.Page(r.Context(), u, name, c)
+	if errors.Is(err, perm.ErrForbidden) {
+		return plugin.WebPage{}, &plugin.WebError{Status: http.StatusForbidden, Message: "You do not have permission to do that."}
+	}
+	if errors.Is(err, ErrInvalid) || errors.Is(err, ErrCannotPage) {
+		shown := strings.TrimPrefix(name, "@")
+		if to.Username != "" {
+			shown = to.Username
+		}
+		return p.channelPage(r, s, c, "", map[string]string{"page": pageMessage(shown, err)}, map[string]string{"page": name})
+	}
+	if err != nil {
+		return plugin.WebPage{}, err
+	}
+	p.h.Log.Info("paged from a web chat page", "channel_id", c.ID, "to", to.ID)
+	return plugin.WebPage{Redirect: s.Path("/c/"+strconv.FormatInt(c.ID, 10)+"?done=paged") + "#page-heading"}, nil
+}
+
+// pagingAvailable reports whether paging into a talk chat can be offered
+// at all (notifications on, and the member may start private chats).
+func (p *Plugin) pagingAvailable(r *http.Request, s plugin.WebSession) error {
+	if p.h.Notify == nil {
+		return plugin.ErrWebNotFound
+	}
+	set, err := s.Permissions(r.Context())
+	if err != nil {
+		return err
+	}
+	if !set.Has(PermCreate) {
+		return &plugin.WebError{Status: http.StatusForbidden, Message: "You do not have permission to do that."}
+	}
+	return nil
+}
+
+func (p *Plugin) pagePage(s plugin.WebSession, msg, value string) (plugin.WebPage, error) {
+	body, err := execPage("page", map[string]any{"Error": msg, "Value": value, "Action": s.Path("/page"), "CSRF": s.CSRF(), "Back": s.Path("/")})
+	return plugin.WebPage{Title: "Page someone", Body: body}, err
+}
+
+// webPageForm asks who to page into a private talk chat.
+func (p *Plugin) webPageForm(r *http.Request, s plugin.WebSession) (plugin.WebPage, error) {
+	if err := p.pagingAvailable(r, s); err != nil {
+		return plugin.WebPage{}, err
+	}
+	return p.pagePage(s, "", "")
+}
+
+// webPageTalk pages a member into the talk chat between the two of you
+// and opens it.
+func (p *Plugin) webPageTalk(r *http.Request, s plugin.WebSession) (plugin.WebPage, error) {
+	if err := p.pagingAvailable(r, s); err != nil {
+		return plugin.WebPage{}, err
+	}
+	u, err := p.h.Auth.UserByID(r.Context(), s.UserID())
+	if err != nil {
+		return plugin.WebPage{}, err
+	}
+	name := strings.TrimSpace(r.PostFormValue("username"))
+	to, c, err := p.pageToTalk(r.Context(), u, name)
+	if errors.Is(err, perm.ErrForbidden) {
+		return plugin.WebPage{}, &plugin.WebError{Status: http.StatusForbidden, Message: "You do not have permission to do that."}
+	}
+	if errors.Is(err, ErrInvalid) || errors.Is(err, ErrCannotPage) {
+		shown := strings.TrimPrefix(name, "@")
+		if to.Username != "" {
+			shown = to.Username
+		}
+		return p.pagePage(s, pageMessage(shown, err), name)
+	}
+	if err != nil {
+		return plugin.WebPage{}, err
+	}
+	p.h.Log.Info("paged from the web", "channel_id", c.ID, "to", to.ID)
+	return plugin.WebPage{Redirect: s.Path("/c/"+strconv.FormatInt(c.ID, 10)+"?done=paged") + "#chat"}, nil
 }

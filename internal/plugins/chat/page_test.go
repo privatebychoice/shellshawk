@@ -1,7 +1,9 @@
 package chat
 
 import (
+	"context"
 	"errors"
+	"net/url"
 	"strconv"
 	"strings"
 	"testing"
@@ -183,8 +185,11 @@ func TestPageTUI(t *testing.T) {
 		t.Fatalf("bob's notifications = %+v", list)
 	}
 	k, ok := f.Registry.NotificationKind(NotifyPage)
-	if !ok || k.Open == nil || k.OpenLabel != "Go to the chat" {
+	if !ok || k.Open == nil || k.OpenLabel != "Go to the chat" || k.WebPath == nil {
 		t.Fatalf("page kind = %+v, %v", k, ok)
+	}
+	if talk, _ := f.p.ByName(f.Ctx, "talk-alice-bob"); k.WebPath(list[0]) != "/c/"+strconv.FormatInt(talk.ID, 10) {
+		t.Errorf("web path = %q", k.WebPath(list[0]))
 	}
 	f.Presence.Enter(f.alice)
 	f.Visibility(f.alice, privacy.Pages, privacy.Public)
@@ -209,5 +214,89 @@ func TestPageTUI(t *testing.T) {
 	}
 	if !strings.Contains(gone.Out.String(), "That chat no longer exists, or you can no longer join it.") {
 		t.Errorf("closed chat:\n%s", gone.Out.String())
+	}
+}
+
+func TestWebPaging(t *testing.T) {
+	f := setup(t)
+	lobby, _ := f.p.ByName(f.Ctx, "lobby")
+	lobbyID := map[string]string{"id": strconv.FormatInt(lobby.ID, 10)}
+	f.Visibility(f.bob, privacy.Pages, privacy.Public)
+	f.Visibility(f.carol, privacy.Pages, privacy.Public)
+
+	// The chat list offers paging; the form asks for a username.
+	if list, _ := f.WebGet(f.p, "/", nil, f.alice); !strings.Contains(string(list.Body), `href="/p/chat/page">Page someone`) {
+		t.Errorf("list without the paging link:\n%s", list.Body)
+	}
+	if form, err := f.WebGet(f.p, "/page", nil, f.alice); err != nil || !strings.Contains(string(form.Body), `<label for="page-user">Username</label>`) {
+		t.Errorf("page form = %s, %v", form.Body, err)
+	}
+
+	// bob is only on the web, following #lobby: that counts as online.
+	ctx, cancel := context.WithCancel(f.Ctx)
+	bobStream := f.stream(t, ctx, f.bob, lobby.ID)
+
+	tests := []struct {
+		name, path string
+		values     map[string]string
+		user       string
+		want       string // in the re-shown form; "" = paged
+	}{
+		{"nobody", "/page", nil, "nobody", `No member called &#34;nobody&#34;.`},
+		{"offline", "/page", nil, "carol", "carol cannot be paged right now."},
+		{"yourself", "/page", nil, "alice", "You cannot page yourself."},
+		{"on the web", "/page", nil, "@bob", ""},
+		{"again too soon", "/page", nil, "bob", "You paged bob recently; you can page them again in 5 minute(s)."},
+		{"offline, from a channel", "/c/{id}/page", lobbyID, "carol", "carol cannot be paged right now."},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			page, err := f.WebPost(f.p, tt.path, tt.values, url.Values{"username": {tt.user}}, f.alice)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if tt.want == "" {
+				if !strings.HasPrefix(page.Redirect, "/p/chat/c/") || !strings.Contains(page.Redirect, "?done=paged") {
+					t.Errorf("redirect = %q\n%s", page.Redirect, page.Body)
+				}
+				return
+			}
+			if b := string(page.Body); !strings.Contains(b, tt.want) || !strings.Contains(b, `aria-invalid="true"`) {
+				t.Errorf("want %q in:\n%s", tt.want, b)
+			}
+		})
+	}
+	cancel()
+	if got := <-bobStream; !strings.Contains(got, "alice is paging you to talk in #talk-alice-bob. Open it from Notifications or the chat list.") || strings.Contains(got, "/join") {
+		t.Errorf("bob's web stream:\n%s", got)
+	}
+	if n, _ := f.Notify.CountUnseen(f.Ctx, f.bob); n != 0 {
+		t.Errorf("a page seen live on the web is still new (%d)", n)
+	}
+
+	// From a channel page: the form is there, and carol, now online, is
+	// paged to #lobby.
+	if page, _ := f.WebGet(f.p, "/c/{id}", lobbyID, f.alice); !strings.Contains(string(page.Body), `<h2 id="page-heading">Page a member</h2>`) {
+		t.Errorf("channel page without the paging form:\n%s", page.Body)
+	}
+	f.Presence.Enter(f.carol)
+	page, err := f.WebPost(f.p, "/c/{id}/page", lobbyID, url.Values{"username": {"carol"}}, f.alice)
+	if err != nil || page.Redirect != "/p/chat/c/"+lobbyID["id"]+"?done=paged#page-heading" {
+		t.Errorf("page carol = %+v, %v", page, err)
+	}
+	if list, _ := f.Notify.List(f.Ctx, f.carol); len(list) != 1 || list[0].Text != "would like to talk in #lobby" {
+		t.Errorf("carol's notifications = %+v", list)
+	}
+
+	// Without chat.page the form is not shown.
+	member, _ := f.Perms.GroupByName(f.Ctx, perm.GroupMember)
+	if err := f.Perms.Revoke(f.Ctx, f.Admin, member.ID, PermPage); err != nil {
+		t.Fatal(err)
+	}
+	if page, _ := f.WebGet(f.p, "/c/{id}", lobbyID, f.alice); strings.Contains(string(page.Body), "Page a member") {
+		t.Error("paging form shown without chat.page")
+	}
+	if list, _ := f.WebGet(f.p, "/", nil, f.alice); strings.Contains(string(list.Body), "Page someone") {
+		t.Error("paging link shown without chat.page")
 	}
 }

@@ -1,5 +1,5 @@
 {{define "dashboard"}}
-<p>Welcome, {{.User}}.</p>
+<p>Welcome, {{.User}}.{{if .New}} <a href="/notifications">You have {{.New}} new notification{{if ne .New 1}}s{{end}}.</a>{{end}}</p>
 {{range .Panels}}{{.}}
 {{end}}{{if .Nav}}<ul class="links">
 {{range .Nav}}<li><a href="{{.Href}}">{{.Label}}</a></li>

@@ -140,6 +140,7 @@ lack, so a moderator cannot lock an administrator.
   100), opens or deletes one, marks all as seen or deletes them all. Its
   *Notification settings* (`s`) turn the between-screens list off (they
   then wait under *Notifications*) and choose which kinds you receive.
+  The same list and settings are on the web at `/notifications`.
 - **Themes**: Classic BBS, Amber Terminal, Green Phosphor, Dark, Light and
   High Contrast. Text colours meet WCAG AA contrast (AAA for High Contrast),
   enforced by tests.
@@ -329,7 +330,8 @@ every request, so locking an account takes effect immediately.
   private chat invites them; other channels must already be open to
   them). The member gets a notification — or, if they are in a chat, a
   line there straight away — that takes them to the chat. Only members
-  who are online, accept pages from you (privacy setting *Who can page
+  who are online (over SSH, or following a chat on the web), accept pages
+  from you (privacy setting *Who can page
   you*, default *Friends only*) and have page notifications on can be
   paged; the refusal does not say which. You can page the same person
   again after 5 minutes (admin setting in *Plugin settings → Chat*).
@@ -364,21 +366,23 @@ every request, so locking an account takes effect immediately.
 
 Optional (`SHELLSHAWK_HTTP_ADDR`); serve it behind a TLS-terminating
 reverse proxy. You can read, write, reply to and delete private messages,
-chat live in any channel you may join, start and run private chats, and
-vote in polls. Staff can manage users, groups and permissions, create and
+chat live in any channel you may join, start and run private chats, page
+someone, read and manage your notifications, and vote in polls. Staff can manage users, groups and permissions, create and
 revoke invites, approve or reject new accounts, see who is online and end
 a connection, set the connection limits, the BBS name and plugin settings,
 edit the member menu and the transition screens, and read the audit log.
 Conference posting, creating polls, channel management, slash commands and
-your own settings stay in the SSH interface.
+your own settings (apart from notification settings) stay in the SSH
+interface.
 
 | Path | Description |
 |------|-------------|
 | `/` | Start page: how to connect, the SSH host key fingerprint, how to join |
 | `/login` | Log in with your username and a one-time code from **Web login code** in the BBS main menu (single use, 5 minutes) |
-| `/home` | Your start page once logged in |
+| `/home` | Your start page once logged in; says how many notifications are new |
+| `/notifications` | Your notifications, newest first, with *New* marks (the navigation link shows the count, e.g. *Notifications (2 new)*). A notification links to what it is about (the message, the thread or the chat) and opening it marks it seen; delete one, mark all as seen, or delete all (with a ticked box). *Notification settings* chooses which kinds you receive and whether new ones are listed between screens over SSH |
 | `/p/conferences/` | Areas, conferences and threads you may read; polls on posts can be voted in, and a thread with a chat shows it live, and you can send messages |
-| `/p/chat/` | Channels, private chats and thread chats you may join (with who is there and the topic), and a search by name or topic. Each channel has a live page: messages arrive as they are sent and you can send your own. Start a private chat with invitations; inside one, anyone in it can invite, and its creator (or a chat moderator) can change the topic, remove someone or close it |
+| `/p/chat/` | Channels, private chats and thread chats you may join (with who is there and the topic), and a search by name or topic. Each channel has a live page: messages arrive as they are sent and you can send your own. Start a private chat with invitations; inside one, anyone in it can invite, and its creator (or a chat moderator) can change the topic, remove someone or close it. With `chat.page`, each channel page has *Page a member* (into that channel), and *Page someone* on the list pages a member into your private chat with them (`#talk-<you>-<them>`, also needs `chat.create`) and opens it. A member paged while following a chat on the web gets a line there pointing to Notifications |
 | `/p/messages/` | Inbox, Sent and Deleted, with unread marks and counts; opening a message marks it read. Write a message (to usernames and your contact groups; markdown) or reply, with the same limits and privacy rules as over SSH. Delete (to Deleted, restorable), move back to the inbox, delete permanently, remove from Sent and empty the Deleted folder; the ones that cannot be undone need a ticked confirmation box |
 | `/p/polls/` | Open polls (pinned first) and closed polls; vote or change your vote, and see results under the same rules as over SSH |
 | `/p/wall/` | The wall (read-only); the message of the day is on `/home` |

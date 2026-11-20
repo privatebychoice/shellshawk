@@ -16,7 +16,8 @@ const NotifyReply = "conferences:reply"
 
 func (p *Plugin) notificationKinds() []plugin.NotificationKind {
 	return []plugin.NotificationKind{{Key: "reply", Label: "Replies to your threads", Help: "Someone replied to a thread you started.",
-		Default: true, OpenLabel: "Read the thread", Open: p.openNotification}}
+		Default: true, OpenLabel: "Read the thread", Open: p.openNotification,
+		WebPath: notify.RefPath("/t/")}}
 }
 
 // notifyAuthor tells t's author that user replied, if the author can still

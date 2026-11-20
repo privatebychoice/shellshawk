@@ -435,3 +435,15 @@ func (s *Service) export(ctx context.Context, userID int64) ([]export.File, erro
 	f, err := export.JSON("notifications.json", map[string]any{"notifications": list, "settings": settings})
 	return []export.File{f}, err
 }
+
+// RefPath returns a WebPath for kinds whose Ref is a row ID: prefix
+// followed by the ID (e.g. "/m/12"), or "" if Ref is not a positive
+// number.
+func RefPath(prefix string) func(Notification) string {
+	return func(n Notification) string {
+		if id, err := strconv.ParseInt(n.Ref, 10, 64); err != nil || id <= 0 || strconv.FormatInt(id, 10) != n.Ref {
+			return ""
+		}
+		return prefix + n.Ref
+	}
+}

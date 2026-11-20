@@ -253,3 +253,20 @@ func TestAge(t *testing.T) {
 		}
 	}
 }
+
+func TestRefPath(t *testing.T) {
+	path := RefPath("/m/")
+	tests := []struct{ ref, want string }{
+		{"12", "/m/12"},
+		{"", ""},
+		{"0", ""},
+		{"-3", ""},
+		{"12/../x", ""},
+		{"+12", ""},
+	}
+	for _, tt := range tests {
+		if got := path(Notification{Ref: tt.ref}); got != tt.want {
+			t.Errorf("RefPath(%q) = %q, want %q", tt.ref, got, tt.want)
+		}
+	}
+}

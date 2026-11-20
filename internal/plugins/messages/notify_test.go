@@ -41,8 +41,15 @@ func TestNotifications(t *testing.T) {
 	}
 
 	k, ok := f.Registry.NotificationKind(NotifyNew)
-	if !ok || k.Open == nil || k.OpenLabel != "Read the message" {
+	if !ok || k.Open == nil || k.OpenLabel != "Read the message" || k.WebPath == nil {
 		t.Fatalf("kind = %+v, %v", k, ok)
+	}
+	// On the web it links to the message's page.
+	if got := k.WebPath(n); got != "/m/"+n.Ref {
+		t.Errorf("web path = %q", got)
+	}
+	if page, err := f.WebGet(f.p, "/m/{id}", map[string]string{"id": n.Ref}, f.carol); err != nil || !strings.Contains(string(page.Body), "Noon at the usual place.") {
+		t.Errorf("web page = %s, %v", page.Body, err)
 	}
 	// Opening shows the message; q leaves its actions.
 	s := f.Session(f.carol, "\rq\r")

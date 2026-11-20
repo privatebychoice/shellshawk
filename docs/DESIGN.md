@@ -463,7 +463,8 @@ Package `notify`; tables `notifications` and `notification_settings`, and
 - **Paging** (chat): `chat.Page` asks a member to come and talk in a
   channel the pager can enter. A private chat invites them; other
   channels must already admit them. Refused alike (`ErrCannotPage`, "cannot
-  be paged right now") when the member is offline (presence), does not
+  be paged right now") when the member is offline (no SSH session in
+  presence and not in any chat), does not
   accept pages from the pager (privacy field `pages`, default friends) or
   has page notifications off, so a page reveals nothing their settings
   hide. One page per pair per admin-set interval (chat setting
@@ -477,7 +478,20 @@ Package `notify`; tables `notifications` and `notification_settings`, and
 - **Privacy**: erasure deletes the member's notifications, their settings
   and every notification they caused; the data export has
   `notifications/notifications.json` (list and settings).
-- **Web** pages for notifications are not built yet.
+- **Web**: `GET /notifications` (core, when `web.Config.Notify` is set)
+  lists them like the SSH item; the navigation entry and `/home` show the
+  new count. A kind's optional `WebPath` (e.g. `notify.RefPath("/m/")`)
+  gives the plugin page a notification is about; `GET
+  /notifications/{id}/open` marks it seen and redirects to
+  `/p/<plugin><path>` (the page checks access again), or back with a
+  notice when there is none. Delete one, mark all seen and delete all
+  (ticked box) are CSRF-checked POSTs; `/notifications/settings` uses the
+  shared form renderer for the same settings as SSH. Paging on the web:
+  *Page a member* on each channel page (`POST /p/chat/c/{id}/page`) and
+  *Page someone* (`/p/chat/page`, same steps as the Chat menu action).
+  A member following a chat on the web counts as online for paging (the
+  chat hub knows they are there) and gets a live line without the
+  `/join` hint, which only works over SSH.
 
 ---
 

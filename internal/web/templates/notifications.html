@@ -1,0 +1,23 @@
+{{define "notifications"}}{{if .Notice}}<p class="notice" role="status">{{.Notice}}</p>
+{{end}}<p>{{if .Rows}}You have {{len .Rows}} notification(s){{if .Unseen}}, {{.Unseen}} new{{end}}.{{else}}You have no notifications.{{end}}
+Notifications are kept for {{.Days}} days, at most {{.Keep}}. <a href="/notifications/settings">Notification settings</a></p>
+{{if .Rows}}<ul class="list notifications">
+{{range .Rows}}<li>{{if .New}}<strong>New:</strong> {{end}}{{if .Open}}<a href="/notifications/{{.ID}}/open">{{.Text}}</a>{{else}}{{.Text}}{{end}} <span class="meta">{{.Age}}</span>
+<form method="post" action="/notifications/{{.ID}}/delete" class="inline"><input type="hidden" name="csrf" value="{{$.CSRF}}"><button type="submit">Delete<span class="visually-hidden"> notification: {{.Text}}</span></button></form></li>
+{{end}}</ul>
+{{if .Unseen}}<form method="post" action="/notifications/seen" class="form">
+<input type="hidden" name="csrf" value="{{.CSRF}}">
+<p><button type="submit">Mark all as seen</button></p>
+</form>
+{{end}}<form method="post" action="/notifications/clear" class="form">
+<input type="hidden" name="csrf" value="{{.CSRF}}">
+<p><label><input type="checkbox" name="confirm" value="yes" required{{if .ClearError}} aria-invalid="true" aria-describedby="clear-error"{{end}}> Yes, delete all my notifications</label></p>
+{{if .ClearError}}<p class="error" id="clear-error" role="alert">{{.ClearError}}</p>
+{{end}}<p><button type="submit">Delete all</button></p>
+</form>
+{{end}}{{end}}
+{{define "notification-settings"}}<form method="post" action="/notifications/settings" class="form">
+<input type="hidden" name="csrf" value="{{.CSRF}}">
+{{template "fields" .Fields}}<p><button type="submit">Save</button></p>
+</form>
+<p><a href="/notifications">Back to notifications</a></p>{{end}}

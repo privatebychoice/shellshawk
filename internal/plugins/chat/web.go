@@ -51,6 +51,9 @@ func (p *Plugin) webRoutes() []plugin.WebRoute {
 		{Path: "/c/{id}/topic", Method: http.MethodPost, AnyOf: use, Handle: p.privateAction("topic", "topic", p.webTopic)},
 		{Path: "/c/{id}/remove", Method: http.MethodPost, AnyOf: use, Handle: p.privateAction("remove", "remove", p.webRemove)},
 		{Path: "/c/{id}/close", Method: http.MethodPost, AnyOf: use, Handle: p.privateAction("close", "closed", p.webClose)},
+		{Path: "/c/{id}/page", Method: http.MethodPost, AnyOf: []string{PermPage}, Handle: p.webPageHere},
+		{Path: "/page", AnyOf: []string{PermPage}, Handle: p.webPageForm},
+		{Path: "/page", Method: http.MethodPost, AnyOf: []string{PermPage}, Handle: p.webPageTalk},
 	}
 }
 
@@ -127,7 +130,7 @@ func (p *Plugin) webEvents(w http.ResponseWriter, r *http.Request, s plugin.WebS
 		}
 	}
 
-	m := p.hub.join(c.ID, u.ID, u.Username)
+	m := p.hub.joinAs(c.ID, u.ID, u.Username, true)
 	p.hub.broadcast(c.ID, eventLine(p.now(), u.Username+" joined"))
 	p.h.Log.Info("joined chat from the web", "channel_id", c.ID, "user_id", u.ID)
 	defer func() {

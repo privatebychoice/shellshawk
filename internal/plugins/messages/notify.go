@@ -15,7 +15,8 @@ const NotifyNew = "messages:new"
 
 func (p *Plugin) notificationKinds() []plugin.NotificationKind {
 	return []plugin.NotificationKind{{Key: "new", Label: "New private messages", Help: "Someone sent you a private message.",
-		Default: true, OpenLabel: "Read the message", Open: p.openNotification}}
+		Default: true, OpenLabel: "Read the message", Open: p.openNotification,
+		WebPath: notify.RefPath("/m/")}}
 }
 
 // notifyRecipients tells each recipient but the sender about message id.

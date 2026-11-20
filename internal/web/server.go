@@ -26,6 +26,7 @@ import (
 	"go.privatebychoice.com/shellshawk/internal/auth"
 	"go.privatebychoice.com/shellshawk/internal/markdown"
 	"go.privatebychoice.com/shellshawk/internal/menu"
+	"go.privatebychoice.com/shellshawk/internal/notify"
 	"go.privatebychoice.com/shellshawk/internal/perm"
 	"go.privatebychoice.com/shellshawk/internal/plugin"
 	"go.privatebychoice.com/shellshawk/internal/prefs"
@@ -78,6 +79,9 @@ type Config struct {
 	// Transitions edits the transition screens; nil (or a nil MenuItems)
 	// leaves the pages out.
 	Transitions *transition.Service
+	// Notify shows members their notifications and settings, with the
+	// count of new ones in the navigation; nil leaves them out.
+	Notify *notify.Service
 
 	// SSHAddress is the public host:port members connect to, shown on the
 	// start page (optional).
@@ -176,6 +180,15 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("POST /login", s.handleLogin)
 	mux.HandleFunc("POST /logout", s.handleLogout)
 	mux.HandleFunc("GET /home", s.handleDashboard)
+	if s.cfg.Notify != nil {
+		mux.HandleFunc("GET /notifications", s.handleNotifications)
+		mux.HandleFunc("GET /notifications/settings", s.handleNotificationSettings)
+		mux.HandleFunc("POST /notifications/settings", s.handleNotificationSettingsSave)
+		mux.HandleFunc("POST /notifications/seen", s.handleNotificationsSeen)
+		mux.HandleFunc("POST /notifications/clear", s.handleNotificationsClear)
+		mux.HandleFunc("GET /notifications/{id}/open", s.handleNotificationOpen)
+		mux.HandleFunc("POST /notifications/{id}/delete", s.handleNotificationDelete)
+	}
 	if s.cfg.Connections != nil {
 		mux.HandleFunc("GET /admin/online", s.handleOnline)
 		mux.HandleFunc("GET /admin/online/{id}", s.handleOnlineConfirm)
@@ -441,13 +454,17 @@ func (s *Server) layout(r *http.Request, title string, body template.HTML) layou
 
 func (s *Server) menuEnabled() bool { return s.cfg.Menu != nil && s.cfg.MenuItems != nil }
 
-// nav lists the pages the member may open: plugin pages, then staff pages.
+// nav lists the pages the member may open: notifications, plugin pages,
+// then staff pages.
 func (s *Server) nav(ctx context.Context, user int64) []navItem {
 	set, err := s.cfg.Perms.Permissions(ctx, user)
 	if err != nil {
 		return nil
 	}
 	var out []navItem
+	if s.cfg.Notify != nil {
+		out = append(out, navItem{Label: notificationsLabel(s.newNotifications(ctx, user)), Href: "/notifications"})
+	}
 	if s.cfg.Plugins != nil {
 		for _, p := range s.cfg.Plugins.Plugins() {
 			for _, r := range p.Manifest.Web {
@@ -677,7 +694,8 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	d := s.layout(r, "Home", "")
-	s.render(w, r, http.StatusOK, "Home", "dashboard", map[string]any{"User": d.User, "Nav": d.Nav, "Panels": s.homePanels(r, sess)})
+	s.render(w, r, http.StatusOK, "Home", "dashboard", map[string]any{"User": d.User, "Nav": d.Nav, "Panels": s.homePanels(r, sess),
+		"New": s.newNotifications(r.Context(), sess.UserID)})
 }
 
 // homePanels collects plugin panels for the home page (WebHome). A failing

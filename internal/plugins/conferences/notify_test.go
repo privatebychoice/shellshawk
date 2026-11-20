@@ -61,8 +61,15 @@ func TestReplyNotifications(t *testing.T) {
 		t.Errorf("notification = %+v", n)
 	}
 	k, ok := f.Registry.NotificationKind(NotifyReply)
-	if !ok || k.Open == nil {
+	if !ok || k.Open == nil || k.WebPath == nil {
 		t.Fatalf("kind = %+v, %v", k, ok)
+	}
+	// On the web it links to the thread's page.
+	if got := k.WebPath(n); got != "/t/"+n.Ref {
+		t.Errorf("web path = %q", got)
+	}
+	if page, err := f.WebGet(f.p, "/t/{id}", map[string]string{"id": n.Ref}, f.alice); err != nil || !strings.Contains(string(page.Body), "A reply.") {
+		t.Errorf("web page = %s, %v", page.Body, err)
 	}
 	s := f.Session(f.alice, "\rq\r")
 	if err := k.Open(f.Ctx, s, n); err != nil && !errors.Is(err, tui.ErrCancelled) {

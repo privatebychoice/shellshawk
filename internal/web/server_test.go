@@ -24,6 +24,7 @@ import (
 	"go.privatebychoice.com/shellshawk/internal/events"
 	"go.privatebychoice.com/shellshawk/internal/form"
 	"go.privatebychoice.com/shellshawk/internal/menu"
+	"go.privatebychoice.com/shellshawk/internal/notify"
 	"go.privatebychoice.com/shellshawk/internal/perm"
 	"go.privatebychoice.com/shellshawk/internal/plugin"
 	"go.privatebychoice.com/shellshawk/internal/prefs"
@@ -58,6 +59,11 @@ func (notesPlugin) Manifest() plugin.Manifest {
 			return template.HTML(`<section class="notes-panel">Notes for you</section>`), nil
 		},
 		Permissions: []plugin.Permission{{Name: "notes.secret", Description: "secret"}},
+		// "note" links to a web page; "ping" has none.
+		Notifications: []plugin.NotificationKind{
+			{Key: "note", Label: "Notes", Help: "A note for you.", Default: true, WebPath: notify.RefPath("/n/")},
+			{Key: "ping", Label: "Pings", Default: true},
+		},
 		// One setting of every kind, for the plugin settings page.
 		Settings: []plugin.Setting{
 			{Field: form.Field{Name: "max", Label: "Most notes", Help: "Per member.", Kind: form.SingleLine, Subtype: form.Int, Required: true,
@@ -110,6 +116,8 @@ type env struct {
 	settings *settings.Service
 	menu     *menu.Service
 	trans    *transition.Service
+	notify   *notify.Service
+	prefs    *prefs.Service
 }
 
 // testItems is the menu item catalogue for the menu editor tests.
@@ -140,7 +148,8 @@ func setup(t *testing.T, insecure bool) *env {
 	ps := perm.NewService(db, perm.NewRegistry(), nil, log)
 	as := auth.NewService(db, ps, "new", nil, log)
 	cat, _ := theme.Builtin()
-	reg, err := plugin.Load(ctx, plugin.Deps{DB: db, Perms: ps, Auth: as, Events: events.New(log), Log: log}, notesPlugin{})
+	notifier := notify.NewService(db, as, nil, log)
+	reg, err := plugin.Load(ctx, plugin.Deps{DB: db, Perms: ps, Auth: as, Events: events.New(log), Notify: notifier, Log: log}, notesPlugin{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -168,9 +177,10 @@ func setup(t *testing.T, insecure bool) *env {
 	sessions := websess.NewService(db, as, nil, log)
 	staff := sshsessions.NewService(db, conns, nil, log)
 	staff.SetWeb(sessions)
+	pr := prefs.NewService(db, cat, nil)
 	srv, err := New(Config{
 		Log: log, SiteName: func(context.Context) string { return "Test BBS" }, Auth: as, Perms: ps, Sessions: sessions,
-		Prefs: prefs.NewService(db, cat, nil), Themes: cat, Plugins: reg, SSHAddress: "bbs.example.net:2222",
+		Prefs: pr, Themes: cat, Notify: notifier, Plugins: reg, SSHAddress: "bbs.example.net:2222",
 		HostKeyFingerprint: "SHA256:testfingerprint", InviteUser: "new", InsecureCookies: insecure, ChatDays: 90, AuditDays: 365, GraceDays: 14,
 		Connections: staff, Settings: settings.NewService(db, nil, log), Menu: menus, MenuItems: testItems{},
 		Privacy: privacy.NewService(db, as, ps, 14*24*time.Hour, nil, log), Transitions: transition.NewService(db, nil, log),
@@ -178,7 +188,8 @@ func setup(t *testing.T, insecure bool) *env {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return &env{srv: srv, h: srv.Handler(), sessions: sessions, alice: alice, admin: admin, mod: mod, perms: ps, conns: conns, settings: srv.cfg.Settings, menu: menus, trans: srv.cfg.Transitions}
+	return &env{srv: srv, h: srv.Handler(), sessions: sessions, alice: alice, admin: admin, mod: mod, perms: ps, conns: conns, settings: srv.cfg.Settings, menu: menus, trans: srv.cfg.Transitions,
+		notify: notifier, prefs: pr}
 }
 
 type req struct {

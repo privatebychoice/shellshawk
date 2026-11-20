@@ -28,6 +28,7 @@ type hub struct {
 type member struct {
 	userID int64
 	name   string
+	web    bool // following on the web, where slash commands do not work
 	out    chan tui.Line
 	once   sync.Once
 }
@@ -50,7 +51,12 @@ func newHub() *hub {
 }
 
 func (h *hub) join(channel, userID int64, name string) *member {
-	m := &member{userID: userID, name: name, out: make(chan tui.Line, outboxSize)}
+	return h.joinAs(channel, userID, name, false)
+}
+
+// joinAs is join, marking a member following on the web.
+func (h *hub) joinAs(channel, userID int64, name string, web bool) *member {
+	m := &member{userID: userID, name: name, web: web, out: make(chan tui.Line, outboxSize)}
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	if h.rooms[channel] == nil {
@@ -83,9 +89,9 @@ func (h *hub) broadcast(channel int64, l tui.Line) {
 	}
 }
 
-// tell delivers l to every chat user is in, and reports whether any
-// session received it.
-func (h *hub) tell(user int64, l tui.Line) bool {
+// tell delivers a line to every chat user is in (ssh to SSH sessions, web
+// to web pages), and reports whether any session received it.
+func (h *hub) tell(user int64, ssh, web tui.Line) bool {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	told := false
@@ -93,6 +99,10 @@ func (h *hub) tell(user int64, l tui.Line) bool {
 		for m := range room {
 			if m.userID != user {
 				continue
+			}
+			l := ssh
+			if m.web {
+				l = web
 			}
 			select {
 			case m.out <- l:
@@ -102,6 +112,20 @@ func (h *hub) tell(user int64, l tui.Line) bool {
 		}
 	}
 	return told
+}
+
+// present reports whether user is in any channel (over SSH or the web).
+func (h *hub) present(user int64) bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	for _, room := range h.rooms {
+		for m := range room {
+			if m.userID == user {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // who returns the distinct usernames in channel, sorted.

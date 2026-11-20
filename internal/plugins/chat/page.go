@@ -87,14 +87,15 @@ func pageSetting() plugin.Setting {
 
 func (p *Plugin) notificationKinds() []plugin.NotificationKind {
 	return []plugin.NotificationKind{{Key: "page", Label: "Pages", Help: "Someone would like to talk to you in a chat. Turning this off also stops people paging you.",
-		Default: true, OpenLabel: "Go to the chat", Open: p.openPage}}
+		Default: true, OpenLabel: "Go to the chat", Open: p.openPage, WebPath: notify.RefPath("/c/")}}
 }
 
-// pageable reports whether from may page to now: to is online, accepts
-// pages from from (privacy setting "Who can page you") and has page
-// notifications on.
+// pageable reports whether from may page to now: to is online (over SSH,
+// or in a chat on the web), accepts pages from from (privacy setting "Who
+// can page you") and has page notifications on.
 func (p *Plugin) pageable(ctx context.Context, from, to int64) (bool, error) {
-	if p.h.Presence == nil || !p.h.Presence.IsOnline(to) {
+	online := p.h.Presence != nil && p.h.Presence.IsOnline(to)
+	if !online && !p.hub.present(to) {
 		return false, nil
 	}
 	if p.h.Privacy != nil {
@@ -154,7 +155,8 @@ func (p *Plugin) Page(ctx context.Context, from auth.User, targetName string, c 
 		return to, ErrCannotPage
 	}
 	live := eventLine(p.now(), fmt.Sprintf("%s is paging you to talk in #%s. Type /join %s to go there.", from.Username, c.Name, c.Name))
-	if p.hub.tell(to.ID, live) {
+	liveWeb := eventLine(p.now(), fmt.Sprintf("%s is paging you to talk in #%s. Open it from Notifications or the chat list.", from.Username, c.Name))
+	if p.hub.tell(to.ID, live, liveWeb) {
 		if err := p.h.Notify.MarkSeen(ctx, to.ID, id); err != nil {
 			p.h.Log.Error("mark page seen", "err", err)
 		}
@@ -230,6 +232,32 @@ func talkName(a, b string) string {
 	return strings.TrimRight(name, "-")
 }
 
+// pageToTalk pages targetName into the private talk chat between from and
+// them, creating it if needed. Nothing is created for a member who cannot
+// be paged. Errors for the member are ErrInvalid, ErrCannotPage and
+// perm.ErrForbidden.
+func (p *Plugin) pageToTalk(ctx context.Context, from auth.User, targetName string) (auth.User, Channel, error) {
+	if err := p.h.Perms.Require(ctx, from.ID, PermCreate); err != nil {
+		return auth.User{}, Channel{}, err
+	}
+	to, err := p.member(ctx, targetName)
+	if err != nil {
+		return auth.User{}, Channel{}, err
+	}
+	if to.ID == from.ID {
+		return to, Channel{}, fmt.Errorf("%w: you cannot page yourself", ErrInvalid)
+	}
+	if ok, err := p.pageable(ctx, from.ID, to.ID); err != nil || !ok {
+		return to, Channel{}, errors.Join(ErrCannotPage, err)
+	}
+	c, err := p.talkChat(ctx, from, to)
+	if err != nil {
+		return to, c, err
+	}
+	_, err = p.Page(ctx, from, to.Username, c)
+	return to, c, err
+}
+
 // pageForm asks who to page, pages them into a private talk chat and
 // enters it.
 func (p *Plugin) pageForm(ctx context.Context, s plugin.Session) error {
@@ -246,24 +274,7 @@ func (p *Plugin) pageForm(ctx context.Context, s plugin.Session) error {
 			return err
 		}
 		vals = v
-		to, err := p.member(ctx, v["user"])
-		if err == nil && to.ID == u.ID {
-			err = fmt.Errorf("%w: you cannot page yourself", ErrInvalid)
-		}
-		if err == nil {
-			if ok, perr := p.pageable(ctx, u.ID, to.ID); perr != nil {
-				return perr
-			} else if !ok {
-				err = ErrCannotPage
-			}
-		}
-		var c Channel
-		if err == nil {
-			c, err = p.talkChat(ctx, u, to)
-		}
-		if err == nil {
-			_, err = p.Page(ctx, u, to.Username, c)
-		}
+		to, c, err := p.pageToTalk(ctx, u, v["user"])
 		if err == nil {
 			s.Log().Info("paged from the chat menu", "to", to.ID, "channel_id", c.ID)
 			if err := tui.Message(ctx, s.UI(), s.Title("Page someone"),
