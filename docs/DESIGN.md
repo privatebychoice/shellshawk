@@ -671,8 +671,12 @@ routes (`Manifest.Web`, served under `/p/<id>/`, GET only, built with
 html/template). Login codes are 8 Crockford characters (40 bits), single
 use, 5 minutes, replaced by any newer code, rate-limited; sessions are
 stored hashed with a per-session CSRF token. Login rate limits key on the
-connecting IP: behind a reverse proxy that is the proxy's address, so the
-per-username limit is the effective one.
+client's address (`auth.IPLimitKey`, so IPv6 per /64): the connecting
+address, or, when it is listed in `SHELLSHAWK_HTTP_TRUSTED_PROXIES`, the
+rightmost `X-Forwarded-For` entry that is not a trusted proxy (entries
+further left are client-supplied and ignored). Without the setting, a
+proxy's visitors share one count. As over SSH, a successful login clears
+the username's count but never the address's.
 
 Live thread chat (after stage 10): plugin web routes may also be POST
 actions (`Method: "POST"`; the core checks the session, CSRF token and

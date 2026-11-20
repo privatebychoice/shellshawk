@@ -17,6 +17,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"os"
 	"strings"
@@ -93,6 +94,11 @@ type Config struct {
 	// InsecureCookies drops the Secure cookie attribute and HSTS, for local
 	// testing over plain HTTP. Never set it in production.
 	InsecureCookies bool
+	// TrustedProxies are the reverse proxies in front of the server. For a
+	// request from one of them the client's address is read from
+	// X-Forwarded-For (see clientAddr); otherwise the connection's own
+	// address is used, so the header cannot be forged.
+	TrustedProxies []netip.Prefix
 	// PrivacyPolicyFile replaces the built-in privacy policy with a
 	// markdown file (optional).
 	PrivacyPolicyFile string
@@ -573,12 +579,46 @@ func (s *Server) handleLoginForm(w http.ResponseWriter, r *http.Request) {
 	s.render(w, r, http.StatusOK, "Log in", "login", map[string]string{})
 }
 
-func clientIP(r *http.Request) string {
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
+// clientAddr returns the address a request came from, for rate limits
+// (it is never logged). When the connection is from a trusted proxy, the
+// X-Forwarded-For list is read from the right, skipping trusted proxies:
+// the first other address is the one the outermost trusted proxy saw.
+// Entries further left are client-supplied and never used. ok is false if
+// no address could be read.
+func (s *Server) clientAddr(r *http.Request) (addr netip.Addr, ok bool) {
+	ap, err := netip.ParseAddrPort(r.RemoteAddr)
 	if err != nil {
-		return r.RemoteAddr
+		return netip.Addr{}, false
 	}
-	return host
+	addr = ap.Addr().Unmap()
+	if !s.trusted(addr) {
+		return addr, true
+	}
+	var hops []string
+	for _, h := range r.Header.Values("X-Forwarded-For") {
+		hops = append(hops, strings.Split(h, ",")...)
+	}
+	for i := len(hops) - 1; i >= 0; i-- {
+		hop, err := netip.ParseAddr(strings.TrimSpace(hops[i]))
+		if err != nil {
+			// A trusted proxy wrote nonsense: fall back to its own address.
+			return addr, true
+		}
+		if hop = hop.Unmap(); !s.trusted(hop) {
+			return hop, true
+		}
+		addr = hop
+	}
+	return addr, true // every hop is a trusted proxy
+}
+
+func (s *Server) trusted(a netip.Addr) bool {
+	for _, p := range s.cfg.TrustedProxies {
+		if p.Contains(a) {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
@@ -589,7 +629,10 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	username := auth.NormalizeUsername(r.PostForm.Get("username"))
 	code := r.PostForm.Get("code")
-	ipKey, userKey := "ip:"+clientIP(r), "user:"+username
+	ipKey, userKey := "ip:"+r.RemoteAddr, "user:"+username
+	if addr, ok := s.clientAddr(r); ok {
+		ipKey = auth.IPLimitKey(addr)
+	}
 	fail := func(status int, msg string) {
 		s.render(w, r, status, "Log in", "login", map[string]string{"Error": msg, "Username": username})
 	}
@@ -612,7 +655,8 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		s.renderError(w, r, http.StatusInternalServerError, "You could not be logged in. Please try again.")
 		return
 	}
-	s.ipLim.Reset(ipKey)
+	// The address's count is never cleared by a success (see
+	// auth.SSHAuthenticator); the account's is.
 	s.userLim.Reset(userKey)
 	http.SetCookie(w, &http.Cookie{
 		Name: s.cookieName(), Value: tok, Path: "/", Expires: sess.ExpiresAt,

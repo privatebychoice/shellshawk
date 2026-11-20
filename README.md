@@ -40,6 +40,7 @@ no built-in defaults.
 | `SHELLSHAWK_PUBLIC_SSH_ADDRESS` | no | — | `host:port` members connect to, shown on the web start page |
 | `SHELLSHAWK_PRIVACY_POLICY_FILE` | no | built-in | Markdown file replacing the built-in privacy policy (its `#` headings are shown as `<h2>`, under the page title) |
 | `SHELLSHAWK_HTTP_INSECURE_COOKIES` | no | `false` | Drop the `Secure` cookie flag and HSTS — **local testing over plain HTTP only** |
+| `SHELLSHAWK_HTTP_TRUSTED_PROXIES` | behind a proxy | — | Comma-separated addresses or networks (e.g. `127.0.0.1, 10.0.0.0/8`) of the reverse proxies in front of the web interface. Requests from them take the client's address from `X-Forwarded-For`, so web login limits apply per visitor; without it every visitor shares the proxy's limit. Never list addresses visitors can connect from directly |
 | `SHELLSHAWK_LOG_LEVEL` | no | `INFO` | `DEBUG`, `INFO`, `WARN`, `ERROR` |
 | `SHELLSHAWK_LOG_FORMAT` | no | `text` | `text` or `json` |
 
@@ -391,7 +392,10 @@ groups hold that permission by default, and what can be done in it.
 ## Web interface
 
 Optional (`SHELLSHAWK_HTTP_ADDR`); serve it behind a TLS-terminating
-reverse proxy. You can read, write, reply to and delete private messages,
+reverse proxy, and set `SHELLSHAWK_HTTP_TRUSTED_PROXIES` to the proxy's
+address. The proxy must set `X-Forwarded-For` (Caddy does by default; in
+nginx, `proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;`).
+The address is only used for login rate limits and is never logged. You can read, write, reply to and delete private messages,
 chat live in any channel you may join, start and run private chats, page
 someone, read and manage your notifications, and vote in polls. Staff can manage users, groups and permissions, create and
 revoke invites, approve or reject new accounts, see who is online and end
@@ -456,7 +460,9 @@ on) are left out, and so is a submenu with nothing in it for the web.
   Privacy Badger keeps working.
 - **Sessions**: one `__Host-session` cookie (HttpOnly, Secure,
   SameSite=Strict, 12 hours), CSRF tokens on forms, Origin checks on every
-  POST, login rate limits per IP and per username. Locking or erasing an
+  POST, login rate limits per IP (per /64 for IPv6, the visitor's own
+  address behind a trusted proxy, never cleared by a successful login) and
+  per username. Locking or erasing an
   account ends its web sessions at once.
 - **Themes**: the web uses the member's colour theme; visitors get Classic
   or Light depending on their system preference.

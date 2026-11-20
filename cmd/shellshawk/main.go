@@ -283,7 +283,7 @@ func (a *app) serve(ctx context.Context) error {
 			Menu: handler.Menu, MenuItems: handler, Privacy: a.privacy, Transitions: handler.Transitions, Notify: a.notify,
 			Prefs: a.prefs, Themes: a.prefs.Themes(), Plugins: a.plugins, Grader: a.grade,
 			SSHAddress: cfg.PublicSSHAddress, HostKeyFingerprint: hostKeyFP, InviteUser: cfg.InviteUser,
-			InsecureCookies: cfg.HTTPInsecureCookies, PrivacyPolicyFile: cfg.PrivacyPolicyFile,
+			InsecureCookies: cfg.HTTPInsecureCookies, PrivacyPolicyFile: cfg.PrivacyPolicyFile, TrustedProxies: cfg.HTTPTrustedProxies,
 			ChatDays: chat.DefaultRetention, AuditDays: cfg.AuditRetentionDays, GraceDays: cfg.ErasureGraceDays,
 		})
 		if err != nil {

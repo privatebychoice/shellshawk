@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"net/netip"
 	"regexp"
 	"strconv"
 	"strings"
@@ -42,6 +43,7 @@ const (
 
 	EnvPublicSSHAddress    = "SHELLSHAWK_PUBLIC_SSH_ADDRESS"
 	EnvHTTPInsecureCookies = "SHELLSHAWK_HTTP_INSECURE_COOKIES"
+	EnvHTTPTrustedProxies  = "SHELLSHAWK_HTTP_TRUSTED_PROXIES"
 	EnvPrivacyPolicyFile   = "SHELLSHAWK_PRIVACY_POLICY_FILE"
 
 	EnvSSHAddr       = "SHELLSHAWK_SSH_ADDR"
@@ -80,6 +82,10 @@ type Config struct {
 	// HTTPInsecureCookies drops the Secure cookie attribute and HSTS, for
 	// local testing over plain HTTP only.
 	HTTPInsecureCookies bool
+	// HTTPTrustedProxies are the reverse proxies in front of the web
+	// interface. Requests from them have the client's address taken from
+	// X-Forwarded-For; any other request's own address is used.
+	HTTPTrustedProxies []netip.Prefix
 	// PrivacyPolicyFile replaces the built-in privacy policy (markdown).
 	PrivacyPolicyFile string
 	// SSHAddr is the host:port the SSH server listens on. Empty disables SSH.
@@ -111,6 +117,21 @@ func (c Config) SSHEnabled() bool { return c.SSHAddr != "" }
 
 // WebEnabled reports whether the web interface should be started.
 func (c Config) WebEnabled() bool { return c.HTTPAddr != "" }
+
+// parseAddrOrPrefix reads "192.0.2.1", "2001:db8::1" or a network such as
+// "10.0.0.0/8", returning a single address as a one-address network.
+func parseAddrOrPrefix(s string) (netip.Prefix, error) {
+	if strings.Contains(s, "/") {
+		p, err := netip.ParsePrefix(s)
+		return p.Masked(), err
+	}
+	a, err := netip.ParseAddr(s)
+	if err != nil {
+		return netip.Prefix{}, err
+	}
+	a = a.Unmap()
+	return netip.PrefixFrom(a, a.BitLen()), nil
+}
 
 // Load reads configuration using getenv (normally os.Getenv) and validates it.
 // All problems are reported together so a misconfigured deploy can be fixed in
@@ -226,6 +247,21 @@ func Load(getenv func(string) string) (Config, error) {
 			errs = append(errs, fmt.Errorf("%s: invalid value %q (want true or false)", EnvHTTPInsecureCookies, v))
 		}
 		cfg.HTTPInsecureCookies = b
+	}
+
+	if v := strings.TrimSpace(getenv(EnvHTTPTrustedProxies)); v != "" {
+		for _, item := range strings.Split(v, ",") {
+			item = strings.TrimSpace(item)
+			if item == "" {
+				continue
+			}
+			p, err := parseAddrOrPrefix(item)
+			if err != nil {
+				errs = append(errs, fmt.Errorf("%s: invalid address or network %q", EnvHTTPTrustedProxies, item))
+				continue
+			}
+			cfg.HTTPTrustedProxies = append(cfg.HTTPTrustedProxies, p)
+		}
 	}
 
 	if v := strings.TrimSpace(getenv(EnvFirstPartyDomains)); v != "" {

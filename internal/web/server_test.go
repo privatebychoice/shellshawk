@@ -204,6 +204,7 @@ type req struct {
 	origin       string
 	cookie       *http.Cookie
 	headers      map[string]string
+	remote       string // the connection's address (default 192.0.2.1:1234)
 }
 
 func (e *env) do(r req) *httptest.ResponseRecorder {
@@ -225,6 +226,9 @@ func (e *env) do(r req) *httptest.ResponseRecorder {
 	}
 	for k, v := range r.headers {
 		q.Header.Set(k, v)
+	}
+	if r.remote != "" {
+		q.RemoteAddr = r.remote
 	}
 	rec := httptest.NewRecorder()
 	e.h.ServeHTTP(rec, q)

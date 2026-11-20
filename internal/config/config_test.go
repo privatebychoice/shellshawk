@@ -127,6 +127,11 @@ func TestLoad(t *testing.T) {
 			wantErr: []string{EnvHTTPInsecureCookies},
 		},
 		{
+			name:    "bad trusted proxy",
+			env:     map[string]string{EnvDBPath: "x", EnvHTTPTrustedProxies: "10.0.0.1, proxy.example.net"},
+			wantErr: []string{EnvHTTPTrustedProxies},
+		},
+		{
 			name:    "errors are reported together",
 			env:     map[string]string{EnvLogLevel: "loud", EnvLogFormat: "xml"},
 			wantErr: []string{EnvDBPath, EnvLogLevel, EnvLogFormat},
@@ -159,5 +164,21 @@ func TestLoad(t *testing.T) {
 				t.Errorf("SSHEnabled() = %v", got.SSHEnabled())
 			}
 		})
+	}
+}
+
+func TestTrustedProxies(t *testing.T) {
+	got, err := Load(env(map[string]string{EnvDBPath: "x", EnvHTTPTrustedProxies: " 192.0.2.10, 10.1.2.3/8,,::ffff:198.51.100.1, 2001:db8::/32 "}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"192.0.2.10/32", "10.0.0.0/8", "198.51.100.1/32", "2001:db8::/32"}
+	if len(got.HTTPTrustedProxies) != len(want) {
+		t.Fatalf("proxies = %v, want %v", got.HTTPTrustedProxies, want)
+	}
+	for i, p := range got.HTTPTrustedProxies {
+		if p.String() != want[i] {
+			t.Errorf("proxy %d = %s, want %s", i, p, want[i])
+		}
 	}
 }
