@@ -47,12 +47,16 @@ var (
 
 // NewSSHAuthenticator returns an authenticator backed by svc.
 func NewSSHAuthenticator(svc *Service) *SSHAuthenticator {
-	return &SSHAuthenticator{
+	a := &SSHAuthenticator{
 		svc:    svc,
 		ipLim:  NewLimiter(ipFailLimit, failWindow, svc.now),
 		usrLim: NewLimiter(userFailLimit, failWindow, svc.now),
 		log:    svc.log.With("component", "sshauth"),
 	}
+	// A new password starts with a clean count for its account (the
+	// addresses' counts are kept: they are about who guessed, not what).
+	svc.OnPasswordChanged(func(username string) { a.usrLim.Reset("user:" + username) })
+	return a
 }
 
 // PublicKey maps a key to its account: active → member, pending → pending.

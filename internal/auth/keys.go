@@ -159,17 +159,27 @@ func (s *Service) ChangePassword(ctx context.Context, userID int64, pw string) e
 	if err != nil {
 		return err
 	}
-	return store.WithTx(ctx, s.db, func(tx *sql.Tx) error {
-		res, err := tx.ExecContext(ctx, `UPDATE users SET password_hash = ? WHERE id = ? AND status = ?`, hash, userID, StatusActive)
-		if err != nil {
-			return fmt.Errorf("auth: change password: %w", err)
-		}
-		if n, _ := res.RowsAffected(); n == 0 {
+	var username string
+	err = store.WithTx(ctx, s.db, func(tx *sql.Tx) error {
+		if err := tx.QueryRowContext(ctx, `UPDATE users SET password_hash = ? WHERE id = ? AND status = ? RETURNING username`,
+			hash, userID, StatusActive).Scan(&username); errors.Is(err, sql.ErrNoRows) {
 			return ErrNotFound
+		} else if err != nil {
+			return fmt.Errorf("auth: change password: %w", err)
 		}
 		s.log.Info("password changed", "user_id", userID)
 		return audit.Record(ctx, tx, s.now(), audit.Entry{Actor: userID, Action: audit.PasswordChanged, TargetType: "user", TargetID: userID})
 	})
+	if err != nil {
+		return err
+	}
+	s.hookMu.Lock()
+	hooks := append([]func(string){}, s.passwordHooks...)
+	s.hookMu.Unlock()
+	for _, fn := range hooks {
+		fn(username)
+	}
+	return nil
 }
 
 const keyColumns = `id, fingerprint, public_key, key_type, label, created_at, last_used_at`

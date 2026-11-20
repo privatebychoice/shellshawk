@@ -29,7 +29,11 @@ const (
 	SessionTTL = 12 * time.Hour
 	// touchEvery bounds how often a session's last activity is written.
 	touchEvery = time.Minute
-	codeBytes  = 5 // 40 bits: 8 characters, single use, short-lived, rate limited
+	// CodeChars is the length of a login code: 12 Crockford characters,
+	// 60 bits. That is too many to guess in the minutes a code lives even
+	// from millions of addresses, so wrong codes never block a member or
+	// void their code; only each address's attempts are limited.
+	CodeChars = 12
 )
 
 // Errors.
@@ -76,12 +80,12 @@ func (s *Service) NewCode(ctx context.Context, userID int64) (string, time.Time,
 	if u.Status != auth.StatusActive {
 		return "", time.Time{}, fmt.Errorf("websess: account is not active")
 	}
-	b := make([]byte, codeBytes)
+	b := make([]byte, 8) // 64 random bits; the first 60 make the code
 	if _, err := rand.Read(b); err != nil {
 		return "", time.Time{}, err
 	}
-	raw := crockford.EncodeToString(b)
-	code := raw[:4] + "-" + raw[4:]
+	raw := crockford.EncodeToString(b)[:CodeChars]
+	code := raw[:4] + "-" + raw[4:8] + "-" + raw[8:]
 	expires := s.now().Add(CodeTTL)
 	err = store.WithTx(ctx, s.db, func(tx *sql.Tx) error {
 		if _, err := tx.ExecContext(ctx, `DELETE FROM web_login_codes WHERE user_id = ? OR expires_at <= ?`, userID, store.FormatTime(s.now())); err != nil {
@@ -131,26 +135,6 @@ func (s *Service) Redeem(ctx context.Context, username, code string) (int64, err
 		return 0, err
 	}
 	return userID, nil
-}
-
-// VoidCode deletes the outstanding login code of username's account, if
-// any, after repeated wrong codes for it: whoever is guessing has nothing
-// left to find, and the member simply gets a new code over SSH. It reports
-// whether a code was voided.
-func (s *Service) VoidCode(ctx context.Context, username string) (bool, error) {
-	u, err := s.auth.UserByUsername(ctx, username)
-	if err != nil {
-		return false, nil
-	}
-	res, err := s.db.ExecContext(ctx, `DELETE FROM web_login_codes WHERE user_id = ?`, u.ID)
-	if err != nil {
-		return false, fmt.Errorf("websess: void code: %w", err)
-	}
-	n, _ := res.RowsAffected()
-	if n > 0 {
-		s.log.Info("web login code voided after repeated wrong codes", "user_id", u.ID)
-	}
-	return n > 0, nil
 }
 
 // Session is a logged-in web session.

@@ -115,16 +115,15 @@ type Server struct {
 	policy  string // privacy policy markdown, possibly a template
 	custom  bool   // policy came from PrivacyPolicyFile
 	ipLim   *auth.Limiter
-	userLim *auth.Limiter
 	streams *streams
 	handler http.Handler
 }
 
-// Login rate limits.
+// Login rate limits, per address. Wrong codes for a username are not
+// limited separately: codes are 60 bits (websess.CodeChars).
 const (
-	loginIPFailures   = 10
-	loginUserFailures = 5
-	loginWindow       = 15 * time.Minute
+	loginIPFailures = 10
+	loginWindow     = 15 * time.Minute
 )
 
 // New builds the web interface.
@@ -143,7 +142,6 @@ func New(cfg Config) (*Server, error) {
 	s := &Server{
 		cfg: cfg, log: cfg.Log.With("component", "web"), tmpl: tmpl, assets: assets,
 		ipLim:   auth.NewLimiter(loginIPFailures, loginWindow, nil),
-		userLim: auth.NewLimiter(loginUserFailures, loginWindow, nil),
 		streams: newStreams(),
 	}
 	if cfg.PrivacyPolicyFile != "" {
@@ -630,7 +628,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	username := auth.NormalizeUsername(r.PostForm.Get("username"))
 	code := r.PostForm.Get("code")
-	ipKey, userKey := "ip:"+r.RemoteAddr, "user:"+username
+	ipKey := "ip:" + r.RemoteAddr
 	if addr, ok := s.clientAddr(r); ok {
 		ipKey = auth.IPLimitKey(addr)
 	}
@@ -651,22 +649,10 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		if lastTry {
 			s.cfg.Auth.AuditLoginBlocked(r.Context(), auth.BlockedAddress, 0, "web code")
 		}
-		// Wrong codes for one username never lock the member out (anyone
-		// could do that by typing their name). Instead, at the limit their
-		// outstanding code is voided: there is nothing left to guess, and
-		// they get a new one over SSH.
-		if s.userLim.Fail(userKey) {
-			s.userLim.Reset(userKey)
-			if voided, verr := s.cfg.Sessions.VoidCode(r.Context(), username); verr != nil {
-				LoggerFrom(r.Context()).Error("void web login code", "err", verr)
-			} else if voided {
-				var id int64
-				if u, uerr := s.cfg.Auth.UserByUsername(r.Context(), username); uerr == nil {
-					id = u.ID
-				}
-				s.cfg.Auth.AuditLoginBlocked(r.Context(), auth.BlockedAccount, id, "web code voided")
-			}
-		}
+		// Wrong codes for a username do nothing to that member: a 60-bit
+		// code cannot be guessed in its lifetime, so there is nothing to
+		// protect by blocking them or voiding their code, which would only
+		// let anyone disturb them.
 		LoggerFrom(r.Context()).Info("web login refused")
 		fail(http.StatusUnauthorized, "That username and code did not work. Codes work once and expire after five minutes.")
 		return
@@ -678,9 +664,8 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		s.renderError(w, r, http.StatusInternalServerError, "You could not be logged in. Please try again.")
 		return
 	}
-	// The address's count is never cleared by a success (see
-	// auth.SSHAuthenticator); the account's is.
-	s.userLim.Reset(userKey)
+	// The address's earlier failures are never cleared by a success (see
+	// auth.SSHAuthenticator).
 	http.SetCookie(w, &http.Cookie{
 		Name: s.cookieName(), Value: tok, Path: "/", Expires: sess.ExpiresAt,
 		HttpOnly: true, Secure: !s.cfg.InsecureCookies, SameSite: http.SameSiteStrictMode,

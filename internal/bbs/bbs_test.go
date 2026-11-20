@@ -759,7 +759,7 @@ func TestWebLoginCodeItem(t *testing.T) {
 	e.handler.WebLogin = websess.NewService(e.db, e.auth, nil, slog.New(slog.DiscardHandler))
 	// Main menu: 6 = Web login code (before Administration); dismiss; q.
 	out := e.session(t, "quinn", ssh.PublicKeys(key), "6\r\rq\r")
-	code := regexp.MustCompile(`\b[0-9A-Z]{4}-[0-9A-Z]{4}\b`).FindString(out)
+	code := regexp.MustCompile(`\b[0-9A-Z]{4}-[0-9A-Z]{4}-[0-9A-Z]{4}\b`).FindString(out)
 	if code == "" {
 		t.Fatalf("no code shown:\n%s", out)
 	}

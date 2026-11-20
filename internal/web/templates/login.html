@@ -5,7 +5,8 @@
 <p><label for="username">Username</label>
 <input id="username" name="username" type="text" autocomplete="username" autocapitalize="none" spellcheck="false" required maxlength="32" value="{{.Username}}"{{if .Error}} aria-describedby="login-error"{{end}}></p>
 <p><label for="code">Login code</label>
-<input id="code" name="code" type="text" autocomplete="one-time-code" autocapitalize="characters" spellcheck="false" required maxlength="20"></p>
+<input id="code" name="code" type="text" autocomplete="one-time-code" autocapitalize="characters" spellcheck="false" required maxlength="20" aria-describedby="code-help"></p>
+<p class="meta" id="code-help">12 letters and digits, for example ABCD-EFGH-JKLM. Dashes and spaces do not matter.</p>
 <p><button type="submit">Log in</button></p>
 </form>
 {{end}}

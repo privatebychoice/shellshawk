@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"maps"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"sync"
@@ -63,7 +64,7 @@ func TestCodes(t *testing.T) {
 	s, _, c, admin, alice := setup(t)
 	ctx := context.Background()
 	code, exp, err := s.NewCode(ctx, alice)
-	if err != nil || len(code) != 9 || code[4] != '-' || !exp.Equal(c.now().Add(CodeTTL)) {
+	if err != nil || len(code) != 14 || code[4] != '-' || code[9] != '-' || !exp.Equal(c.now().Add(CodeTTL)) {
 		t.Fatalf("NewCode = %q, %v, %v", code, exp, err)
 	}
 	if _, err := s.Redeem(ctx, "admin1", code); !errors.Is(err, ErrInvalidCode) {
@@ -260,29 +261,29 @@ func TestErasureRequestClearsSessions(t *testing.T) {
 	}
 }
 
-func TestVoidCode(t *testing.T) {
-	s, _, _, admin, alice := setup(t)
+// TestCodeFormat: codes are 12 Crockford characters (60 bits) in three
+// groups, and typed lowercase or without dashes they still work.
+func TestCodeFormat(t *testing.T) {
+	s, _, _, _, alice := setup(t)
 	ctx := context.Background()
+	format := regexp.MustCompile(`^[0-9A-HJKMNP-TV-Z]{4}-[0-9A-HJKMNP-TV-Z]{4}-[0-9A-HJKMNP-TV-Z]{4}$`)
+	seen := map[string]bool{}
+	for range 20 {
+		code, _, err := s.NewCode(ctx, alice)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !format.MatchString(code) {
+			t.Fatalf("code %q is not ABCD-EFGH-JKLM", code)
+		}
+		if seen[code] {
+			t.Fatalf("code %q repeated", code)
+		}
+		seen[code] = true
+	}
 	code, _, _ := s.NewCode(ctx, alice)
-	adminCode, _, _ := s.NewCode(ctx, admin)
-	if ok, err := s.VoidCode(ctx, "alice"); !ok || err != nil {
-		t.Fatalf("VoidCode = %v, %v", ok, err)
-	}
-	if _, err := s.Redeem(ctx, "alice", code); !errors.Is(err, ErrInvalidCode) {
-		t.Error("a voided code still works")
-	}
-	if ok, _ := s.VoidCode(ctx, "alice"); ok {
-		t.Error("voided a code that was not there")
-	}
-	if ok, err := s.VoidCode(ctx, "nobody"); ok || err != nil {
-		t.Errorf("unknown username = %v, %v", ok, err)
-	}
-	if _, err := s.Redeem(ctx, "admin1", adminCode); err != nil {
-		t.Errorf("another member's code was voided: %v", err)
-	}
-	fresh, _, _ := s.NewCode(ctx, alice)
-	if id, err := s.Redeem(ctx, "alice", fresh); err != nil || id != alice {
-		t.Errorf("a new code after voiding = %d, %v", id, err)
+	if id, err := s.Redeem(ctx, "alice", strings.ToLower(strings.ReplaceAll(code, "-", " "))); err != nil || id != alice {
+		t.Errorf("typed loosely = %d, %v", id, err)
 	}
 }
 

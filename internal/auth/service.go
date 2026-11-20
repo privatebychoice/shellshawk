@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"sync"
 	"time"
 
 	"go.privatebychoice.com/shellshawk/internal/audit"
@@ -56,6 +57,19 @@ type Service struct {
 	inviteUser string
 	now        func() time.Time
 	log        *slog.Logger
+
+	hookMu        sync.Mutex
+	passwordHooks []func(username string)
+}
+
+// OnPasswordChanged registers fn to run after a member's password is
+// changed, with their username. The SSH authenticator uses it to clear the
+// account's failed-password count: the old password's failures say
+// nothing about the new one.
+func (s *Service) OnPasswordChanged(fn func(username string)) {
+	s.hookMu.Lock()
+	defer s.hookMu.Unlock()
+	s.passwordHooks = append(s.passwordHooks, fn)
 }
 
 // NewService returns a Service. inviteUser is the SSH login name used for

@@ -14,6 +14,7 @@ import (
 	"net/url"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -384,19 +385,15 @@ func TestLoginFlow(t *testing.T) {
 		})
 	}
 
-	// After 5 bad codes for alice, her outstanding code is voided rather
-	// than her username blocked: the guessed-at code no longer works, and
-	// a fresh one logs her in at once. (Its own address, under its limit.)
-	const from = "203.0.113.5:1000"
+	// Wrong codes for alice, from many addresses, do nothing to her: her
+	// outstanding code still logs her in.
 	pending := good()
-	for range loginUserFailures {
-		e.do(req{method: "POST", path: "/login", origin: "https://bbs.example.net", remote: from, form: url.Values{"username": {"alice"}, "code": {"BAD0-BAD0"}}})
+	for i := range 20 {
+		e.do(req{method: "POST", path: "/login", origin: "https://bbs.example.net", remote: "203.0.113." + strconv.Itoa(i) + ":1000",
+			form: url.Values{"username": {"alice"}, "code": {"BAD0-BAD0-BAD0"}}})
 	}
-	if rec := e.do(req{method: "POST", path: "/login", origin: "https://bbs.example.net", remote: from, form: pending}); rec.Code != http.StatusUnauthorized {
-		t.Errorf("the code outstanding during the guessing = %d, want 401 (voided)", rec.Code)
-	}
-	if rec := e.do(req{method: "POST", path: "/login", origin: "https://bbs.example.net", remote: from, form: good()}); rec.Code != http.StatusSeeOther {
-		t.Errorf("a fresh code after the guessing = %d, want 303 (not locked out)", rec.Code)
+	if rec := e.do(req{method: "POST", path: "/login", origin: "https://bbs.example.net", remote: "198.51.100.1:1000", form: pending}); rec.Code != http.StatusSeeOther {
+		t.Errorf("alice's code after 20 wrong codes for her = %d, want 303", rec.Code)
 	}
 	if c := setup(t, true).login(t, 2, "alice"); c.Name != "session" || c.Secure {
 		t.Errorf("insecure-mode cookie = %+v", c)

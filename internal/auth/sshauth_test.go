@@ -347,3 +347,30 @@ func TestLimiterTry(t *testing.T) {
 		t.Error("a forgiven attempt was not given back")
 	}
 }
+
+// TestPasswordChangeClearsAccountCount: once an account is blocked by
+// wrong passwords, changing the password clears its count, so the new one
+// works at once; other accounts' counts are untouched.
+func TestPasswordChangeClearsAccountCount(t *testing.T) {
+	f := newFixture(t)
+	a := NewSSHAuthenticator(f.svc)
+	alice := f.user("alice")
+	f.user("bob")
+	for i := range userFailLimit {
+		a.Password(conn("alice", "192.0.2."+strconv.Itoa(10+i)), []byte("wrong password here"))
+		a.Password(conn("bob", "198.51.100."+strconv.Itoa(10+i)), []byte("wrong password here"))
+	}
+	if _, err := a.Password(conn("alice", "203.0.113.1"), []byte(testPassword)); err == nil {
+		t.Fatal("alice not blocked before the change")
+	}
+	const fresh = "a brand new long passphrase"
+	if err := f.svc.ChangePassword(f.ctx, alice, fresh); err != nil {
+		t.Fatal(err)
+	}
+	if id, err := a.Password(conn("alice", "203.0.113.1"), []byte(fresh)); err != nil || id.Mode != sshd.ModeAddKey {
+		t.Errorf("new password right after the change = %+v, %v", id, err)
+	}
+	if _, err := a.Password(conn("bob", "203.0.113.2"), []byte(testPassword)); err == nil {
+		t.Error("bob's block was cleared by alice's change")
+	}
+}

@@ -103,7 +103,8 @@ outstanding invites stop working (and start again if that changes back).
 A password can add a key, so change it if it may have leaked: *SSH keys →
 Change password*. For your safety this needs a key login less than 15
 minutes old (log in again if it says so); you do not need the old
-password. The old one stops working at once, and the change is audited.
+password. The old one stops working at once, the change is audited, and
+any block on the account from wrong passwords is cleared.
 Then check *View keys* and remove any key you do not recognise.
 
 Built-in groups: `admin` (`core.admin`, implies everything), `moderator`
@@ -493,10 +494,10 @@ on) are left out, and so is a submenu with nothing in it for the web.
   SameSite=Strict, 12 hours), CSRF tokens on forms, Origin checks on every
   POST, login rate limits per IP (per /64 for IPv6, the visitor's own
   address behind a trusted proxy, never cleared by a successful login).
-  Wrong codes never lock a member out: after 5 for one username, that
-  member's outstanding code is voided (audited), so there is nothing left
-  to guess, and a new code from the BBS works straight away. Locking or
-  erasing an account ends its web sessions at once.
+  Login codes are 12 characters (60 bits), far too many to guess in the
+  5 minutes a code lives, so wrong codes for a username never block that
+  member or void their code: nobody can disturb a member's web login.
+  Locking or erasing an account ends its web sessions at once.
 - **Themes**: the web uses the member's colour theme; visitors get Classic
   or Light depending on their system preference.
 - The footer shows the build number (`1.0.x`; run `make bump` before each
@@ -570,6 +571,17 @@ shellshawk makes no outbound network requests.
 
 The build number is the third part of the version (`1.0.x`), shown in the
 web footer and at `/version`. Run `make bump` before each deployment.
+
+### Unreleased
+
+- Web login codes are 12 characters (`ABCD-EFGH-JKLM`, 60 bits) instead of
+  8. Wrong codes for a username no longer void the member's code or
+  affect them at all; only each address's attempts are limited.
+- Changing your password clears any block on your account from wrong
+  passwords.
+- The built-in `member` group can no longer be chosen to limit a
+  conference or channel (every account is in it). Existing restrictions
+  keep working.
 
 ### 1.0.1 (2026-11-20)
 

@@ -70,8 +70,9 @@ These are invariants, enforced in code and covered by tests:
      detail.
    - Max **3** public keys per user.
    - Rate limiting and lockout on failed attempts per IP and per account, kept
-     in memory, with one `login.blocked` audit row each time an account or
-     an address reaches its limit (target `user` with the account ID, or 0
+     in memory (a password change clears the account's count,
+     `auth.Service.OnPasswordChanged`), with one `login.blocked` audit row
+     each time an account or an address reaches its limit (target `user` with the account ID, or 0
      for a name that is no account; or `address`, never the address
      itself; detail `ssh password`, `ssh invite` or `web code`). Once per
      block rather than per attempt, so guessing cannot fill the audit log. IPv6 clients are counted per /64
@@ -724,7 +725,8 @@ TOML/JSON files; admins can add more.
 Implementation notes (stage 10): read-only in this version — conferences
 (areas, conferences, threads) and messages (inbox, read) via plugin web
 routes (`Manifest.Web`, served under `/p/<id>/`, GET only, built with
-html/template). Login codes are 8 Crockford characters (40 bits), single
+html/template). Login codes are 12 Crockford characters (60 bits, shown
+as `ABCD-EFGH-JKLM`; 8 characters / 40 bits before this), single
 use, 5 minutes, replaced by any newer code, rate-limited; sessions are
 stored hashed with a per-session CSRF token. Login rate limits key on the
 client's address (`auth.IPLimitKey`, so IPv6 per /64): the connecting
@@ -735,10 +737,12 @@ proxy's visitors share one count. Each attempt is counted against the
 address before the code is checked (`Limiter.Try`, given back by
 `Forgive` on success), so parallel requests cannot all get past the
 limit; as over SSH, a success never clears the address's earlier
-failures. Wrong codes for one username do not block it (anyone could lock
-a member out by typing their name): at 5, `websess.VoidCode` deletes that
-member's outstanding code and `login.blocked` is audited with detail `web
-code voided`; the member gets a new code over SSH. `Redeem` does the same
+failures. Wrong codes for one username are not limited or acted on at
+all: blocking the username or voiding the member's code (as earlier
+versions did) let anyone disturb a member by typing their name, from as
+many addresses as they had, and a 60-bit code cannot be guessed in its
+5-minute life even from millions of addresses at 10 tries each. `Redeem`
+does the same
 code lookup whether or not the username is an active account, so the
 time taken does not reveal it. The SSH password login also counts with
 `Try`/`Forgive`.
