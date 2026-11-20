@@ -7,7 +7,7 @@ interface. See [docs/DESIGN.md](docs/DESIGN.md) for the full design.
 > accounts, TUI (full-screen and screen-reader), markdown with graded links,
 > plugins and menus, administration, SFTP, the core plugins, privacy and
 > erasure, and a web interface for reading, messaging, live chat and voting.
-> The current release is **1.0.2**; see [Release notes](#release-notes).
+> The current release is **1.0.3**; see [Release notes](#release-notes).
 
 ## Build
 
@@ -582,21 +582,39 @@ shellshawk makes no outbound network requests.
 The build number is the third part of the version (`1.0.x`), shown in the
 web footer and at `/version`. Run `make bump` before each deployment.
 
-### Unreleased
+### 1.0.3 (2026-11-20)
+
+Follow-ups to 1.0.2. No database migrations and no new settings.
+
+#### Upgrading
+
+- Audit log: wrong SSH passwords for an account are now recorded as
+  `login.slowed` (once per account per 15 minutes) instead of
+  `login.blocked`. `login.blocked` is still used for addresses. Update any
+  alerting that looks for account blocks.
+
+#### Security
 
 - **Wrong SSH passwords slow an account down instead of blocking it.**
   After 5 in 15 minutes, each further password attempt for that account
   waits 2 seconds, doubling up to 30, and the right password still works,
   so nobody can stop a member who lost their key from adding a new one.
-  Addresses are still blocked after 10 failures. The audit log records
-  `login.slowed` (once per account and window) instead of `login.blocked`
-  for accounts.
-- The wall hides lines from locked accounts, including ones waiting to be
-  erased; they come back if the account is unlocked.
-- A password login with an erased account's name is answered like an
-  unknown name (same time, nothing logged as an error).
+  Addresses are still blocked after 10 failures, and a successful login
+  or a password change clears the slowdown.
+- **The wall hides lines from locked accounts**, including ones waiting to
+  be erased; they come back if the account is unlocked.
+- **A password login with an erased account's name** is answered like an
+  unknown name (same time, nothing logged as an error), so erased names
+  cannot be told apart.
+
+#### Other changes
+
+- Creating and revoking invites read the actor's permissions inside the
+  same transaction as the change.
 - `pbc-classification` updated to commit `5030ba2` (Go 1.27; no code
   changes).
+- DESIGN lists the events that exist; tests cover the 15-minute
+  fresh-login rule for changing a password and erasing an account.
 
 ### 1.0.2 (2026-11-20)
 
