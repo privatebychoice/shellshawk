@@ -166,6 +166,31 @@ type handler struct {
 	ctx context.Context
 	uid int64
 	log *slog.Logger
+
+	// buffered is how many bytes this session's unfinished uploads hold
+	// in memory. Together they may hold at most the upload limit, so
+	// opening many files at once cannot multiply the memory one upload may
+	// use.
+	mu       sync.Mutex
+	buffered int64
+}
+
+// reserve takes n bytes of the session's upload memory, reporting false
+// if that would go over the limit.
+func (h *handler) reserve(n int64) bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.buffered+n > h.s.maxUpload {
+		return false
+	}
+	h.buffered += n
+	return true
+}
+
+func (h *handler) release(n int64) {
+	h.mu.Lock()
+	h.buffered -= n
+	h.mu.Unlock()
 }
 
 // user loads the member fresh for every request, so locking an account or
@@ -417,9 +442,20 @@ type upload struct {
 	file  []string
 	max   int64
 
-	mu     sync.Mutex
-	buf    []byte
-	failed error
+	mu       sync.Mutex
+	buf      []byte
+	failed   error
+	released bool // the buffer's share of the session budget was given back
+}
+
+// free gives the buffer's memory back to the session. Called with w.mu
+// held, once the upload is finished either way.
+func (w *upload) free() {
+	if !w.released {
+		w.released = true
+		w.h.release(int64(len(w.buf)))
+	}
+	w.buf = nil
 }
 
 // WriteAt implements io.WriterAt.
@@ -432,10 +468,16 @@ func (w *upload) WriteAt(p []byte, off int64) (int, error) {
 	end := off + int64(len(p))
 	if off < 0 || end > w.max {
 		w.failed = fmt.Errorf("upload exceeds the %d byte limit", w.max)
+		w.free()
 		return 0, sftp.ErrSSHFxFailure
 	}
-	if end > int64(len(w.buf)) {
-		w.buf = append(w.buf, make([]byte, end-int64(len(w.buf)))...)
+	if grow := end - int64(len(w.buf)); grow > 0 {
+		if !w.h.reserve(grow) {
+			w.failed = fmt.Errorf("uploads in progress in this session exceed the %d byte limit together", w.max)
+			w.free()
+			return 0, sftp.ErrSSHFxFailure
+		}
+		w.buf = append(w.buf, make([]byte, grow)...)
 	}
 	copy(w.buf[off:], p)
 	return len(p), nil
@@ -449,12 +491,14 @@ func (w *upload) TransferError(err error) {
 	if w.failed == nil {
 		w.failed = err
 	}
+	w.free()
 }
 
 // Close commits a complete upload.
 func (w *upload) Close() error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
+	defer w.free()
 	if w.failed != nil {
 		w.h.log.Info("sftp upload discarded", "mount", w.mount, "reason", w.failed)
 		return sftp.ErrSSHFxFailure

@@ -556,7 +556,7 @@ func TestNewValidation(t *testing.T) {
 // when the connection drops, after reporting the error via TransferError.
 func TestInterruptedUploadNotStored(t *testing.T) {
 	mem := &memFS{files: map[string][]byte{}}
-	h := &handler{ctx: context.Background(), log: slog.New(slog.DiscardHandler)}
+	h := &handler{s: &Server{maxUpload: 100}, ctx: context.Background(), log: slog.New(slog.DiscardHandler)}
 	tests := []struct {
 		name      string
 		interrupt bool
@@ -615,5 +615,52 @@ func TestExport(t *testing.T) {
 	}
 	if _, err := readFile(member, "/me/export/nope/x.json"); !errors.Is(err, fs.ErrNotExist) {
 		t.Errorf("unknown export dir err = %v", err)
+	}
+}
+
+// TestUploadMemoryPerSession: uploads in progress in one session share
+// one upload limit of memory, so opening many files at once cannot hold
+// many times the limit; finished or failed uploads give it back.
+func TestUploadMemoryPerSession(t *testing.T) {
+	const max = 10
+	e := start(t, max)
+	c, err := e.client(t, "member1", ssh.PublicKeys(e.member))
+	if err != nil {
+		t.Fatal(err)
+	}
+	open := func(name string) *sftp.File {
+		t.Helper()
+		f, err := c.OpenFile("/files/"+name, os.O_WRONLY|os.O_CREATE|os.O_TRUNC)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return f
+	}
+	a, b := open("a.txt"), open("b.txt")
+	if _, err := a.Write([]byte("123456")); err != nil {
+		t.Fatalf("first upload: %v", err)
+	}
+	if _, err := b.Write([]byte("123456")); err == nil {
+		t.Error("a second upload in progress took the session over the limit")
+	}
+	b.Close()
+	if err := a.Close(); err != nil {
+		t.Fatalf("first upload close: %v", err)
+	}
+	// Both finished: the whole limit is free again, for one file.
+	f := open("c.txt")
+	if _, err := f.Write([]byte("1234567890")); err != nil {
+		t.Errorf("a full-size upload after the others finished: %v", err)
+	}
+	if err := f.Close(); err != nil {
+		t.Error(err)
+	}
+	e.mem.mu.Lock()
+	defer e.mem.mu.Unlock()
+	if string(e.mem.files["a.txt"]) != "member1:123456" || string(e.mem.files["c.txt"]) != "member1:1234567890" { // memFS prefixes the uploader
+		t.Errorf("stored = %q", e.mem.files)
+	}
+	if _, ok := e.mem.files["b.txt"]; ok {
+		t.Error("the refused upload was stored")
 	}
 }

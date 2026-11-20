@@ -43,6 +43,8 @@ sftp -P <port> <username>@<host>
 - **Uploads** are held in memory and stored only when the transfer finishes
   without error. The size limit is `SHELLSHAWK_SFTP_MAX_UPLOAD_BYTES`
   (default 1 MiB, at most 64 MiB); `/text` also limits each file to 64 KiB.
+  Uploads in progress at the same time in one SFTP session share that
+  limit, so upload large files one after another.
 - **Times:** files show when their content was created or last changed, in
   UTC; generated files (such as `/me`) show the time of the request.
 
