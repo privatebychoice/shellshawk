@@ -89,7 +89,12 @@ func TestLocalPath(t *testing.T) {
 // returns the response once its headers arrive.
 func openStream(t *testing.T, ts *httptest.Server, cookie *http.Cookie) *http.Response {
 	t.Helper()
-	q, _ := http.NewRequest("GET", ts.URL+"/p/notes/live", nil)
+	return openStreamAt(t, ts, cookie, "/p/notes/live")
+}
+
+func openStreamAt(t *testing.T, ts *httptest.Server, cookie *http.Cookie, path string) *http.Response {
+	t.Helper()
+	q, _ := http.NewRequest("GET", ts.URL+path, nil)
 	if cookie != nil {
 		q.AddCookie(cookie)
 	}
@@ -204,5 +209,45 @@ func TestHomePanels(t *testing.T) {
 	rec := e.do(req{method: "GET", path: "/home", cookie: cookie})
 	if rec.Code != 200 || !strings.Contains(rec.Body.String(), `<section class="notes-panel">Notes for you</section>`) {
 		t.Errorf("home = %d, missing the plugin panel:\n%s", rec.Code, rec.Body)
+	}
+}
+
+// TestStreamEndsWhenPermissionRemoved: a live stream behind a permission
+// ends once the member no longer holds it, while one that needs no
+// permission stays open.
+func TestStreamEndsWhenPermissionRemoved(t *testing.T) {
+	old := sessionRecheck
+	sessionRecheck = 50 * time.Millisecond
+	t.Cleanup(func() { sessionRecheck = old })
+	e := setup(t, true)
+	ts := httptest.NewServer(e.h)
+	t.Cleanup(ts.Close)
+	ctx := context.Background()
+	secret, err := e.perms.CreateGroup(ctx, e.admin, "secret", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := e.perms.Grant(ctx, e.admin, secret, "notes.secret"); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.perms.AddMember(ctx, e.admin, secret, e.alice); err != nil {
+		t.Fatal(err)
+	}
+	cookie := e.login(t, e.alice, "alice")
+	gated := openStreamAt(t, ts, cookie, "/p/notes/secretlive")
+	open := openStream(t, ts, cookie)
+	if gated.StatusCode != http.StatusOK || open.StatusCode != http.StatusOK {
+		t.Fatalf("streams = %d, %d", gated.StatusCode, open.StatusCode)
+	}
+	if err := e.perms.RemoveMember(ctx, e.admin, secret, e.alice); err != nil {
+		t.Fatal(err)
+	}
+	if !ended(gated) {
+		t.Error("the stream outlived the permission it needs")
+	}
+	still := make(chan bool, 1)
+	go func() { still <- !ended(open) }()
+	if ok := <-still; !ok {
+		t.Error("a stream that needs no permission was ended")
 	}
 }

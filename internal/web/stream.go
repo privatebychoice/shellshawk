@@ -114,7 +114,7 @@ func (s *Server) pluginStream(id string, route plugin.WebRoute) http.Handler {
 		if c, err := r.Cookie(s.cookieName()); err == nil {
 			token = c.Value
 		}
-		go s.watchSession(ctx, cancel, token)
+		go s.watchSession(ctx, cancel, token, sess.UserID, route.AnyOf)
 
 		log.Info("live stream opened", "plugin", id, "user_id", sess.UserID)
 		err = safeStream(route, streamWriter{ResponseWriter: w, rc: rc}, r.WithContext(ctx),
@@ -129,8 +129,11 @@ func (s *Server) pluginStream(id string, route plugin.WebRoute) http.Handler {
 	})
 }
 
-// watchSession cancels a stream once its session is logged out or deleted.
-func (s *Server) watchSession(ctx context.Context, cancel context.CancelFunc, token string) {
+// watchSession cancels a stream once its session is logged out or deleted,
+// or the member no longer holds the route's permission (anyOf), so a
+// stream never outlives the right to open it. Plugins may check more
+// (chat re-checks access to the channel); this is the core's floor.
+func (s *Server) watchSession(ctx context.Context, cancel context.CancelFunc, token string, user int64, anyOf []string) {
 	t := time.NewTicker(sessionRecheck)
 	defer t.Stop()
 	for {
@@ -139,6 +142,15 @@ func (s *Server) watchSession(ctx context.Context, cancel context.CancelFunc, to
 			return
 		case <-t.C:
 			if _, err := s.cfg.Sessions.Lookup(ctx, token); err != nil {
+				cancel()
+				return
+			}
+			set, err := s.cfg.Perms.Permissions(ctx, user)
+			if err != nil {
+				continue // a database hiccup is not a reason to end it
+			}
+			if !allowed(set, anyOf) {
+				LoggerFrom(ctx).Info("live stream ended: permission removed", "user_id", user)
 				cancel()
 				return
 			}

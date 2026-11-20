@@ -301,3 +301,49 @@ func TestExportAccount(t *testing.T) {
 		t.Error("password hash exported")
 	}
 }
+
+// TestAccountExportExtras: the account export also holds the member's
+// display settings, the invites they issued (without codes) and the audit
+// entries about them, without naming the staff who acted.
+func TestAccountExportExtras(t *testing.T) {
+	f := setup(t)
+	if _, _, err := f.auth.CreateInvite(f.ctx, f.admin, auth.InviteOptions{Note: "for Bob", MaxUses: 2}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.svc.db.Exec(`INSERT INTO user_prefs (user_id, profile, theme, page_size, updated_at) VALUES (?, 'accessible', 'light', 30, '2026-01-01T00:00:00Z')`, f.alice); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.auth.SetLocked(f.ctx, f.admin, f.alice, true); err != nil {
+		t.Fatal(err)
+	}
+	export := func(user int64) string {
+		t.Helper()
+		files, err := f.svc.ExportSource().Export(f.ctx, user)
+		if err != nil || len(files) != 1 {
+			t.Fatalf("export = %v, %v", files, err)
+		}
+		return string(files[0].Data)
+	}
+	alice, admin := export(f.alice), export(f.admin)
+	for _, tt := range []struct {
+		name, body, want string
+	}{
+		{"display settings", alice, `"theme": "light"`},
+		{"page size", alice, `"page_size": 30`},
+		{"registration, by the member", alice, `"action": "user.registered",` + "\n" + `      "at": `},
+		{"lock, by staff unnamed", alice, `"by": "another account"`},
+		{"invites issued", admin, `"note": "for Bob"`},
+		{"invite uses", admin, `"max_uses": 2`},
+		{"no settings saved: null", admin, `"display_settings": null`},
+	} {
+		if !strings.Contains(tt.body, tt.want) {
+			t.Errorf("%s: missing %q in\n%s", tt.name, tt.want, tt.body)
+		}
+	}
+	if strings.Contains(alice, "admin1") || strings.Contains(alice, `"actor`) {
+		t.Errorf("staff identified in the member's export:\n%s", alice)
+	}
+	if strings.Contains(admin, "code") {
+		t.Errorf("invite codes in the export:\n%s", admin)
+	}
+}

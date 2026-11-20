@@ -549,3 +549,30 @@ func TestExportHasEveryMessage(t *testing.T) {
 		}
 	}
 }
+
+// TestExportHasRemovedFromSent: a message the member removed from Sent is
+// still held by its recipient, so it is still in the member's export.
+func TestExportHasRemovedFromSent(t *testing.T) {
+	f := setup(t)
+	id, err := f.p.Send(f.Ctx, f.alice, Draft{To: "bob", Subject: "Kept by bob", Body: "still held"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.DB.Exec(`UPDATE messages_messages SET sender_deleted_at = '2026-01-01T00:00:00Z' WHERE id = ?`, id); err != nil {
+		t.Fatal(err)
+	}
+	if sent, _ := f.p.List(f.Ctx, f.alice, Sent); len(sent) != 0 {
+		t.Fatal("still listed in Sent")
+	}
+	files, err := f.p.export(f.Ctx, f.alice)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []struct{ Folder, Subject, From string }
+	if err := json.Unmarshal(files[0].Data, &got); err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[0].Folder != "removed from sent" || got[0].Subject != "Kept by bob" || got[0].From != "alice" {
+		t.Errorf("export = %+v", got)
+	}
+}

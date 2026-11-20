@@ -67,7 +67,8 @@ those changes immediately.
 ```
 /me/profile.md                 your account: status, registration, last login, groups, key count
 /me/keys.pub                   your SSH public keys, one per line, with their labels
-/me/export/account.json        your account record (right of access)
+/me/export/account.json        your account record (right of access): profile, keys,
+                               display settings, invites you issued, audit entries about you
 /me/export/notifications/notifications.json
 /me/export/<plugin>/<file>.json
 ```

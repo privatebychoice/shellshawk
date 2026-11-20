@@ -32,7 +32,7 @@ no built-in defaults.
 | `SHELLSHAWK_SSH_MAX_CONNS` | no | `100` | Maximum concurrent SSH connections |
 | `SHELLSHAWK_INVITE_USER` | no | `new` | SSH login name for registering with an invite code |
 | `SHELLSHAWK_AUDIT_RETENTION_DAYS` | no | `365` | Audit log entries older than this are purged daily |
-| `SHELLSHAWK_SFTP_MAX_UPLOAD_BYTES` | no | `1048576` | Largest file accepted over SFTP (max 64 MiB; uploads are buffered in memory, and the uploads in progress in one SFTP session share this limit) |
+| `SHELLSHAWK_SFTP_MAX_UPLOAD_BYTES` | no | `1048576` | Largest file accepted over SFTP (max 64 MiB; uploads are buffered in memory, and the uploads in progress in one SFTP session share this limit). Worst case memory is about connections × 2 × this, roughly 200 MiB at the defaults |
 | `SHELLSHAWK_PBC_DATA_FILE` | no | built-in data only | Local pbc-classification JSON dataset, merged over the library's built-in data |
 | `SHELLSHAWK_FIRST_PARTY_DOMAINS` | no | — | Comma-separated list of your own domains, graded as first-party |
 | `SHELLSHAWK_ERASURE_GRACE_DAYS` | no | `14` | Days between an erasure request and the erasure (0 to 365) |
@@ -530,7 +530,11 @@ is imported anywhere.
   `polls`, `chat`), generated when you download them. The export is
   complete: `messages/messages.json` holds every message in your Inbox,
   Deleted and Sent folders, not just the 200 most recent each folder
-  shows.
+  shows, and messages you removed from Sent that a recipient still has.
+  `account.json` also holds your display settings, the invites you issued
+  (never their codes) and the audit log entries about you (what you did
+  and what was done to your account, with staff shown only as "another
+  account").
 - **Erase my account**: needs a key login from the last 15 minutes and your
   username typed to confirm; you choose whether your posts and chat messages
   are deleted or kept anonymously. The account is locked at once, like a

@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"strconv"
 	"time"
 
 	"go.privatebychoice.com/shellshawk/internal/audit"
@@ -273,10 +274,102 @@ func (s *Service) exportAccount(ctx context.Context, userID int64) ([]export.Fil
 	for f, l := range p.Visibility {
 		vis[string(f)] = string(l)
 	}
+	display, err := s.exportPrefs(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	invites, err := s.exportInvites(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	entries, err := s.exportAudit(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
 	f, err := export.JSON("account.json", map[string]any{
 		"username": u.Username, "status": u.Status, "registered": u.CreatedAt, "last_login": u.LastLoginAt,
 		"email": u.Email, "full_name": p.FullName, "phone": p.Phone, "status_message": p.Status,
 		"visibility": vis, "groups": groups, "ssh_keys": ks,
+		"display_settings": display, "invites_issued": invites, "audit_entries": entries,
 	})
 	return []export.File{f}, err
+}
+
+// exportPrefs returns the member's display settings, or nil if they have
+// never changed the defaults.
+func (s *Service) exportPrefs(ctx context.Context, userID int64) (map[string]any, error) {
+	var profile, theme, bold, italic, updated string
+	var ascii, transitions, notifications bool
+	var pageSize int
+	err := s.db.QueryRowContext(ctx, `SELECT profile, theme, bold, italic, ascii_only, page_size, transitions, notifications, updated_at
+		FROM user_prefs WHERE user_id = ?`, userID).Scan(&profile, &theme, &bold, &italic, &ascii, &pageSize, &transitions, &notifications, &updated)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("privacy: export display settings: %w", err)
+	}
+	return map[string]any{"terminal_type": profile, "theme": theme, "bold": bold, "italic": italic, "ascii_only": ascii,
+		"page_size": pageSize, "transitions": transitions, "notifications_between_screens": notifications, "updated": updated}, nil
+}
+
+// exportInvites returns the invites the member created. Codes are stored
+// only as hashes and are not included.
+func (s *Service) exportInvites(ctx context.Context, userID int64) ([]map[string]any, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT created_at, expires_at, max_uses, uses, require_approval, note, revoked_at
+		FROM invites WHERE created_by = ? ORDER BY created_at`, userID)
+	if err != nil {
+		return nil, fmt.Errorf("privacy: export invites: %w", err)
+	}
+	defer rows.Close()
+	var out []map[string]any
+	for rows.Next() {
+		var created, note string
+		var expires, revoked sql.NullString
+		var maxUses, uses int
+		var approval bool
+		if err := rows.Scan(&created, &expires, &maxUses, &uses, &approval, &note, &revoked); err != nil {
+			return nil, err
+		}
+		out = append(out, map[string]any{"created": created, "expires": nullable(expires), "max_uses": maxUses, "uses": uses,
+			"require_approval": approval, "note": note, "revoked": nullable(revoked)})
+	}
+	return out, rows.Err()
+}
+
+// exportAudit returns the audit log entries about the member: what they did
+// and what was done to their account. Who acted is given only as "you",
+// "another account" or "the system", so staff are not identified.
+func (s *Service) exportAudit(ctx context.Context, userID int64) ([]map[string]any, error) {
+	id := strconv.FormatInt(userID, 10)
+	rows, err := s.db.QueryContext(ctx, `SELECT at, COALESCE(actor_id, 0), action, detail FROM audit_log
+		WHERE actor_id = ? OR (target_type = 'user' AND target_id = ?) ORDER BY at, id`, userID, id)
+	if err != nil {
+		return nil, fmt.Errorf("privacy: export audit entries: %w", err)
+	}
+	defer rows.Close()
+	var out []map[string]any
+	for rows.Next() {
+		var at, action, detail string
+		var actor int64
+		if err := rows.Scan(&at, &actor, &action, &detail); err != nil {
+			return nil, err
+		}
+		by := "another account"
+		switch actor {
+		case userID:
+			by = "you"
+		case audit.SystemActor:
+			by = "the system"
+		}
+		out = append(out, map[string]any{"at": at, "action": action, "by": by, "detail": detail})
+	}
+	return out, rows.Err()
+}
+
+func nullable(v sql.NullString) any {
+	if v.Valid {
+		return v.String
+	}
+	return nil
 }

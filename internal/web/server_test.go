@@ -101,6 +101,14 @@ func (notesPlugin) Manifest() plugin.Manifest {
 				<-r.Context().Done()
 				return nil
 			}},
+			// The same stream behind a permission.
+			{Path: "/secretlive", AnyOf: []string{"notes.secret"}, Stream: func(w http.ResponseWriter, r *http.Request, s plugin.WebSession) error {
+				w.Header().Set("Content-Type", "text/event-stream")
+				fmt.Fprintf(w, "data: secret %d\n\n", s.UserID())
+				w.(http.Flusher).Flush()
+				<-r.Context().Done()
+				return nil
+			}},
 		},
 	}
 }

@@ -215,7 +215,9 @@ to use. The web navigation follows the same tree (§11).
   an invite from someone who lacks it. The bootstrap invite has no creator.
   Staff invite lists show such an invite as *on hold* (`Invite.State`),
   and a refused invite login logs why.
-- **Approval**: configurable per invite or globally — new accounts land in
+- **Approval**: configurable per invite (there is no global setting; an
+  administrator who wants every account approved issues invites that
+  require it) — new accounts land in
   `pending` until an admin/moderator approves. Rejecting deletes the
   account row, but its ID is never given to another account: registration
   takes the next ID from `user_id_high` (core migration 11, kept current
@@ -302,7 +304,11 @@ Two user-facing actions, both in Profile → Privacy, both available in TUI and 
 **A. Export my data** — creates a markdown/JSON bundle readable over SFTP at
 `/me/export/` (profile, posts, messages sent/received, contacts, votes, chat
 lines). Supports GDPR-style access and portability, and lets users keep a copy
-before erasing.
+before erasing. Exports are not limited by listing sizes; messages include
+those removed from Sent that a recipient still holds; `account.json` also
+holds display settings, invites issued (never their codes) and the audit
+entries where the member acted or is the target, with the actor given only
+as "you", "another account" or "the system" so staff are not identified.
 
 **B. Erase my account** — a two-step process:
 
@@ -534,7 +540,10 @@ Package `notify`; tables `notifications` and `notification_settings`, and
   gives the plugin page a notification is about; `GET
   /notifications/{id}/open` marks it seen and redirects to
   `/p/<plugin><path>` (the page checks access again), or back with a
-  notice when there is none. Delete one, mark all seen and delete all
+  notice when there is none. It is a GET so the notification can be an
+  ordinary link; its only effect is marking one of the member's own
+  notifications seen, and the SameSite=Strict cookie means another site
+  cannot make a member's browser do even that. Delete one, mark all seen and delete all
   (ticked box) are CSRF-checked POSTs; `/notifications/settings` uses the
   shared form renderer for the same settings as SSH. Paging on the web:
   *Page a member* on each channel page (`POST /p/chat/c/{id}/page`) and
@@ -661,8 +670,12 @@ TOML/JSON files; admins can add more.
   1 MiB, max 64 MiB). Uploads are buffered in memory and committed only after
   a complete transfer. The uploads in progress in one session share one
   limit's worth of memory (`handler.reserve`), so many files opened at once
-  cannot multiply it; a finished or failed upload gives its share back. Per-user quotas are left to the plugins that store
-  uploads.
+  cannot multiply it; a finished or failed upload gives its share back.
+  There is no server-wide cap: the worst case is every connection
+  (`SHELLSHAWK_SSH_MAX_CONNS`, default 100) with 2 sessions each holding
+  the limit, about 200 MiB at the default 1 MiB, so raise the limit with
+  the server's memory in mind. Per-user quotas are left to the plugins
+  that store uploads.
 - Implemented (stage 7): mounts are `sftpd.Mount{Name, AnyOf, FS}`; plugins
   declare them in `Manifest.SFTP` (name = plugin ID or `<id>-…`). Hidden
   mounts report "no such file". Only key logins to active accounts get the
@@ -691,6 +704,11 @@ TOML/JSON files; admins can add more.
   asset names, `/version` endpoint, build number `1.0.x` in footer.
 - No analytics, no third-party requests. Session cookie: `HttpOnly; Secure;
   SameSite=Strict`, no other cookies.
+- The Origin check on POSTs compares the host, not the scheme: behind a
+  TLS-terminating proxy the server cannot reliably see the scheme the
+  browser used, and HSTS (browsers only use https) plus the
+  SameSite=Strict cookie already stop a cross-site or downgraded post
+  from carrying the session.
 
 ---
 
@@ -721,8 +739,9 @@ actions (`Method: "POST"`; the core checks the session, CSRF token and
 Origin, and only follows redirects to local paths) or streams (`Stream`;
 the core lifts the read and whole-response write timeouts, sets a write
 deadline per write, ends the stream when the session expires or is logged
-out, re-checked every 30 seconds, and on shutdown, and allows 4 open streams
-per member). The chat plugin serves `/p/chat/c/{id}/events` (server-sent
+out, or the member no longer holds the route's `AnyOf` permission, both
+re-checked every 30 seconds, and on shutdown, and allows 4 open streams
+per member; plugins may check more, as chat does for the channel). The chat plugin serves `/p/chat/c/{id}/events` (server-sent
 events; a web member is in the channel and listed by `/who` while it is
 open; access is re-checked every 25 seconds) and `/p/chat/c/{id}/send`, and
 `WebPanel` embeds a panel in other plugins' pages. Messages from the web go
