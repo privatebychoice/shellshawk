@@ -320,6 +320,9 @@ func (v *viewer) canAccess(ctx context.Context, c Channel) (bool, error) {
 				return fn(ctx, v.user, c.Context)
 			}
 		}
+		// No plugin answers for it (its owner is not installed): closed,
+		// not open to everyone, since it may belong to restricted content.
+		return false, nil
 	}
 	if !c.Restricted || v.set.Has(perm.Admin) {
 		return true, nil

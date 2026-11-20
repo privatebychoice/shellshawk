@@ -291,20 +291,29 @@ func (s *Service) View(ctx context.Context, viewer, owner int64) (Visible, error
 	return v, nil
 }
 
-// AdminEmail returns a member's email address for an administrator with
-// core.users.manage, whatever the member's visibility setting, and records
-// the access in the audit log (docs/DESIGN.md §5.1).
+// AdminEmail returns a member's email address to staff with
+// core.users.manage who outrank the member (perm.RequireOutranks),
+// whatever the member's visibility setting, and records the access in the
+// audit log (docs/DESIGN.md §5.1).
 func (s *Service) AdminEmail(ctx context.Context, actor, target int64) (string, error) {
-	if err := s.perms.Require(ctx, actor, perm.UsersManage); err != nil {
-		return "", err
-	}
-	u, err := s.auth.UserByID(ctx, target)
+	var email string
+	err := store.WithTx(ctx, s.db, func(tx *sql.Tx) error {
+		// The rank rule, as for locking: staff cannot read the address of
+		// an account holding permissions they lack (a moderator, an
+		// administrator's).
+		if err := perm.RequireOutranks(ctx, tx, actor, target, perm.UsersManage); err != nil {
+			return err
+		}
+		u, err := s.auth.UserByID(ctx, target)
+		if err != nil {
+			return err
+		}
+		email = u.Email
+		return audit.Record(ctx, tx, s.now(), audit.Entry{Actor: actor, Action: audit.AdminViewedEmail, TargetType: "user", TargetID: target})
+	})
 	if err != nil {
 		return "", err
 	}
-	if err := audit.Record(ctx, s.db, s.now(), audit.Entry{Actor: actor, Action: audit.AdminViewedEmail, TargetType: "user", TargetID: target}); err != nil {
-		return "", err
-	}
 	s.log.Info("administrator viewed email", "actor", actor, "user_id", target)
-	return u.Email, nil
+	return email, nil
 }

@@ -307,6 +307,18 @@ func TestThreadChannel(t *testing.T) {
 	if c.Kind != KindThread || c.Tag() != "[T]" {
 		t.Errorf("thread channel = %+v", c)
 	}
+	// Nothing answers for its owner here (conferences is not loaded), so
+	// it is closed to everyone rather than open: it may belong to a
+	// restricted conference.
+	for _, u := range []int64{f.alice, f.mod, f.Admin} {
+		if ok, err := f.p.CanAccess(f.Ctx, u, c); ok || err != nil {
+			t.Errorf("user %d can enter an unowned thread chat: %v, %v", u, ok, err)
+		}
+	}
+	f.p.SetThreadAccess("conferences:thread:", func(context.Context, int64, string) (bool, error) { return true, nil })
+	if ok, _ := f.p.CanAccess(f.Ctx, f.alice, c); !ok {
+		t.Error("the owner's rule is not used")
+	}
 }
 
 // fakeSession is enough of plugin.Session for submit.

@@ -133,17 +133,40 @@ func TestVisibility(t *testing.T) {
 func TestAdminEmailIsAudited(t *testing.T) {
 	f := setup(t)
 	f.svc.Update(f.ctx, f.alice, Profile{Email: "alice@example.org"})
-	if _, err := f.svc.AdminEmail(f.ctx, f.bob, f.alice); !errors.Is(err, perm.ErrForbidden) {
-		t.Errorf("member reading email err = %v", err)
+	f.svc.Update(f.ctx, f.admin, Profile{Email: "admin@example.org"})
+	// bob is support staff: core.users.manage and nothing else.
+	support, err := f.perms.CreateGroup(f.ctx, f.admin, "support", "")
+	if err != nil {
+		t.Fatal(err)
 	}
-	email, err := f.svc.AdminEmail(f.ctx, f.admin, f.alice)
-	if err != nil || email != "alice@example.org" {
-		t.Fatalf("admin email = %q, %v", email, err)
+	if err := f.perms.Grant(f.ctx, f.admin, support, perm.UsersManage); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.perms.AddMember(f.ctx, f.admin, support, f.bob); err != nil {
+		t.Fatal(err)
+	}
+	tests := []struct {
+		name          string
+		actor, target int64
+		want          string // "" = refused
+	}{
+		{"a member", f.carol, f.alice, ""},
+		{"staff, a member's", f.bob, f.alice, "alice@example.org"},
+		{"staff, an administrator's (outranks them)", f.bob, f.admin, ""},
+		{"an administrator", f.admin, f.alice, "alice@example.org"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			email, err := f.svc.AdminEmail(f.ctx, tt.actor, tt.target)
+			if tt.want == "" && !errors.Is(err, perm.ErrForbidden) || tt.want != "" && (err != nil || email != tt.want) {
+				t.Errorf("= %q, %v; want %q", email, err, tt.want)
+			}
+		})
 	}
 	var n int
-	f.svc.db.QueryRow(`SELECT count(*) FROM audit_log WHERE action = 'admin.viewed.email' AND actor_id = ?`, f.admin).Scan(&n)
-	if n != 1 {
-		t.Errorf("audit entries = %d, want 1", n)
+	f.svc.db.QueryRow(`SELECT count(*) FROM audit_log WHERE action = 'admin.viewed.email'`).Scan(&n)
+	if n != 2 {
+		t.Errorf("audit entries = %d, want 2 (refusals are not views)", n)
 	}
 }
 

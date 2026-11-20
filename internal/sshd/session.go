@@ -185,7 +185,7 @@ func (s *Server) serveSession(ctx context.Context, sc sessionConn, ch ssh.Channe
 		}
 	}
 	refuse := func(r *ssh.Request, why string) {
-		log.Info("session request refused", "type", r.Type, "reason", why)
+		log.Info("session request refused", "type", sanitizeForLog(r.Type), "reason", why)
 		reply(r, false)
 	}
 
@@ -275,7 +275,7 @@ func (s *Server) serveSession(ctx context.Context, sc sessionConn, ch ssh.Channe
 			case !allowedEnv[m.Name]:
 				// Not logged at INFO: OpenSSH clients send LANG/LC_* routinely
 				// and other names are harmless once refused.
-				log.Debug("env refused", "name", m.Name)
+				log.Debug("env refused", "name", sanitizeForLog(m.Name))
 				reply(r, false)
 			case len(env) >= maxEnvVars || len(m.Name)+len(m.Value) > maxEnvLen:
 				refuse(r, "env limits exceeded")
