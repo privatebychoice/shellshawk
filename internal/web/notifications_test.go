@@ -49,7 +49,8 @@ func TestNotificationsPage(t *testing.T) {
 	for _, want := range []string{
 		"You have 2 notification(s), 2 new.",
 		`<strong>New:</strong> Pings, from admin1: hello &lt;b&gt; <span class="meta">just now</span>`,
-		`<a href="/notifications/` + note + `/open">Notes, from admin1: read this</a>`,
+		`Notes, from admin1: read this <span class="meta">just now</span>`,
+		`action="/notifications/` + note + `/open"`,
 		`<span class="visually-hidden"> notification: Notes, from admin1: read this</span>`,
 		`action="/notifications/seen"`, "Yes, delete all my notifications",
 	} {
@@ -57,7 +58,7 @@ func TestNotificationsPage(t *testing.T) {
 			t.Errorf("list missing %q\n%s", want, list)
 		}
 	}
-	if strings.Contains(list, "/notifications/"+ping+"/open") || strings.Contains(list, "not alice's") {
+	if strings.Contains(list, "/notifications/"+ping+"/open") || strings.Contains(list, "not alice's") || strings.Contains(list, `<a href="/notifications/`+note) {
 		t.Errorf("list shows a link with no web page, or another member's notification\n%s", list)
 	}
 
@@ -78,9 +79,11 @@ func TestNotificationsPage(t *testing.T) {
 		where              string // Location of a redirect
 		newLeft, left      int    // after this step; the steps run in order
 	}{
-		{"open a note: its page", "GET", "/notifications/" + note + "/open", nil, http.StatusSeeOther, "/p/notes/n/5", 1, 2},
-		{"open a ping: no web page", "GET", "/notifications/" + ping + "/open", nil, http.StatusSeeOther, "/notifications?done=no-web", 0, 2},
-		{"open another member's", "GET", "/notifications/" + adminNote + "/open", nil, http.StatusSeeOther, "/notifications?done=gone", 0, 2},
+		{"an old GET link marks nothing", "GET", "/notifications/" + note + "/open", nil, http.StatusSeeOther, "/notifications", 2, 2},
+		{"open without CSRF", "POST", "/notifications/" + note + "/open", url.Values{"csrf": {"wrong"}}, http.StatusForbidden, "", 2, 2},
+		{"open a note: its page", "POST", "/notifications/" + note + "/open", nil, http.StatusSeeOther, "/p/notes/n/5", 1, 2},
+		{"open a ping: no web page", "POST", "/notifications/" + ping + "/open", nil, http.StatusSeeOther, "/notifications?done=no-web", 0, 2},
+		{"open another member's", "POST", "/notifications/" + adminNote + "/open", nil, http.StatusSeeOther, "/notifications?done=gone", 0, 2},
 		{"delete without CSRF", "POST", "/notifications/" + ping + "/delete", url.Values{"csrf": {"wrong"}}, http.StatusForbidden, "", 0, 2},
 		{"delete another member's", "POST", "/notifications/" + adminNote + "/delete", nil, http.StatusSeeOther, "/notifications?done=gone", 0, 2},
 		{"delete one", "POST", "/notifications/" + ping + "/delete", nil, http.StatusSeeOther, "/notifications?done=deleted", 0, 1},

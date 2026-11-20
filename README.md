@@ -451,7 +451,7 @@ on) are left out, and so is a submenu with nothing in it for the web.
 | `/home` | Your start page once logged in; says how many notifications are new |
 | `/menu/{id}` | A submenu of the member menu: its entries you can open on the web, and a link back to the menu above it |
 | `/admin` | *Administration*: the staff pages below that you may use |
-| `/notifications` | Your notifications, newest first, with *New* marks (the navigation link shows the count, e.g. *Notifications (2 new)*). A notification links to what it is about (the message, the thread or the chat) and opening it marks it seen; delete one, mark all as seen, or delete all (with a ticked box). *Notification settings* chooses which kinds you receive and whether new ones are listed between screens over SSH |
+| `/notifications` | Your notifications, newest first, with *New* marks (the navigation link shows the count, e.g. *Notifications (2 new)*). *Open* takes you to what a notification is about (the message, the thread or the chat) and marks it seen; delete one, mark all as seen, or delete all (with a ticked box). *Notification settings* chooses which kinds you receive and whether new ones are listed between screens over SSH |
 | `/p/conferences/` | Areas, conferences and threads you may read; polls on posts can be voted in, and a thread with a chat shows it live, and you can send messages |
 | `/p/chat/` | Channels, private chats and thread chats you may join (with who is there and the topic), and a search by name or topic. Each channel has a live page: messages arrive as they are sent and you can send your own. Start a private chat with invitations; inside one, its creator (or a chat moderator) can invite, change the topic, remove someone or close it, and others see whom to ask. With `chat.page`, each channel page has *Page a member* (into that channel), and *Page someone* on the list pages a member into your private chat with them (`#talk-<you>-<them>`, also needs `chat.create`) and opens it. A member paged while following a chat on the web gets a line there pointing to Notifications |
 | `/p/messages/` | Inbox, Sent and Deleted, with unread marks and counts; opening a message marks it read. Write a message (to usernames and your contact groups; markdown) or reply, with the same limits and privacy rules as over SSH. Delete (to Deleted, restorable), move back to the inbox, delete permanently, remove from Sent and empty the Deleted folder; the ones that cannot be undone need a ticked confirmation box |
@@ -492,7 +492,8 @@ on) are left out, and so is a submenu with nothing in it for the web.
   Privacy Badger keeps working.
 - **Sessions**: one `__Host-session` cookie (HttpOnly, Secure,
   SameSite=Strict, 12 hours), CSRF tokens on forms, Origin checks on every
-  POST, login rate limits per IP (per /64 for IPv6, the visitor's own
+  POST (which must come from an `https` page of this site unless insecure
+  cookies are on for local testing), login rate limits per IP (per /64 for IPv6, the visitor's own
   address behind a trusted proxy, never cleared by a successful login).
   Login codes are 12 characters (60 bits), far too many to guess in the
   5 minutes a code lives, so wrong codes for a username never block that
@@ -579,6 +580,10 @@ web footer and at `/version`. Run `make bump` before each deployment.
   affect them at all; only each address's attempts are limited.
 - Changing your password clears any block on your account from wrong
   passwords.
+- Posts on the web must come from an `https` page of the site (unless
+  insecure cookies are on for local testing).
+- Notifications on the web open with an *Open* button (a form) instead of
+  a link, since opening one marks it seen.
 - The built-in `member` group can no longer be chosen to limit a
   conference or channel (every account is in it). Existing restrictions
   keep working.

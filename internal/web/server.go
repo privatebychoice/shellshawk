@@ -194,7 +194,12 @@ func (s *Server) routes() http.Handler {
 		mux.HandleFunc("POST /notifications/settings", s.handleNotificationSettingsSave)
 		mux.HandleFunc("POST /notifications/seen", s.handleNotificationsSeen)
 		mux.HandleFunc("POST /notifications/clear", s.handleNotificationsClear)
-		mux.HandleFunc("GET /notifications/{id}/open", s.handleNotificationOpen)
+		mux.HandleFunc("POST /notifications/{id}/open", s.handleNotificationOpen)
+		// Opening marks the notification seen, so it is a POST; an old
+		// link (GET) only shows the list.
+		mux.HandleFunc("GET /notifications/{id}/open", func(w http.ResponseWriter, r *http.Request) {
+			http.Redirect(w, r, "/notifications", http.StatusSeeOther)
+		})
 		mux.HandleFunc("POST /notifications/{id}/delete", s.handleNotificationDelete)
 	}
 	if s.cfg.Connections != nil {
@@ -285,7 +290,7 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		s.renderError(w, r, http.StatusNotFound, "Page not found.")
 	})
-	return withRequestLog(s.log, securityHeaders(!s.cfg.InsecureCookies, gpcSignal(sameOrigin(s.withSession(mux)))))
+	return withRequestLog(s.log, securityHeaders(!s.cfg.InsecureCookies, gpcSignal(sameOrigin(!s.cfg.InsecureCookies, s.withSession(mux)))))
 }
 
 // ---- middleware --------------------------------------------------------------
@@ -388,8 +393,11 @@ func gpcSignal(next http.Handler) http.Handler {
 
 // sameOrigin rejects state-changing requests whose Origin (or, failing
 // that, Referer) is not this site, as defence in depth with SameSite
-// cookies and CSRF tokens.
-func sameOrigin(next http.Handler) http.Handler {
+// cookies and CSRF tokens. With secure cookies (production, behind HTTPS)
+// the origin must also be https: a page served over plain http, even on
+// the same host, cannot post. Insecure cookies are for local testing over
+// http, where http origins are allowed.
+func sameOrigin(requireHTTPS bool, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet || r.Method == http.MethodHead {
 			next.ServeHTTP(w, r)
@@ -400,7 +408,7 @@ func sameOrigin(next http.Handler) http.Handler {
 			src = r.Header.Get("Referer")
 		}
 		u, err := url.Parse(src)
-		if src == "" || err != nil || !strings.EqualFold(u.Host, r.Host) {
+		if src == "" || err != nil || !strings.EqualFold(u.Host, r.Host) || (requireHTTPS && u.Scheme != "https") {
 			LoggerFrom(r.Context()).Info("cross-origin request refused", "method", r.Method, "path", r.URL.Path)
 			http.Error(w, "Forbidden", http.StatusForbidden)
 			return

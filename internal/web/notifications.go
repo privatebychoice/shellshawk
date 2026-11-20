@@ -153,9 +153,10 @@ func (s *Server) notificationFor(w http.ResponseWriter, r *http.Request, sess *w
 }
 
 // handleNotificationOpen marks a notification seen and goes to its page,
-// which checks the member may still see it.
+// which checks the member may still see it. It changes state, so it is a
+// CSRF-checked POST (a form button on the list).
 func (s *Server) handleNotificationOpen(w http.ResponseWriter, r *http.Request) {
-	sess := s.member(w, r)
+	sess := s.memberPost(w, r)
 	if sess == nil {
 		return
 	}

@@ -543,12 +543,10 @@ Package `notify`; tables `notifications` and `notification_settings`, and
   lists them like the SSH item; the navigation entry and `/home` show the
   new count. A kind's optional `WebPath` (e.g. `notify.RefPath("/m/")`)
   gives the plugin page a notification is about; `GET
-  /notifications/{id}/open` marks it seen and redirects to
-  `/p/<plugin><path>` (the page checks access again), or back with a
-  notice when there is none. It is a GET so the notification can be an
-  ordinary link; its only effect is marking one of the member's own
-  notifications seen, and the SameSite=Strict cookie means another site
-  cannot make a member's browser do even that. Delete one, mark all seen and delete all
+  /notifications/{id}/open` (an *Open* button, a CSRF-checked POST, since
+  it marks the notification seen) redirects to `/p/<plugin><path>` (the
+  page checks access again), or back with a notice when there is none. A
+  GET to that address, such as an old link, only shows the list. Delete one, mark all seen and delete all
   (ticked box) are CSRF-checked POSTs; `/notifications/settings` uses the
   shared form renderer for the same settings as SSH. Paging on the web:
   *Page a member* on each channel page (`POST /p/chat/c/{id}/page`) and
@@ -714,11 +712,12 @@ TOML/JSON files; admins can add more.
   asset names, `/version` endpoint, build number `1.0.x` in footer.
 - No analytics, no third-party requests. Session cookie: `HttpOnly; Secure;
   SameSite=Strict`, no other cookies.
-- The Origin check on POSTs compares the host, not the scheme: behind a
-  TLS-terminating proxy the server cannot reliably see the scheme the
-  browser used, and HSTS (browsers only use https) plus the
-  SameSite=Strict cookie already stop a cross-site or downgraded post
-  from carrying the session.
+- The Origin check on POSTs (`sameOrigin`) requires this site's host and,
+  with secure cookies (production behind HTTPS), the `https` scheme, so a
+  page served over plain http cannot post even on the same host. It
+  checks the browser's Origin, which works behind a TLS-terminating proxy
+  without trusting proxy headers. With `SHELLSHAWK_HTTP_INSECURE_COOKIES`
+  (local testing over http), http origins are allowed.
 
 ---
 

@@ -2,8 +2,9 @@
 {{end}}<p>{{if .Rows}}You have {{len .Rows}} notification(s){{if .Unseen}}, {{.Unseen}} new{{end}}.{{else}}You have no notifications.{{end}}
 Notifications are kept for {{.Days}} days, at most {{.Keep}}. <a href="/notifications/settings">Notification settings</a></p>
 {{if .Rows}}<ul class="list notifications">
-{{range .Rows}}<li>{{if .New}}<strong>New:</strong> {{end}}{{if .Open}}<a href="/notifications/{{.ID}}/open">{{.Text}}</a>{{else}}{{.Text}}{{end}} <span class="meta">{{.Age}}</span>
-<form method="post" action="/notifications/{{.ID}}/delete" class="inline"><input type="hidden" name="csrf" value="{{$.CSRF}}"><button type="submit">Delete<span class="visually-hidden"> notification: {{.Text}}</span></button></form></li>
+{{range .Rows}}<li>{{if .New}}<strong>New:</strong> {{end}}{{.Text}} <span class="meta">{{.Age}}</span>
+{{if .Open}}<form method="post" action="/notifications/{{.ID}}/open" class="inline"><input type="hidden" name="csrf" value="{{$.CSRF}}"><button type="submit">Open<span class="visually-hidden"> notification: {{.Text}}</span></button></form>
+{{end}}<form method="post" action="/notifications/{{.ID}}/delete" class="inline"><input type="hidden" name="csrf" value="{{$.CSRF}}"><button type="submit">Delete<span class="visually-hidden"> notification: {{.Text}}</span></button></form></li>
 {{end}}</ul>
 {{if .Unseen}}<form method="post" action="/notifications/seen" class="form">
 <input type="hidden" name="csrf" value="{{.CSRF}}">

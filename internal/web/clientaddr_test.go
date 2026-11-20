@@ -124,3 +124,31 @@ func TestWebLoginBlocksAudited(t *testing.T) {
 		t.Errorf("audit rows = %q, want %q", got, want)
 	}
 }
+
+// TestOriginScheme: with secure cookies (production behind HTTPS) a post
+// must come from an https page of this site; with insecure cookies (local
+// testing over http) an http page of this site may post.
+func TestOriginScheme(t *testing.T) {
+	tests := []struct {
+		name     string
+		insecure bool
+		origin   string
+		refused  bool
+	}{
+		{"secure, https page", false, "https://bbs.example.net", false},
+		{"secure, http page of the same host", false, "http://bbs.example.net", true},
+		{"secure, another host", false, "https://evil.example", true},
+		{"insecure (local testing), http page", true, "http://bbs.example.net", false},
+		{"insecure, https page", true, "https://bbs.example.net", false},
+		{"insecure, another host", true, "http://evil.example", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			e := setup(t, tt.insecure)
+			rec := e.do(req{method: "POST", path: "/login", origin: tt.origin, form: url.Values{"username": {"alice"}, "code": {"AAAA-AAAA-AAAA"}}})
+			if refused := rec.Code == http.StatusForbidden; refused != tt.refused {
+				t.Errorf("status %d, refused %v, want %v", rec.Code, refused, tt.refused)
+			}
+		})
+	}
+}
