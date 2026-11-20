@@ -131,11 +131,11 @@ func (p *Plugin) webEvents(w http.ResponseWriter, r *http.Request, s plugin.WebS
 	}
 
 	m := p.hub.joinAs(c.ID, u.ID, u.Username, true)
-	p.hub.broadcast(c.ID, eventLine(p.now(), u.Username+" joined"))
+	p.hub.announce(c.ID, u.ID, u.Username, false, p.now())
 	p.h.Log.Info("joined chat from the web", "channel_id", c.ID, "user_id", u.ID)
 	defer func() {
 		p.hub.leave(c.ID, m)
-		p.hub.broadcast(c.ID, eventLine(p.now(), u.Username+" left"))
+		p.hub.announce(c.ID, u.ID, u.Username, true, p.now())
 		p.h.Log.Info("left chat from the web", "channel_id", c.ID, "user_id", u.ID)
 	}()
 

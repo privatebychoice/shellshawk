@@ -702,7 +702,7 @@ func (p *Plugin) checkPrivateChatLimit(ctx context.Context, actor int64) error {
 		return fmt.Errorf("chat: count private chats: %w", err)
 	}
 	if max := p.intSetting(ctx, setMaxPrivateChats, defaultMaxPrivateChats); n >= max {
-		return fmt.Errorf("%w: you already have %d private chats open, the most allowed; close one first", ErrInvalid, max)
+		return fmt.Errorf("%w: you have reached the limit of open private chats (%d); close one first", ErrInvalid, max)
 	}
 	return nil
 }

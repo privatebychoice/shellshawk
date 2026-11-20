@@ -318,6 +318,9 @@ groups hold that permission by default, and what can be done in it.
   manage areas and conferences, and can enable a live chat for a thread.
   Posts can carry polls. Each thread downloads as one markdown file over
   SFTP: `/conferences/<area>/<conference>/<YYYYMMDD>-<id>-<title>.md`.
+  A member can make at most 30 posts (replies and new threads) an hour
+  (admin setting in *Plugin settings → Conferences*; moderators are not
+  limited).
   Permissions: `conferences.read`/`.post` (members and moderators),
   `conferences.moderate` (moderators).
 - **Contacts**: your personal list (with private notes) and named contact
@@ -340,7 +343,9 @@ groups hold that permission by default, and what can be done in it.
   the creator makes them named (voters are told before voting), optional
   automatic closing, changeable votes while open. Results appear after you
   vote or when the poll closes, with counts and percentages written out.
-  Pinned polls are listed first. `polls.vote`/`polls.create` go to
+  Pinned polls are listed first. A member can have at most 5 of their own
+  polls open at once (admin setting in *Plugin settings → Polls*; poll
+  managers are not limited). `polls.vote`/`polls.create` go to
   members, `polls.manage` (pin, close, delete any) to moderators. On the
   web you can vote (native radio buttons or checkboxes) and read results;
   polls are created, closed, pinned and deleted over SSH.
@@ -353,6 +358,9 @@ groups hold that permission by default, and what can be done in it.
   chosen group, plus administrators — and set how long the log is kept,
   0 = not logged); `[P]` private chats are invite-only and can be
   started by any member; `[T]` thread chats belong to conference threads.
+  "alice joined" and "alice left" are announced at most once a minute per
+  member and channel, so reconnecting cannot flood a channel; `/who`
+  always shows who is there.
   If you lose access to a channel while you are in it (for example you
   are taken out of its group), you are put out of it within about 25
   seconds, over SSH and on the web.

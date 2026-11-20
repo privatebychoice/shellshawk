@@ -2,9 +2,11 @@ package polls
 
 import (
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
+	"go.privatebychoice.com/shellshawk/internal/form"
 	"go.privatebychoice.com/shellshawk/internal/perm"
 	"go.privatebychoice.com/shellshawk/internal/plugins/plugintest"
 )
@@ -157,5 +159,59 @@ func TestVotesSurviveAccountDeletion(t *testing.T) {
 	pl, _ = p.Get(e.Ctx, e.Admin, id)
 	if pl.Options[0].Votes != 1 || pl.Creator != "former member" {
 		t.Errorf("after deletion = %+v (totals must be kept, link removed)", pl)
+	}
+}
+
+// TestOpenPollLimit: a member can have at most the set number of their own
+// polls open; closed or expired ones do not count, and poll managers are
+// not limited.
+func TestOpenPollLimit(t *testing.T) {
+	p, e := setup(t)
+	alice, mod := e.User("alice"), e.User("mod1", perm.GroupModerator)
+	if errs, err := p.h.Settings.Save(e.Ctx, e.Admin, form.Values{setMaxOpen: "2"}); err != nil || len(errs) > 0 {
+		t.Fatal(errs, err)
+	}
+	spec := func(who int64, closesIn time.Duration) Spec {
+		return Spec{Question: "Lunch?", Options: []string{"Pizza", "Soup"}, CreatorID: who, ClosesIn: closesIn}
+	}
+	first, err := p.Create(e.Ctx, spec(alice, 0))
+	if err != nil {
+		t.Fatal(err)
+	}
+	steps := []struct {
+		name string
+		do   func() error
+		msg  string // "" = allowed
+	}{
+		{"second", func() error { _, err := p.Create(e.Ctx, spec(alice, time.Hour)); return err }, ""},
+		{"third, over the limit", func() error { _, err := p.Create(e.Ctx, spec(alice, 0)); return err }, "you have reached the limit of open polls (2)"},
+		{"a poll manager is not limited", func() error {
+			for range 3 {
+				if _, err := p.Create(e.Ctx, spec(mod, 0)); err != nil {
+					return err
+				}
+			}
+			return nil
+		}, ""},
+		{"closing one frees a place", func() error {
+			if err := p.Close(e.Ctx, alice, first); err != nil {
+				return err
+			}
+			_, err := p.Create(e.Ctx, spec(alice, 0))
+			return err
+		}, ""},
+		{"an expired one frees a place too", func() error {
+			p.now = func() time.Time { return time.Now().Add(2 * time.Hour) } // the second has closed itself
+			_, err := p.Create(e.Ctx, spec(alice, 0))
+			return err
+		}, ""},
+	}
+	for _, st := range steps {
+		t.Run(st.name, func(t *testing.T) {
+			err := st.do()
+			if st.msg == "" && err != nil || st.msg != "" && (err == nil || !strings.Contains(err.Error(), st.msg)) {
+				t.Errorf("err = %v, want %q", err, st.msg)
+			}
+		})
 	}
 }

@@ -40,6 +40,11 @@ const (
 	MaxDescription = 200
 	threadLimit    = 100
 	setMaxBody     = "max_body"
+	// setMaxPostsPerHour caps replies and new threads per member per hour
+	// (moderators are exempt), so a script cannot flood threads and the
+	// reply notifications they send.
+	setMaxPostsPerHour     = "max_posts_per_hour"
+	defaultMaxPostsPerHour = 30
 )
 
 // Errors.
@@ -88,6 +93,10 @@ func (p *Plugin) Manifest() plugin.Manifest {
 			Field: form.Field{Name: setMaxBody, Label: "Maximum post length (characters)", Kind: form.SingleLine, Subtype: form.Int,
 				Required: true, Min: form.Bound(100), Max: form.Bound(100000)},
 			Default: "20000",
+		}, {
+			Field: form.Field{Name: setMaxPostsPerHour, Label: "Maximum posts (replies and new threads) a member can make per hour",
+				Help: "Moderators are not limited.", Kind: form.SingleLine, Subtype: form.Int, Required: true, Min: form.Bound(1), Max: form.Bound(1000)},
+			Default: strconv.Itoa(defaultMaxPostsPerHour),
 		}},
 		Migrations: []store.Migration{{Version: 1, Name: "conferences", SQL: `
 			CREATE TABLE conferences_areas (
@@ -673,6 +682,9 @@ func (p *Plugin) StartThread(ctx context.Context, user, conf int64, title, body 
 	if body, err = p.checkBody(ctx, body); err != nil {
 		return 0, 0, err
 	}
+	if err := p.checkPostRate(ctx, set, user); err != nil {
+		return 0, 0, err
+	}
 	var thread, post int64
 	err = store.WithTx(ctx, p.h.DB, func(tx *sql.Tx) error {
 		now := store.FormatTime(p.now())
@@ -709,6 +721,9 @@ func (p *Plugin) Reply(ctx context.Context, user, thread int64, body string) (in
 		return 0, ErrLocked
 	}
 	if body, err = p.checkBody(ctx, body); err != nil {
+		return 0, err
+	}
+	if err := p.checkPostRate(ctx, set, user); err != nil {
 		return 0, err
 	}
 	var post int64
@@ -763,6 +778,30 @@ func (p *Plugin) Edit(ctx context.Context, user, id int64, body string) error {
 	}
 	_, err = p.h.DB.ExecContext(ctx, `UPDATE conferences_posts SET body = ?, edited_at = ? WHERE id = ?`, body, store.FormatTime(p.now()), id)
 	return err
+}
+
+// checkPostRate refuses a post once user has made the most allowed in the
+// last hour. Moderators are not limited.
+func (p *Plugin) checkPostRate(ctx context.Context, set perm.Set, user int64) error {
+	if set.Has(PermModerate) {
+		return nil
+	}
+	max := defaultMaxPostsPerHour
+	if v, err := p.h.Settings.Get(ctx, setMaxPostsPerHour); err == nil {
+		if n, err := strconv.Atoi(v); err == nil {
+			max = n
+		}
+	}
+	var n int
+	if err := p.h.DB.QueryRowContext(ctx, `SELECT count(*) FROM conferences_posts WHERE author_id = ? AND created_at > ?`,
+		user, store.FormatTime(p.now().Add(-time.Hour))).Scan(&n); err != nil {
+		return fmt.Errorf("conferences: count recent posts: %w", err)
+	}
+	if n >= max {
+		p.h.Log.Info("post refused: hourly limit", "user_id", user, "limit", max)
+		return fmt.Errorf("%w: you have reached the limit of posts an hour (%d); please wait a while", ErrInvalid, max)
+	}
+	return nil
 }
 
 // DeletePost deletes a reply. The first post deletes the whole thread when

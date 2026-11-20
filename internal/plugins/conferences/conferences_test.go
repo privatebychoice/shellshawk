@@ -11,7 +11,9 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
+	"go.privatebychoice.com/shellshawk/internal/form"
 	"go.privatebychoice.com/shellshawk/internal/perm"
 	"go.privatebychoice.com/shellshawk/internal/plugin"
 	"go.privatebychoice.com/shellshawk/internal/plugins/chat"
@@ -606,6 +608,52 @@ func TestDeleteFirstPost(t *testing.T) {
 			posts, _ := f.p.Posts(f.Ctx, f.alice, tid)
 			if len(posts) != 2 || posts[0].Body != RemovedBody || posts[1].Body != "a reply" || posts[1].AuthorID != tt.wantKeepBy {
 				t.Errorf("posts = %+v", posts)
+			}
+		})
+	}
+}
+
+// TestPostRateLimit: a member can make at most the set number of posts
+// (replies and new threads) per hour; moderators are not limited.
+func TestPostRateLimit(t *testing.T) {
+	f := setup(t)
+	if errs, err := f.p.h.Settings.Save(f.Ctx, f.Admin, form.Values{setMaxBody: "20000", setMaxPostsPerHour: "3"}); err != nil || len(errs) > 0 {
+		t.Fatal(errs, err)
+	}
+	tid, _, err := f.p.StartThread(f.Ctx, f.alice, f.general, "Plans", "Saturday?") // 1
+	if err != nil {
+		t.Fatal(err)
+	}
+	steps := []struct {
+		name string
+		do   func() error
+		msg  string
+	}{
+		{"second", func() error { _, err := f.p.Reply(f.Ctx, f.alice, tid, "two"); return err }, ""},
+		{"third", func() error { _, _, err := f.p.StartThread(f.Ctx, f.alice, f.general, "More", "three"); return err }, ""},
+		{"a reply over the limit", func() error { _, err := f.p.Reply(f.Ctx, f.alice, tid, "four"); return err }, "you have reached the limit of posts an hour (3)"},
+		{"a thread over the limit", func() error { _, _, err := f.p.StartThread(f.Ctx, f.alice, f.general, "Again", "x"); return err }, "you have reached the limit of posts an hour (3)"},
+		{"others have their own count", func() error { _, err := f.p.Reply(f.Ctx, f.bob, tid, "hi"); return err }, ""},
+		{"a moderator is not limited", func() error {
+			for range 5 {
+				if _, err := f.p.Reply(f.Ctx, f.mod, tid, "mod"); err != nil {
+					return err
+				}
+			}
+			return nil
+		}, ""},
+		{"an hour later", func() error {
+			later := time.Now().Add(61 * time.Minute)
+			f.p.now = func() time.Time { return later }
+			_, err := f.p.Reply(f.Ctx, f.alice, tid, "back")
+			return err
+		}, ""},
+	}
+	for _, st := range steps {
+		t.Run(st.name, func(t *testing.T) {
+			err := st.do()
+			if st.msg == "" && err != nil || st.msg != "" && (err == nil || !strings.Contains(err.Error(), st.msg)) {
+				t.Errorf("err = %v, want %q", err, st.msg)
 			}
 		})
 	}

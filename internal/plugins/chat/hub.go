@@ -22,7 +22,19 @@ type hub struct {
 	mu    sync.Mutex
 	rooms map[int64]map[*member]struct{}
 	sent  map[int64][]time.Time // flood control per user
+	// announced is when each "joined"/"left" line was last broadcast, by
+	// channel, member and kind (see announce).
+	announced map[announceKey]time.Time
 }
+
+type announceKey struct {
+	channel, user int64
+	left          bool
+}
+
+// announceEvery is how often a member's joining (or leaving) one channel
+// is announced at most, so reconnecting in a loop cannot flood it.
+const announceEvery = time.Minute
 
 // member is one session inside one channel.
 type member struct {
@@ -47,7 +59,7 @@ func (m *member) close(final tui.Line) {
 }
 
 func newHub() *hub {
-	return &hub{rooms: map[int64]map[*member]struct{}{}, sent: map[int64][]time.Time{}}
+	return &hub{rooms: map[int64]map[*member]struct{}{}, sent: map[int64][]time.Time{}, announced: map[announceKey]time.Time{}}
 }
 
 func (h *hub) join(channel, userID int64, name string) *member {
@@ -159,6 +171,30 @@ func (h *hub) kick(channel, user int64, why string) {
 	for _, m := range gone {
 		m.close(tui.Text(why))
 	}
+}
+
+// announce broadcasts that name joined (or left) channel, unless the same
+// was announced for that member and channel within announceEvery. The
+// lines are not logged, and /who always shows who is there.
+func (h *hub) announce(channel, user int64, name string, left bool, now time.Time) {
+	k := announceKey{channel: channel, user: user, left: left}
+	h.mu.Lock()
+	if last, ok := h.announced[k]; ok && now.Sub(last) < announceEvery {
+		h.mu.Unlock()
+		return
+	}
+	h.announced[k] = now
+	for key, at := range h.announced { // forget old entries as we go
+		if now.Sub(at) >= announceEvery {
+			delete(h.announced, key)
+		}
+	}
+	h.mu.Unlock()
+	what := " joined"
+	if left {
+		what = " left"
+	}
+	h.broadcast(channel, eventLine(now, name+what))
 }
 
 // evict removes one member's view from channel, telling them why. Their

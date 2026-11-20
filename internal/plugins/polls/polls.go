@@ -11,10 +11,12 @@ import (
 	"go.privatebychoice.com/shellshawk/internal/events"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
 
+	"go.privatebychoice.com/shellshawk/internal/form"
 	"go.privatebychoice.com/shellshawk/internal/perm"
 	"go.privatebychoice.com/shellshawk/internal/plugin"
 	"go.privatebychoice.com/shellshawk/internal/store"
@@ -60,6 +62,36 @@ func New() *Plugin { return &Plugin{now: time.Now} }
 
 var _ plugin.Plugin = (*Plugin)(nil)
 
+// setMaxOpen caps the polls one member has open, so a flood of new polls
+// cannot push everyone else's out of the listings.
+const (
+	setMaxOpen     = "max_open_polls"
+	defaultMaxOpen = 5
+)
+
+// checkOpenLimit refuses a new poll once creator has the most open that the
+// setting allows. Closed and expired polls do not count.
+func (p *Plugin) checkOpenLimit(ctx context.Context, creator int64, now time.Time) error {
+	max := defaultMaxOpen
+	if p.h.Settings != nil {
+		if v, err := p.h.Settings.Get(ctx, setMaxOpen); err == nil {
+			if n, err := strconv.Atoi(v); err == nil {
+				max = n
+			}
+		}
+	}
+	var n int
+	if err := p.h.DB.QueryRowContext(ctx, `SELECT count(*) FROM polls_polls WHERE creator_id = ? AND closed_at IS NULL AND (closes_at IS NULL OR closes_at > ?)`,
+		creator, store.FormatTime(now)).Scan(&n); err != nil {
+		return fmt.Errorf("polls: count open polls: %w", err)
+	}
+	if n >= max {
+		p.h.Log.Info("poll refused: open poll limit", "user_id", creator, "limit", max)
+		return fmt.Errorf("%w: you have reached the limit of open polls (%d); close one first", ErrInvalid, max)
+	}
+	return nil
+}
+
 // Manifest implements plugin.Plugin.
 func (p *Plugin) Manifest() plugin.Manifest {
 	return plugin.Manifest{
@@ -70,6 +102,12 @@ func (p *Plugin) Manifest() plugin.Manifest {
 			{Name: PermCreate, Description: "Create polls", DefaultGroups: []string{perm.GroupMember, perm.GroupModerator}},
 			{Name: PermManage, Description: "Pin, close and delete any poll", DefaultGroups: []string{perm.GroupModerator}},
 		},
+		Settings: []plugin.Setting{{
+			Field: form.Field{Name: setMaxOpen, Label: "Most polls one member can have open at once",
+				Help: "Counts polls they created that have not closed. Poll managers are not limited.",
+				Kind: form.SingleLine, Subtype: form.Int, Required: true, Min: form.Bound(1), Max: form.Bound(1000)},
+			Default: strconv.Itoa(defaultMaxOpen),
+		}},
 		Migrations: []store.Migration{{Version: 1, Name: "polls", SQL: `
 			-- context is '' for polls in the Polls menu, or the owner of an
 			-- attached poll, e.g. 'conferences:post:42'.
@@ -206,6 +244,11 @@ func (p *Plugin) Create(ctx context.Context, s Spec) (int64, error) {
 		return 0, fmt.Errorf("%w: bad context", ErrInvalid)
 	}
 	now := p.now()
+	if !set.Has(PermManage) {
+		if err := p.checkOpenLimit(ctx, s.CreatorID, now); err != nil {
+			return 0, err
+		}
+	}
 	var closes any
 	if s.ClosesIn > 0 {
 		closes = store.FormatTime(now.Add(s.ClosesIn))

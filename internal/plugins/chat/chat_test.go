@@ -579,7 +579,7 @@ func TestInvitePrivacyAndLimits(t *testing.T) {
 		{"over the invitation limit", func() error { return f.p.Invite(f.Ctx, f.alice, c, erin) }, "#mine already has 2 invitations, the most allowed"},
 		{"creating with a refused invitee leaves no chat", func() error { _, err := f.p.createAdHoc(f.Ctx, f.alice, "other", "", "bob"); return err }, "not accepting invitations from you: bob"},
 		{"second chat", func() error { _, err := f.p.createAdHoc(f.Ctx, f.alice, "second", "", ""); return err }, ""},
-		{"over the private chat limit", func() error { _, err := f.p.createAdHoc(f.Ctx, f.alice, "third", "", ""); return err }, "you already have 2 private chats open"},
+		{"over the private chat limit", func() error { _, err := f.p.createAdHoc(f.Ctx, f.alice, "third", "", ""); return err }, "you have reached the limit of open private chats (2)"},
 		{"other members have their own limit", func() error { _, err := f.p.createAdHoc(f.Ctx, f.carol, "carols", "", ""); return err }, ""},
 	}
 	for _, st := range steps {
@@ -783,5 +783,32 @@ func TestEraseReplacesName(t *testing.T) {
 	want := []string{tomb + " changed the topic to: Sunday", "alice says hi", "bob changed the topic to: alice's idea"}
 	if strings.Join(got, "|") != strings.Join(want, "|") {
 		t.Errorf("lines = %q\nwant    %q", got, want)
+	}
+}
+
+// TestAnnounceThrottle: a member's joining or leaving a channel is
+// announced at most once a minute, so reconnecting in a loop cannot flood
+// it; other members and channels are counted separately.
+func TestAnnounceThrottle(t *testing.T) {
+	f := setup(t)
+	watcher := f.p.hub.join(1, f.mod, "mod1")
+	at := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
+	for i := range 5 { // five reconnections in quick succession
+		f.p.hub.announce(1, f.alice, "alice", false, at.Add(time.Duration(i)*time.Second))
+		f.p.hub.announce(1, f.alice, "alice", true, at.Add(time.Duration(i)*time.Second+time.Millisecond))
+	}
+	f.p.hub.announce(1, f.bob, "bob", false, at)
+	f.p.hub.announce(2, f.alice, "alice", false, at) // another channel: not delivered here
+	f.p.hub.announce(1, f.alice, "alice", false, at.Add(time.Minute))
+	got := drain(watcher.out)
+	want := []string{"alice joined", "alice left", "bob joined", "alice joined"}
+	lines := strings.Split(got, "\n")
+	if len(lines) != len(want) {
+		t.Fatalf("announced:\n%s\nwant %d lines", got, len(want))
+	}
+	for i, w := range want {
+		if !strings.HasSuffix(lines[i], w) {
+			t.Errorf("line %d = %q, want …%q", i, lines[i], w)
+		}
 	}
 }

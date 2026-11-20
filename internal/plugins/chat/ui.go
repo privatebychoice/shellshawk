@@ -274,11 +274,11 @@ func (p *Plugin) enterOne(ctx context.Context, s plugin.Session, id int64) (int6
 	watch, stopWatch := context.WithCancel(ctx)
 	defer stopWatch()
 	go p.watchAccess(watch, s.Log(), u.ID, c, m)
-	p.hub.broadcast(c.ID, eventLine(p.now(), u.Username+" joined"))
+	p.hub.announce(c.ID, u.ID, u.Username, false, p.now())
 	s.Log().Info("joined chat", "channel_id", c.ID)
 	defer func() {
 		p.hub.leave(c.ID, m)
-		p.hub.broadcast(c.ID, eventLine(p.now(), u.Username+" left"))
+		p.hub.announce(c.ID, u.ID, u.Username, true, p.now())
 		s.Log().Info("left chat", "channel_id", c.ID)
 	}()
 
