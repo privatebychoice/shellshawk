@@ -7,7 +7,7 @@ interface. See [docs/DESIGN.md](docs/DESIGN.md) for the full design.
 > accounts, TUI (full-screen and screen-reader), markdown with graded links,
 > plugins and menus, administration, SFTP, the core plugins, privacy and
 > erasure, and a web interface for reading, messaging, live chat and voting.
-> The current release is **1.0.1**; see [Release notes](#release-notes).
+> The current release is **1.0.2**; see [Release notes](#release-notes).
 
 ## Build
 
@@ -577,22 +577,47 @@ shellshawk makes no outbound network requests.
 The build number is the third part of the version (`1.0.x`), shown in the
 web footer and at `/version`. Run `make bump` before each deployment.
 
-### Unreleased
+### 1.0.2 (2026-11-20)
 
-- Web login codes are 12 characters (`ABCD-EFGH-JKLM`, 60 bits) instead of
-  8. Wrong codes for a username no longer void the member's code or
-  affect them at all; only each address's attempts are limited.
-- Changing your password clears any block on your account from wrong
-  passwords.
-- SFTP uploads in progress on the whole server share a memory limit,
-  `SHELLSHAWK_SFTP_MAX_UPLOAD_MEMORY` (default 16 × the upload limit).
-- Posts on the web must come from an `https` page of the site (unless
-  insecure cookies are on for local testing).
-- Notifications on the web open with an *Open* button (a form) instead of
-  a link, since opening one marks it seen.
-- The built-in `member` group can no longer be chosen to limit a
-  conference or channel (every account is in it). Existing restrictions
-  keep working.
+Security hardening that follows up the 1.0.1 audit. No database
+migrations.
+
+#### Upgrading
+
+- **Production must be served over HTTPS** (as it should be behind your
+  reverse proxy): with secure cookies, web forms are accepted only from an
+  `https` page of the site. For local testing over plain `http`, keep
+  `SHELLSHAWK_HTTP_INSECURE_COOKIES=true`, which still allows `http`.
+- **New optional setting** `SHELLSHAWK_SFTP_MAX_UPLOAD_MEMORY`: how much
+  memory all SFTP uploads in progress may hold together (default 16 × the
+  upload limit, 16 MiB at the defaults). The server logs both limits at
+  startup.
+- Conferences or channels already limited to the built-in `member` group
+  keep working as before; new ones cannot use it.
+
+#### Security
+
+- **Web login codes are 12 characters** (`ABCD-EFGH-JKLM`, 60 bits)
+  instead of 8, too many to guess in the 5 minutes a code lives. Wrong
+  codes for a username therefore no longer void the member's code or count
+  against them at all, so nobody can disturb a member's web login; only
+  each address's attempts are limited.
+- **The `member` group cannot limit a conference or channel** (every
+  account is in it), which closes the last way to use group management to
+  reach members-only content.
+- **Web forms must come from an `https` page** of the site in production.
+- **Opening a notification on the web is a form** (*Open* button) instead
+  of a link, since it marks the notification seen.
+- **SFTP uploads in progress share a server-wide memory limit**, so many
+  connections cannot together exhaust memory.
+- **Changing your password clears any block** on your account from wrong
+  passwords, so the new password works straight away.
+
+#### Other changes
+
+- README: the SFTP table lists every folder. DESIGN: the plugin interface
+  as implemented.
+- Chat tests no longer hang when one fails.
 
 ### 1.0.1 (2026-11-20)
 
