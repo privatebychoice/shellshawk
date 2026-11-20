@@ -491,8 +491,12 @@ func (p *Plugin) insert(ctx context.Context, creator int64, n NewChannel) (int64
 		return 0, err
 	}
 	for _, g := range n.Groups {
-		if _, err := p.h.Perms.GroupByID(ctx, g); err != nil {
+		grp, err := p.h.Perms.GroupByID(ctx, g)
+		if err != nil {
 			return 0, fmt.Errorf("%w: unknown group %d", ErrInvalid, g)
+		}
+		if perm.IsEveryoneGroup(grp) {
+			return 0, fmt.Errorf("%w: the member group includes every account, so it cannot limit who can join; choose another group", ErrInvalid)
 		}
 	}
 	if n.RetentionDays < 0 || n.RetentionDays > MaxRetention {

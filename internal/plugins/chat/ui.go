@@ -532,6 +532,9 @@ func (p *Plugin) manage(ctx context.Context, s plugin.Session) error {
 		}
 		var groupOpts []form.Option
 		for _, g := range groups {
+			if perm.IsEveryoneGroup(g) {
+				continue // every account is in it: it cannot limit anything
+			}
 			label := g.Name
 			if g.Description != "" {
 				label += ": " + g.Description

@@ -159,6 +159,9 @@ func (p *Plugin) conferenceForm(ctx context.Context, s plugin.Session, a Area) e
 	}
 	var opts []form.Option
 	for _, g := range groups {
+		if perm.IsEveryoneGroup(g) {
+			continue // every account is in it: it cannot limit anything
+		}
 		label := g.Name
 		if g.Description != "" {
 			label += ": " + g.Description

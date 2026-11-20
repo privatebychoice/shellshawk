@@ -831,3 +831,28 @@ func TestSFTPLogCleaned(t *testing.T) {
 		t.Errorf("log = %q", got)
 	}
 }
+
+// TestMemberGroupCannotGate: every account is in the built-in member group,
+// so it cannot make a channel members-only; another group can.
+func TestMemberGroupCannotGate(t *testing.T) {
+	f := setup(t)
+	member, _ := f.Perms.GroupByName(f.Ctx, perm.GroupMember)
+	mods, _ := f.Perms.GroupByName(f.Ctx, perm.GroupModerator)
+	tests := []struct {
+		name   string
+		groups []int64
+		msg    string
+	}{
+		{"member alone", []int64{member.ID}, "the member group includes every account"},
+		{"member with another", []int64{mods.ID, member.ID}, "the member group includes every account"},
+		{"another group", []int64{mods.ID}, ""},
+	}
+	for i, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := f.p.Create(f.Ctx, f.mod, NewChannel{Name: "gated" + strconv.Itoa(i), Kind: KindPersistent, Groups: tt.groups})
+			if tt.msg == "" && err != nil || tt.msg != "" && (err == nil || !strings.Contains(err.Error(), tt.msg)) {
+				t.Errorf("err = %v, want %q", err, tt.msg)
+			}
+		})
+	}
+}

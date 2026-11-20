@@ -681,3 +681,19 @@ func TestSFTPThreadCleaned(t *testing.T) {
 		t.Errorf("file = %q", got)
 	}
 }
+
+// TestMemberGroupCannotGate: the built-in member group cannot make a
+// conference members-only; another group can.
+func TestMemberGroupCannotGate(t *testing.T) {
+	f := setup(t)
+	member, _ := f.Perms.GroupByName(f.Ctx, perm.GroupMember)
+	mods, _ := f.Perms.GroupByName(f.Ctx, perm.GroupModerator)
+	areas, _ := f.p.Areas(f.Ctx)
+	if _, err := f.p.CreateConference(f.Ctx, f.mod, areas[0].ID, "everyone", "Everyone", "", []int64{member.ID}); err == nil ||
+		!strings.Contains(err.Error(), "the member group includes every account") {
+		t.Errorf("member as a restriction = %v", err)
+	}
+	if _, err := f.p.CreateConference(f.Ctx, f.mod, areas[0].ID, "staffonly", "Staff only", "", []int64{mods.ID}); err != nil {
+		t.Errorf("another group = %v", err)
+	}
+}

@@ -296,12 +296,18 @@ func holdsAll(actor Set, perms []string) bool {
 	return true
 }
 
+// IsEveryoneGroup reports whether g is the built-in member group, which every
+// new account joins. It cannot limit who may enter anything, so plugins
+// refuse it as a restriction group (a group-only conference or channel).
+func IsEveryoneGroup(g Group) bool { return g.Builtin && g.Name == GroupMember }
+
 // MayAssign reports whether an actor holding set may put accounts in g,
 // directly or through an invite. Administrators always may. Anyone else
 // must hold every permission g grants and, because membership alone can
 // open members-only content (a group-only conference or channel), must
 // already be in g. The built-in member group, which new accounts join by
-// default, needs only the permissions.
+// default, needs only the permissions: it cannot be used to restrict
+// content (IsEveryoneGroup), so joining it opens nothing beyond them.
 func MayAssign(ctx context.Context, db store.DBTX, actor int64, set Set, g Group) (bool, error) {
 	if set.Has(Admin) {
 		return true, nil
@@ -309,7 +315,7 @@ func MayAssign(ctx context.Context, db store.DBTX, actor int64, set Set, g Group
 	if !holdsAll(set, g.Permissions) {
 		return false, nil
 	}
-	if g.Builtin && g.Name == GroupMember {
+	if IsEveryoneGroup(g) {
 		return true, nil
 	}
 	var in int

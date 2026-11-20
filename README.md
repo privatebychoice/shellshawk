@@ -204,7 +204,8 @@ have:
   from it, or create an invite into it, you must hold every permission it
   grants **and** be in the group yourself. Administrators can always; the
   built-in `member` group, which new accounts join, needs only its
-  permissions.
+  permissions, and cannot be used to limit a conference or channel (every
+  account is in it), so joining it opens nothing more.
 - **Accounts:** you cannot act on an account holding permissions you lack,
   and the last active administrator is always kept.
 
@@ -311,7 +312,8 @@ groups hold that permission by default, and what can be done in it.
 
 - **Conferences**: areas of conferences, each open to every member or
   limited to one or more groups (members of any chosen group, plus
-  administrators). Threads of
+  administrators; the built-in `member` group cannot be chosen, as every
+  account is in it). Threads of
   markdown posts written in the editor; authors edit (marked *edited*) or
   delete their posts. Deleting your first post deletes the thread only if
   nobody else has replied; otherwise its text and the title are replaced
@@ -355,8 +357,9 @@ groups hold that permission by default, and what can be done in it.
   contacts* and *Send a message*. Until privacy settings exist, online
   status is shown only between friends (mutual contacts).
 - **Chat**: live channels. `[C]` channels are run by chat
-  moderators (who can limit them to one or more groups — members of any
-  chosen group, plus administrators — and set how long the log is kept,
+  moderators (who can limit them to one or more groups other than
+  `member` — members of any chosen group, plus administrators — and set
+  how long the log is kept,
   0 = not logged); `[P]` private chats are invite-only and can be
   started by any member; `[T]` thread chats belong to conference threads.
   "alice joined" and "alice left" are announced at most once a minute per

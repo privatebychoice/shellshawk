@@ -421,8 +421,12 @@ func (p *Plugin) CreateConference(ctx context.Context, actor, area int64, slug, 
 		return 0, fmt.Errorf("%w: short name 2-32 lowercase letters, digits or '-'; name 1-%d and description up to %d printable characters", ErrInvalid, MaxName, MaxDescription)
 	}
 	for _, g := range groups {
-		if _, err := p.h.Perms.GroupByID(ctx, g); err != nil {
+		grp, err := p.h.Perms.GroupByID(ctx, g)
+		if err != nil {
 			return 0, fmt.Errorf("%w: unknown group %d", ErrInvalid, g)
+		}
+		if perm.IsEveryoneGroup(grp) {
+			return 0, fmt.Errorf("%w: the member group includes every account, so it cannot limit who can use a conference; choose another group", ErrInvalid)
 		}
 	}
 	var id int64

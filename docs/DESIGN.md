@@ -181,7 +181,11 @@ to use. The web navigation follows the same tree (§11).
   channels), so adding or removing members, and attaching a group to an
   invite, also require being in that group (`perm.MayAssign`);
   administrators always may, and the built-in `member` group (the default
-  for new accounts) needs only its permissions. Removing a member also
+  for new accounts) needs only its permissions. That exception is safe
+  because `member` can never restrict content: conferences and channels
+  refuse it as a restriction group (`perm.IsEveryoneGroup`), and their
+  forms do not offer it; restrictions made before this rule keep working.
+  Removing a member also
   needs the rank rule (`RequireOutranks`). An actor can only
   approve/reject/lock accounts whose permissions they fully hold. The last
   active administrator cannot be removed or locked.
