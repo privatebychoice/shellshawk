@@ -19,8 +19,10 @@ import (
 	"unicode/utf8"
 
 	"go.privatebychoice.com/shellshawk/internal/auth"
+	"go.privatebychoice.com/shellshawk/internal/form"
 	"go.privatebychoice.com/shellshawk/internal/perm"
 	"go.privatebychoice.com/shellshawk/internal/plugin"
+	"go.privatebychoice.com/shellshawk/internal/privacy"
 	"go.privatebychoice.com/shellshawk/internal/sftpd"
 	"go.privatebychoice.com/shellshawk/internal/store"
 	"go.privatebychoice.com/shellshawk/internal/tui/term"
@@ -101,7 +103,7 @@ func (p *Plugin) Manifest() plugin.Manifest {
 			{Name: PermModerate, Description: "Manage channels; kick members, set topics and close chats anywhere", DefaultGroups: []string{perm.GroupModerator}},
 			{Name: PermPage, Description: "Page members: ask them to come and talk in a chat", DefaultGroups: []string{perm.GroupMember, perm.GroupModerator}},
 		},
-		Settings: []plugin.Setting{pageSetting()},
+		Settings: append([]plugin.Setting{pageSetting()}, limitSettings()...),
 		Migrations: []store.Migration{{Version: 1, Name: "chat", SQL: `
 			-- permission: extra permission needed to join (persistent and
 			-- thread channels). retention_days 0 means messages are not
@@ -464,6 +466,9 @@ func (p *Plugin) Create(ctx context.Context, actor int64, n NewChannel) (int64, 
 			return 0, perm.ErrForbidden
 		}
 		n.Groups = nil
+		if err := p.checkPrivateChatLimit(ctx, actor); err != nil {
+			return 0, err
+		}
 	default:
 		return 0, fmt.Errorf("%w: kind", ErrInvalid)
 	}
@@ -584,16 +589,107 @@ func (p *Plugin) SetRetention(ctx context.Context, actor int64, c Channel, days 
 	})
 }
 
-// Invite allows user to enter an ad hoc chat.
+// Invite allows user to enter an ad hoc chat. The actor must be able to
+// enter it, user must be active and accept private messages from the
+// actor (privacy setting "Who can send me private messages"), and the
+// chat must be under its invitation limit.
 func (p *Plugin) Invite(ctx context.Context, actor int64, c Channel, user int64) error {
+	return p.invite(ctx, actor, c, user, true)
+}
+
+// invite is Invite; checkPrivacy is false only for paging, whose own
+// consent ("Who can page you") has already been checked.
+func (p *Plugin) invite(ctx context.Context, actor int64, c Channel, user int64, checkPrivacy bool) error {
 	if c.Kind != KindAdHoc {
 		return fmt.Errorf("%w: only private chats use invitations", ErrInvalid)
 	}
 	if ok, err := p.CanAccess(ctx, actor, c); err != nil || !ok {
 		return errors.Join(perm.ErrForbidden, err)
 	}
+	var already bool
+	if err := p.h.DB.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM chat_invites WHERE channel_id = ? AND user_id = ?)`, c.ID, user).Scan(&already); err != nil {
+		return fmt.Errorf("chat: invite: %w", err)
+	}
+	if already || user == c.CreatorID {
+		return nil
+	}
+	if checkPrivacy {
+		if err := p.mayInvite(ctx, actor, user); err != nil {
+			return err
+		}
+	}
+	var n int
+	if err := p.h.DB.QueryRowContext(ctx, `SELECT count(*) FROM chat_invites WHERE channel_id = ?`, c.ID).Scan(&n); err != nil {
+		return fmt.Errorf("chat: invite: %w", err)
+	}
+	if max := p.intSetting(ctx, setMaxInvitees, defaultMaxInvitees); n >= max {
+		return fmt.Errorf("%w: #%s already has %d invitations, the most allowed", ErrInvalid, c.Name, max)
+	}
 	_, err := p.h.DB.ExecContext(ctx, `INSERT INTO chat_invites (channel_id, user_id) VALUES (?, ?) ON CONFLICT DO NOTHING`, c.ID, user)
 	return err
+}
+
+// mayInvite reports why actor may not invite user to a private chat: the
+// account is not active, or user does not accept private messages from
+// actor.
+func (p *Plugin) mayInvite(ctx context.Context, actor, user int64) error {
+	acct, err := p.h.Auth.UserByID(ctx, user)
+	if err != nil || acct.Status != auth.StatusActive {
+		return fmt.Errorf("%w: that account is not active", ErrInvalid)
+	}
+	if p.h.Privacy == nil || actor == user {
+		return nil
+	}
+	ok, err := p.h.Privacy.Allows(ctx, actor, user, privacy.Messages)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		p.h.Log.Info("private chat invitation refused by privacy setting", "actor", actor, "user_id", user)
+		return fmt.Errorf("%w: not accepting invitations from you: %s", ErrInvalid, acct.Username)
+	}
+	return nil
+}
+
+// Limits on private chats, which any member with chat.create can start.
+const (
+	setMaxPrivateChats     = "max_private_chats"
+	defaultMaxPrivateChats = 20
+	setMaxInvitees         = "max_invitees"
+	defaultMaxInvitees     = 50
+)
+
+func limitSettings() []plugin.Setting {
+	return []plugin.Setting{
+		{Field: form.Field{Name: setMaxPrivateChats, Label: "Most private chats one member can have open",
+			Help: "Counts the chats they started and have not closed.", Kind: form.SingleLine, Subtype: form.Int, Required: true,
+			Min: form.Bound(1), Max: form.Bound(1000)}, Default: strconv.Itoa(defaultMaxPrivateChats)},
+		{Field: form.Field{Name: setMaxInvitees, Label: "Most invitations in one private chat", Kind: form.SingleLine, Subtype: form.Int,
+			Required: true, Min: form.Bound(1), Max: form.Bound(1000)}, Default: strconv.Itoa(defaultMaxInvitees)},
+	}
+}
+
+// intSetting reads a whole-number plugin setting, or def if it cannot.
+func (p *Plugin) intSetting(ctx context.Context, key string, def int) int {
+	v, err := p.h.Settings.Get(ctx, key)
+	n, cerr := strconv.Atoi(v)
+	if err != nil || cerr != nil {
+		return def
+	}
+	return n
+}
+
+// checkPrivateChatLimit refuses a new private chat once actor has the most
+// open that the setting allows.
+func (p *Plugin) checkPrivateChatLimit(ctx context.Context, actor int64) error {
+	var n int
+	if err := p.h.DB.QueryRowContext(ctx, `SELECT count(*) FROM chat_channels WHERE kind = ? AND creator_id = ?`, KindAdHoc, actor).Scan(&n); err != nil {
+		return fmt.Errorf("chat: count private chats: %w", err)
+	}
+	if max := p.intSetting(ctx, setMaxPrivateChats, defaultMaxPrivateChats); n >= max {
+		return fmt.Errorf("%w: you already have %d private chats open, the most allowed; close one first", ErrInvalid, max)
+	}
+	return nil
 }
 
 // Invitee is a member invited to a private chat.

@@ -11,9 +11,11 @@ import (
 	"time"
 
 	"go.privatebychoice.com/shellshawk/internal/auth"
+	"go.privatebychoice.com/shellshawk/internal/form"
 	"go.privatebychoice.com/shellshawk/internal/perm"
 	"go.privatebychoice.com/shellshawk/internal/plugin"
 	"go.privatebychoice.com/shellshawk/internal/plugins/plugintest"
+	"go.privatebychoice.com/shellshawk/internal/privacy"
 	"go.privatebychoice.com/shellshawk/internal/sftpd"
 	"go.privatebychoice.com/shellshawk/internal/store"
 	"go.privatebychoice.com/shellshawk/internal/tui"
@@ -29,7 +31,14 @@ func setup(t *testing.T) *fixture {
 	t.Helper()
 	p := New()
 	e := plugintest.New(t, p)
-	return &fixture{Env: e, p: p, alice: e.User("alice"), bob: e.User("bob"), carol: e.User("carol"), mod: e.User("mod1", perm.GroupModerator)}
+	f := &fixture{Env: e, p: p, alice: e.User("alice"), bob: e.User("bob"), carol: e.User("carol"), mod: e.User("mod1", perm.GroupModerator)}
+	// Invitations follow "Who can send me private messages" (default
+	// friends only). Most tests are not about that, so these members
+	// accept them from anyone; TestInvitePrivacyAndLimits covers it.
+	for _, u := range []int64{f.alice, f.bob, f.carol, f.mod} {
+		e.Visibility(u, privacy.Messages, privacy.Public)
+	}
+	return f
 }
 
 func (f *fixture) user(t *testing.T, id int64) auth.User {
@@ -515,5 +524,85 @@ func TestFindChannelTUI(t *testing.T) {
 	}
 	if t.Failed() {
 		t.Logf("output:\n%s", out)
+	}
+}
+
+// TestInvitePrivacyAndLimits: inviting follows "Who can send me private
+// messages" (paging keeps its own consent), and private chats and their
+// invitations are capped by the chat settings.
+func TestInvitePrivacyAndLimits(t *testing.T) {
+	f := setup(t)
+	dave, erin := f.User("dave"), f.User("erin")
+	f.Visibility(erin, privacy.Messages, privacy.Public)
+	f.Visibility(f.bob, privacy.Messages, privacy.NoOne)
+	if err := f.Auth.SetLocked(f.Ctx, f.Admin, dave, true); err != nil {
+		t.Fatal(err)
+	}
+	// Two chats each, two invitations each.
+	if errs, err := f.p.h.Settings.Save(f.Ctx, f.Admin, form.Values{setPageMinutes: "5", setMaxPrivateChats: "2", setMaxInvitees: "2"}); err != nil || len(errs) > 0 {
+		t.Fatal(errs, err)
+	}
+	mine, err := f.p.createAdHoc(f.Ctx, f.alice, "mine", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, _ := f.p.Get(f.Ctx, mine)
+	invited := func(user int64) bool {
+		t.Helper()
+		var n int
+		f.DB.QueryRowContext(f.Ctx, `SELECT count(*) FROM chat_invites WHERE channel_id = ? AND user_id = ?`, mine, user).Scan(&n)
+		return n == 1
+	}
+	steps := []struct {
+		name string
+		do   func() error
+		msg  string // "" = allowed
+	}{
+		{"refused by the invitee's privacy setting", func() error { return f.p.Invite(f.Ctx, f.alice, c, f.bob) }, "not accepting invitations from you: bob"},
+		{"a locked account", func() error { return f.p.Invite(f.Ctx, f.alice, c, dave) }, "that account is not active"},
+		{"an invitee who accepts", func() error { return f.p.Invite(f.Ctx, f.alice, c, f.carol) }, ""},
+		{"inviting again changes nothing", func() error { return f.p.Invite(f.Ctx, f.alice, c, f.carol) }, ""},
+		{"second invitation", func() error { return f.p.Invite(f.Ctx, f.alice, c, f.mod) }, ""},
+		{"over the invitation limit", func() error { return f.p.Invite(f.Ctx, f.alice, c, erin) }, "#mine already has 2 invitations, the most allowed"},
+		{"creating with a refused invitee leaves no chat", func() error { _, err := f.p.createAdHoc(f.Ctx, f.alice, "other", "", "bob"); return err }, "not accepting invitations from you: bob"},
+		{"second chat", func() error { _, err := f.p.createAdHoc(f.Ctx, f.alice, "second", "", ""); return err }, ""},
+		{"over the private chat limit", func() error { _, err := f.p.createAdHoc(f.Ctx, f.alice, "third", "", ""); return err }, "you already have 2 private chats open"},
+		{"other members have their own limit", func() error { _, err := f.p.createAdHoc(f.Ctx, f.carol, "carols", "", ""); return err }, ""},
+	}
+	for _, st := range steps {
+		t.Run(st.name, func(t *testing.T) {
+			err := st.do()
+			if st.msg == "" && err != nil || st.msg != "" && (err == nil || !strings.Contains(err.Error(), st.msg)) {
+				t.Errorf("err = %v, want %q", err, st.msg)
+			}
+		})
+	}
+	if invited(f.bob) || invited(dave) || !invited(f.carol) {
+		t.Error("invitations do not match the refusals")
+	}
+	if _, err := f.p.ByName(f.Ctx, "other"); err == nil {
+		t.Error("a chat was left behind by a refused invitation")
+	}
+	// Closing one frees a slot.
+	if err := f.p.Destroy(f.Ctx, f.alice, mine); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.p.createAdHoc(f.Ctx, f.alice, "third", "", ""); err != nil {
+		t.Errorf("after closing a chat: %v", err)
+	}
+}
+
+// TestPageIgnoresMessagePrivacy: paging someone into a talk chat needs
+// only their paging consent, not "Who can send me private messages".
+func TestPageIgnoresMessagePrivacy(t *testing.T) {
+	f := setup(t)
+	f.Visibility(f.bob, privacy.Messages, privacy.NoOne)
+	f.Visibility(f.bob, privacy.Pages, privacy.Public)
+	f.Visibility(f.bob, privacy.Online, privacy.Public)
+	f.Presence.Enter(f.bob)
+	if _, c, err := f.p.pageToTalk(f.Ctx, f.user(t, f.alice), "bob"); err != nil {
+		t.Fatalf("page = %v", err)
+	} else if ok, _ := f.p.CanAccess(f.Ctx, f.bob, c); !ok {
+		t.Error("bob was not invited to the talk chat")
 	}
 }

@@ -909,6 +909,14 @@ the member now and, in ad hoc chats, withdraws the invitation; join/leave
 events are broadcast but not logged (only messages and topic changes are);
 retention 0 = not logged at all; a direct-message chat is an ad hoc chat
 with one invitee (no separate [D] type); live delivery is in-process.
+`Invite` (from `/invite`, `/createchat` and the web) needs the invitee to
+be active and to accept private messages from the inviter (privacy
+field `messages`), so an invitation cannot get round "who can message
+me"; `/createchat` checks every invitee before creating the chat. Paging
+invites through the same code without that check, since its consent is
+`pages`. Chat settings cap the private chats a member has open
+(`max_private_chats`, default 20, counting chats they created) and the
+invitations per chat (`max_invitees`, default 50).
 Paging (`/page`, *Page someone*) is described in §6.6. A thread's author
 gets a `conferences:reply` notification when someone else replies.
 

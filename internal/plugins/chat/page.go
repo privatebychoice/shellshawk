@@ -136,7 +136,7 @@ func (p *Plugin) Page(ctx context.Context, from auth.User, targetName string, c 
 		return to, errors.Join(ErrCannotPage, err)
 	}
 	if c.Kind == KindAdHoc {
-		if err := p.Invite(ctx, from.ID, c, to.ID); err != nil {
+		if err := p.invite(ctx, from.ID, c, to.ID, false); err != nil {
 			return to, err
 		}
 	}

@@ -346,6 +346,12 @@ groups hold that permission by default, and what can be done in it.
   chosen group, plus administrators — and set how long the log is kept,
   0 = not logged); `[P]` private chats are invite-only and can be
   started by any member; `[T]` thread chats belong to conference threads.
+  You can only invite someone who accepts private messages from you
+  (privacy setting *Who can send me private messages*, default *Friends
+  only*); paging uses *Who can page you* instead. A member can have at
+  most 20 private chats of their own open, each with at most 50
+  invitations (admin settings in *Plugin settings → Chat*); closing a
+  chat frees its place.
   *Find a channel* searches the names and topics of the channels you can
   join.
   **Paging** asks someone to come and talk: *Page someone* (`a` in the

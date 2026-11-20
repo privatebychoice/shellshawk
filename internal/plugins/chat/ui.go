@@ -163,7 +163,14 @@ func (p *Plugin) createAdHoc(ctx context.Context, creator int64, name, topic, in
 		if err != nil || acct.Status != auth.StatusActive {
 			return 0, fmt.Errorf("%w: no active member called %q", ErrInvalid, strings.TrimPrefix(strings.TrimSpace(u), "@"))
 		}
+		// Check before creating, so a refusal leaves no empty chat behind.
+		if err := p.mayInvite(ctx, creator, acct.ID); err != nil {
+			return 0, err
+		}
 		ids = append(ids, acct.ID)
+	}
+	if max := p.intSetting(ctx, setMaxInvitees, defaultMaxInvitees); len(ids) > max {
+		return 0, fmt.Errorf("%w: a private chat can have at most %d invitations", ErrInvalid, max)
 	}
 	id, err := p.Create(ctx, creator, NewChannel{Name: name, Kind: KindAdHoc, Topic: topic, RetentionDays: DefaultRetention})
 	if err != nil {
