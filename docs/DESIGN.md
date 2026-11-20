@@ -918,6 +918,11 @@ the member now and, in ad hoc chats, withdraws the invitation; join/leave
 events are broadcast but not logged (only messages and topic changes are);
 retention 0 = not logged at all; a direct-message chat is an ad hoc chat
 with one invitee (no separate [D] type); live delivery is in-process.
+While a member is in a channel over SSH, their access is checked again
+every 25 seconds (`watchAccess`, the web stream's interval); once they
+can no longer enter it (removed from its group or a restricted
+conference, uninvited, or without `chat.use`) they are put out of the
+room with "You no longer have access to #name.", like a kick.
 `Invite` (from `/invite`, `/createchat` and the web) needs the invitee to
 be active and to accept private messages from the inviter (privacy
 field `messages`), so an invitation cannot get round "who can message

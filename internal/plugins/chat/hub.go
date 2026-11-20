@@ -161,6 +161,15 @@ func (h *hub) kick(channel, user int64, why string) {
 	}
 }
 
+// evict removes one member's view from channel, telling them why. Their
+// other sessions in the channel are left alone.
+func (h *hub) evict(channel int64, m *member, why string) {
+	h.mu.Lock()
+	delete(h.rooms[channel], m)
+	h.mu.Unlock()
+	m.close(tui.Text(why))
+}
+
 // closeRoom removes everyone from channel.
 func (h *hub) closeRoom(channel int64, why string) {
 	h.mu.Lock()

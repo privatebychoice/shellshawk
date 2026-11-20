@@ -618,3 +618,54 @@ func TestPageIgnoresMessagePrivacy(t *testing.T) {
 		t.Error("bob was not invited to the talk chat")
 	}
 }
+
+// TestWatchAccess: a member in a channel over SSH is put out of it, with
+// the reason, once they can no longer enter it; a member who still can is
+// left alone.
+func TestWatchAccess(t *testing.T) {
+	f := setup(t)
+	f.p.recheck = 10 * time.Millisecond
+	vips, err := f.Perms.CreateGroup(f.Ctx, f.Admin, "vips", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	vip := f.User("vip", perm.GroupMember, "vips")
+	stay := f.User("stay", perm.GroupMember, "vips")
+	id, err := f.p.Create(f.Ctx, f.mod, NewChannel{Name: "lounge", Kind: KindPersistent, Groups: []int64{vips}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, _ := f.p.Get(f.Ctx, id)
+	log := slog.New(slog.DiscardHandler)
+	ctx, cancel := context.WithCancel(f.Ctx)
+	defer cancel()
+	gone := f.p.hub.join(id, vip, "vip")
+	kept := f.p.hub.join(id, stay, "stay")
+	go f.p.watchAccess(ctx, log, vip, c, gone)
+	go f.p.watchAccess(ctx, log, stay, c, kept)
+
+	if err := f.Perms.RemoveMember(f.Ctx, f.Admin, vips, vip); err != nil {
+		t.Fatal(err)
+	}
+	ended := make(chan bool, 1)
+	go func() { ended <- closedWith(gone.out, "You no longer have access to #lounge.") }()
+	select {
+	case ok := <-ended:
+		if !ok {
+			t.Error("ended without the reason")
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("member who lost access was not put out")
+	}
+	time.Sleep(50 * time.Millisecond) // several more checks
+	select {
+	case _, open := <-kept.out:
+		if !open {
+			t.Error("a member who still has access was put out")
+		}
+	default:
+	}
+	if got := f.p.hub.who(id); len(got) != 1 || got[0] != "stay" {
+		t.Errorf("in the room: %v", got)
+	}
+}

@@ -70,6 +70,9 @@ type Plugin struct {
 	// prefix of the plugin that owns them (see SetThreadAccess).
 	threadAccess map[string]ThreadAccessFunc
 	pages        pager
+	// recheck is how often a member in a channel over SSH has their
+	// access checked again (keepAlive, as on the web, if zero).
+	recheck time.Duration
 }
 
 // ThreadAccessFunc reports whether user may enter the thread channel with

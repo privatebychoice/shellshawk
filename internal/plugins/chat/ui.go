@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strconv"
 	"strings"
 	"time"
@@ -270,6 +271,9 @@ func (p *Plugin) enterOne(ctx context.Context, s plugin.Session, id int64) (int6
 	}
 
 	m := p.hub.join(c.ID, u.ID, u.Username)
+	watch, stopWatch := context.WithCancel(ctx)
+	defer stopWatch()
+	go p.watchAccess(watch, s.Log(), u.ID, c, m)
 	p.hub.broadcast(c.ID, eventLine(p.now(), u.Username+" joined"))
 	s.Log().Info("joined chat", "channel_id", c.ID)
 	defer func() {
@@ -291,6 +295,39 @@ func (p *Plugin) enterOne(ctx context.Context, s plugin.Session, id int64) (int6
 		},
 	})
 	return next, err
+}
+
+// watchAccess checks, while a member is in a channel over SSH, that they
+// may still enter it, as the web stream does. A member who has lost access
+// (removed from the channel's group, from a restricted conference, or
+// without chat.use) is put out of the room with the reason, which ends
+// their view as a kick does. It stops when ctx ends.
+func (p *Plugin) watchAccess(ctx context.Context, log *slog.Logger, user int64, c Channel, m *member) {
+	every := p.recheck
+	if every <= 0 {
+		every = keepAlive
+	}
+	tick := time.NewTicker(every)
+	defer tick.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-tick.C:
+		}
+		ok, err := p.CanAccess(ctx, user, c)
+		if err != nil {
+			if ctx.Err() == nil {
+				log.Error("recheck chat access", "channel_id", c.ID, "err", err)
+			}
+			continue // a database hiccup is not a reason to put them out
+		}
+		if !ok {
+			log.Info("left chat: access lost", "channel_id", c.ID)
+			p.hub.evict(c.ID, m, "You no longer have access to #"+c.Name+".")
+			return
+		}
+	}
 }
 
 // find searches the channels the member can enter and opens the one they

@@ -349,6 +349,9 @@ groups hold that permission by default, and what can be done in it.
   chosen group, plus administrators — and set how long the log is kept,
   0 = not logged); `[P]` private chats are invite-only and can be
   started by any member; `[T]` thread chats belong to conference threads.
+  If you lose access to a channel while you are in it (for example you
+  are taken out of its group), you are put out of it within about 25
+  seconds, over SSH and on the web.
   You can only invite someone who accepts private messages from you
   (privacy setting *Who can send me private messages*, default *Friends
   only*); paging uses *Who can page you* instead. A member can have at
