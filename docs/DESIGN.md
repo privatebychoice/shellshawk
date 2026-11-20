@@ -204,7 +204,12 @@ to use. The web navigation follows the same tree (§11).
   and a permission added to a group later does not reach invitees through
   an invite from someone who lacks it. The bootstrap invite has no creator.
 - **Approval**: configurable per invite or globally — new accounts land in
-  `pending` until an admin/moderator approves.
+  `pending` until an admin/moderator approves. Rejecting deletes the
+  account row, but its ID is never given to another account: registration
+  takes the next ID from `user_id_high` (core migration 11, kept current
+  by a trigger and started above every ID in `users` and the audit log),
+  so audit entries about a rejected applicant never read as a later
+  member's.
 
 ### 4.1 Connection limits and ending connections
 

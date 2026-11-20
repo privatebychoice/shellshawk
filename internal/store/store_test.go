@@ -252,3 +252,54 @@ func TestWebSessionsGetPublicIDs(t *testing.T) {
 		t.Errorf("sessions with an 18-character ID = %d, distinct = %d, with activity = %d; want 2, 2, 0", n, distinct, seen)
 	}
 }
+
+// TestUserIDHighStartsAboveEveryKnownID: on upgrade, the next account ID
+// starts above every ID in use and every ID the audit log mentions, so an
+// applicant rejected before the upgrade is not reused either.
+func TestUserIDHighStartsAboveEveryKnownID(t *testing.T) {
+	tests := []struct {
+		name string
+		seed []string
+		want int64
+	}{
+		{"empty", nil, 0},
+		{"accounts", []string{`INSERT INTO users (id, username, password_hash, status, created_at) VALUES (7, 'a', 'x', 'active', 't')`}, 7},
+		{"a rejected applicant known only as an actor", []string{
+			`INSERT INTO users (id, username, password_hash, status, created_at) VALUES (3, 'a', 'x', 'active', 't')`,
+			`INSERT INTO audit_log (at, actor_id, action) VALUES ('t', 9, 'user.registered')`,
+		}, 9},
+		{"a rejected applicant known only as a target", []string{
+			`INSERT INTO audit_log (at, actor_id, action, target_type, target_id) VALUES ('t', 1, 'user.rejected', 'user', '12')`,
+			`INSERT INTO audit_log (at, actor_id, action, target_type, target_id) VALUES ('t', 1, 'group.created', 'group', '99')`,
+		}, 12},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := context.Background()
+			db, err := sql.Open("sqlite", dsn(filepath.Join(t.TempDir(), "up.db")))
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer db.Close()
+			migs, err := LoadMigrations(coreMigrationFS, "migrations")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := Migrate(ctx, db, CoreOwner, migs[:10], discard()); err != nil {
+				t.Fatal(err)
+			}
+			for _, q := range tt.seed {
+				if _, err := db.ExecContext(ctx, q); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := Migrate(ctx, db, CoreOwner, migs, discard()); err != nil {
+				t.Fatal(err)
+			}
+			var high int64
+			if err := db.QueryRowContext(ctx, `SELECT high FROM user_id_high`).Scan(&high); err != nil || high != tt.want {
+				t.Errorf("high = %d, %v; want %d", high, err, tt.want)
+			}
+		})
+	}
+}

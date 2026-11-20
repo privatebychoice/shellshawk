@@ -602,3 +602,35 @@ func TestInvitesFollowCreator(t *testing.T) {
 		t.Errorf("after unlocking the creator: %v", err)
 	}
 }
+
+// TestUserIDsNotReused: a rejected applicant's account row is deleted,
+// but its ID is never given to a later account, so audit entries about it
+// cannot be mistaken for the new account's.
+func TestUserIDsNotReused(t *testing.T) {
+	f := newFixture(t)
+	pending := f.register(f.invite(f.admin, InviteOptions{RequireApproval: true}), "applicant").ID
+	if err := f.svc.Reject(f.ctx, f.admin, pending); err != nil {
+		t.Fatal(err)
+	}
+	next := f.user("newcomer")
+	if next == pending || next != pending+1 {
+		t.Errorf("next account got ID %d; the rejected one had %d", next, pending)
+	}
+	var about int
+	f.db.QueryRowContext(f.ctx, `SELECT count(*) FROM audit_log WHERE actor_id = ? OR (target_type = 'user' AND target_id = ?)`,
+		pending, strconv.FormatInt(pending, 10)).Scan(&about)
+	if about == 0 {
+		t.Fatal("no audit entries about the rejected applicant to protect")
+	}
+
+	// An account inserted with an explicit ID moves the mark too.
+	if _, err := f.db.ExecContext(f.ctx, `INSERT INTO users (id, username, password_hash, status, created_at) VALUES (500, 'imported', 'x', 'active', '2026-01-01T00:00:00Z')`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.db.ExecContext(f.ctx, `DELETE FROM users WHERE id = 500`); err != nil {
+		t.Fatal(err)
+	}
+	if id := f.user("after"); id != 501 {
+		t.Errorf("after an explicit ID 500, next ID = %d, want 501", id)
+	}
+}

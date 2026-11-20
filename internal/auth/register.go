@@ -101,8 +101,8 @@ func (s *Service) Register(ctx context.Context, inviteCode string, r Registratio
 			emailArg = email
 		}
 		res, err = tx.ExecContext(ctx, `
-			INSERT INTO users (username, password_hash, email, status, created_at, approved_at, invite_id)
-			VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT (username) DO NOTHING`,
+			INSERT INTO users (id, username, password_hash, email, status, created_at, approved_at, invite_id)
+			VALUES ((SELECT high + 1 FROM user_id_high), ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (username) DO NOTHING`,
 			username, hash, emailArg, status, store.FormatTime(now), approvedAt, inv.ID)
 		if err != nil {
 			return fmt.Errorf("auth: create user: %w", err)
