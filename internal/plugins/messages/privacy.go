@@ -11,7 +11,7 @@ import (
 )
 
 // export returns every message the member received (including deleted
-// ones) or sent.
+// ones) or sent, with no listing limit.
 func (p *Plugin) export(ctx context.Context, user int64) ([]export.File, error) {
 	type msgOut struct {
 		Folder  string   `json:"folder"`
@@ -24,7 +24,7 @@ func (p *Plugin) export(ctx context.Context, user int64) ([]export.File, error) 
 	}
 	var out []msgOut
 	for _, folder := range []string{Inbox, Deleted, Sent} {
-		list, err := p.List(ctx, user, folder)
+		list, err := p.list(ctx, user, folder, -1)
 		if err != nil {
 			return nil, err
 		}

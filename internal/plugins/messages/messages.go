@@ -376,8 +376,14 @@ const (
 	Deleted = "deleted"
 )
 
-// List returns a folder's messages, newest first.
+// List returns a folder's messages, newest first, at most ListLimit.
 func (p *Plugin) List(ctx context.Context, user int64, folder string) ([]Summary, error) {
+	return p.list(ctx, user, folder, ListLimit)
+}
+
+// list is List with a limit; limit < 0 means every message (the data
+// export).
+func (p *Plugin) list(ctx context.Context, user int64, folder string, limit int) ([]Summary, error) {
 	var q string
 	switch folder {
 	case Inbox:
@@ -395,7 +401,7 @@ func (p *Plugin) List(ctx context.Context, user int64, folder string) ([]Summary
 	default:
 		return nil, fmt.Errorf("messages: unknown folder %q", folder)
 	}
-	rows, err := p.h.DB.QueryContext(ctx, q, user, ListLimit)
+	rows, err := p.h.DB.QueryContext(ctx, q, user, limit) // SQLite: LIMIT -1 is no limit
 	if err != nil {
 		return nil, fmt.Errorf("messages: list: %w", err)
 	}

@@ -72,6 +72,9 @@ those changes immediately.
 
 - **Who:** every member with SFTP access. Each member only ever sees their
   own files; there is no way to name another member in a path.
+- **Export files are complete:** for example `messages.json` holds every
+  message in your Inbox, Deleted and Sent folders, not only the 200 most
+  recent that `/messages` and the BBS list.
 - **Export folders:** one per plugin that stores member data: `chat`
   (`chat.json`), `conferences` (`posts.json`), `contacts`
   (`contacts.json`), `messages` (`messages.json`), `motd` (`motd.json`),

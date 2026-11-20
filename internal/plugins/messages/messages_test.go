@@ -1,6 +1,7 @@
 package messages
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"slices"
@@ -486,5 +487,65 @@ func TestDeleteForeverAndEmpty(t *testing.T) {
 	}
 	if f.texts(t, "for bob") != 1 {
 		t.Error("text removed while the sender still has it in Sent")
+	}
+}
+
+// TestExportHasEveryMessage: the data export is not cut off at the
+// folder listing limit (ListLimit), in any folder.
+func TestExportHasEveryMessage(t *testing.T) {
+	f := setup(t)
+	// Every folder holds more than ListLimit. Insert directly: Send is
+	// rate-limited. Bob receives n (half of them deleted) and sends n.
+	const n = 2*ListLimit + 50
+	tx, err := f.DB.BeginTx(f.Ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := range n {
+		at := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC).Add(time.Duration(i) * time.Minute).Format(time.RFC3339)
+		res, err := tx.Exec(`INSERT INTO messages_messages (sender_id, subject, body, created_at) VALUES (?, ?, 'in', ?)`, f.alice, fmt.Sprintf("in %d", i), at)
+		if err != nil {
+			t.Fatal(err)
+		}
+		id, _ := res.LastInsertId()
+		var deleted any
+		if i%2 == 0 {
+			deleted = at
+		}
+		if _, err := tx.Exec(`INSERT INTO messages_recipients (message_id, user_id, deleted_at) VALUES (?, ?, ?)`, id, f.bob, deleted); err != nil {
+			t.Fatal(err)
+		}
+		res, err = tx.Exec(`INSERT INTO messages_messages (sender_id, subject, body, created_at) VALUES (?, ?, 'out', ?)`, f.bob, fmt.Sprintf("out %d", i), at)
+		if err != nil {
+			t.Fatal(err)
+		}
+		id, _ = res.LastInsertId()
+		if _, err := tx.Exec(`INSERT INTO messages_recipients (message_id, user_id) VALUES (?, ?)`, id, f.carol); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	if inbox, _ := f.p.List(f.Ctx, f.bob, Inbox); len(inbox) != ListLimit {
+		t.Errorf("the inbox listing shows %d, want the limit %d", len(inbox), ListLimit)
+	}
+	files, err := f.p.export(f.Ctx, f.bob)
+	if err != nil || len(files) != 1 {
+		t.Fatalf("export = %v, %v", files, err)
+	}
+	var got []struct{ Folder string }
+	if err := json.Unmarshal(files[0].Data, &got); err != nil {
+		t.Fatal(err)
+	}
+	count := map[string]int{}
+	for _, m := range got {
+		count[m.Folder]++
+	}
+	want := map[string]int{Inbox: n / 2, Deleted: n / 2, Sent: n}
+	for folder, w := range want {
+		if count[folder] != w {
+			t.Errorf("%s: exported %d, want %d", folder, count[folder], w)
+		}
 	}
 }

@@ -333,14 +333,21 @@ func (s *Service) DB() *sql.DB { return s.db }
 // longer exist are absent from the map.
 func (s *Service) Usernames(ctx context.Context, ids []int64) (map[int64]string, error) {
 	out := map[int64]string{}
-	if len(ids) == 0 {
+	// Callers pass one ID per line or post, so the same few authors repeat
+	// many times; looking each up once keeps long chat logs, threads and
+	// exports under SQLite's limit on bound parameters.
+	seen := map[int64]bool{}
+	var args []any
+	for _, id := range ids {
+		if !seen[id] {
+			seen[id] = true
+			args = append(args, id)
+		}
+	}
+	if len(args) == 0 {
 		return out, nil
 	}
-	ph := strings.TrimSuffix(strings.Repeat("?,", len(ids)), ",")
-	args := make([]any, len(ids))
-	for i, id := range ids {
-		args[i] = id
-	}
+	ph := strings.TrimSuffix(strings.Repeat("?,", len(args)), ",")
 	rows, err := s.db.QueryContext(ctx, `SELECT id, username FROM users WHERE id IN (`+ph+`)`, args...)
 	if err != nil {
 		return nil, fmt.Errorf("auth: usernames: %w", err)

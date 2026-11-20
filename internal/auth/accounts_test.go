@@ -505,3 +505,22 @@ func TestChangePassword(t *testing.T) {
 		t.Errorf("%d audit rows, want 1 (refusals are not changes)", n)
 	}
 }
+
+// TestUsernamesManyRepeats: callers pass one ID per chat line or post, so
+// a long log repeats a few authors far more often than SQLite allows bound
+// parameters (32766); each is looked up once.
+func TestUsernamesManyRepeats(t *testing.T) {
+	f := newFixture(t)
+	alice := f.user("alice")
+	ids := make([]int64, 0, 40000)
+	for i := range 40000 {
+		ids = append(ids, []int64{f.admin, alice, 0, 999999}[i%4])
+	}
+	names, err := f.svc.Usernames(f.ctx, ids)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if names[alice] != "alice" || names[f.admin] == "" || len(names) != 2 {
+		t.Errorf("names = %v", names)
+	}
+}

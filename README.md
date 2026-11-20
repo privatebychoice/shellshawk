@@ -503,7 +503,10 @@ is imported anywhere.
   account recovery; each view is recorded in the audit log.
 - **Download my data**: over SFTP, `/me/export/account.json` and one folder
   per feature (`notifications`, `messages`, `conferences`, `contacts`,
-  `polls`, `chat`), generated when you download them.
+  `polls`, `chat`), generated when you download them. The export is
+  complete: `messages/messages.json` holds every message in your Inbox,
+  Deleted and Sent folders, not just the 200 most recent each folder
+  shows.
 - **Erase my account**: needs a key login from the last 15 minutes and your
   username typed to confirm; you choose whether your posts and chat messages
   are deleted or kept anonymously. The account is locked at once, like a
