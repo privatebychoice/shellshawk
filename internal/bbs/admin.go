@@ -304,17 +304,7 @@ func (s *session) inviteDetail(ctx context.Context, inv auth.Invite) error {
 }
 
 // inviteState describes whether an invite can still be used.
-func inviteState(inv auth.Invite, now time.Time) string {
-	switch {
-	case inv.RevokedAt != nil:
-		return "revoked"
-	case inv.Uses >= inv.MaxUses:
-		return "used up"
-	case inv.ExpiresAt != nil && !now.Before(*inv.ExpiresAt):
-		return "expired"
-	}
-	return "usable"
-}
+func inviteState(inv auth.Invite, now time.Time) string { return inv.State(now) }
 
 func (s *session) branding(ctx context.Context) error {
 	fm := &form.Form{

@@ -83,6 +83,12 @@ These are invariants, enforced in code and covered by tests:
    strips all C0/C1 control characters and escape sequences from user content
    before the theme adds its own, so users cannot inject ANSI/OSC sequences
    (title changes, clipboard writes, hyperlinks) into other users' terminals.
+   `term.Sanitize` also removes bidirectional overrides and marks and
+   invisible characters that can make different text look the same
+   (zero-width space, word joiner, U+FEFF, U+180E), keeping the zero-width
+   joiner and non-joiner that emoji and some scripts need. Text from
+   settings that is placed into markdown (the BBS name in the built-in
+   privacy policy) is escaped with `markdown.Escape`.
 
 ---
 
@@ -207,6 +213,8 @@ to use. The web navigation follows the same tree (§11).
   member stops their outstanding invites (unlocking them restores them),
   and a permission added to a group later does not reach invitees through
   an invite from someone who lacks it. The bootstrap invite has no creator.
+  Staff invite lists show such an invite as *on hold* (`Invite.State`),
+  and a refused invite login logs why.
 - **Approval**: configurable per invite or globally — new accounts land in
   `pending` until an admin/moderator approves. Rejecting deletes the
   account row, but its ID is never given to another account: registration

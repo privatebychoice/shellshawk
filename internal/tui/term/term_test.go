@@ -89,6 +89,12 @@ func TestSanitize(t *testing.T) {
 		{"line1\nline2", "line1\nline2", true},
 		{"rtl‮evil", "rtlevil", false},
 		{"c1\u009b31m", "c131m", false},
+		{"ad\u200bmin", "admin", false},                             // zero-width space
+		{"ad\u2060min\ufeff", "admin", false},                       // word joiner, BOM
+		{"mon\u180egolian", "mongolian", false},                     // Mongolian vowel separator
+		{"arabic\u061cmark", "arabicmark", false},                   // Arabic letter mark
+		{"family 👨\u200d👩\u200d👧", "family 👨\u200d👩\u200d👧", false}, // ZWJ kept: emoji
+		{"می\u200cخواهم", "می\u200cخواهم", false},                   // ZWNJ kept: Persian
 	}
 	for _, tt := range tests {
 		if got := Sanitize(tt.in, tt.keepNL); got != tt.want {

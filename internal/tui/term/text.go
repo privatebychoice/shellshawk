@@ -7,8 +7,11 @@ import (
 
 // Sanitize removes everything from user-supplied text that a terminal could
 // interpret: C0/C1 control characters (including ESC, so no ANSI/OSC
-// injection), DEL, and bidirectional overrides that can disguise text.
-// Tabs become a space. If keepNewlines is set, '\n' is kept.
+// injection), DEL, and bidirectional overrides that can disguise text. It
+// also removes invisible characters that can make two different names or
+// lines look the same (zero-width space, word joiner, U+FEFF, U+180E);
+// the zero-width joiner and non-joiner stay, as emoji and several scripts
+// need them. Tabs become a space. If keepNewlines is set, '\n' is kept.
 func Sanitize(s string, keepNewlines bool) string {
 	return strings.Map(func(r rune) rune {
 		switch {
@@ -16,7 +19,7 @@ func Sanitize(s string, keepNewlines bool) string {
 			return r
 		case r == '\t':
 			return ' '
-		case unicode.IsControl(r), isBidi(r), r == 0xFEFF:
+		case unicode.IsControl(r), isBidi(r), isInvisible(r):
 			return -1
 		}
 		return r
@@ -24,7 +27,13 @@ func Sanitize(s string, keepNewlines bool) string {
 }
 
 func isBidi(r rune) bool {
-	return (r >= 0x202A && r <= 0x202E) || (r >= 0x2066 && r <= 0x2069) || r == 0x200E || r == 0x200F
+	return (r >= 0x202A && r <= 0x202E) || (r >= 0x2066 && r <= 0x2069) || r == 0x200E || r == 0x200F || r == 0x061C
+}
+
+// isInvisible reports characters with no visible form that are not needed
+// to write any language.
+func isInvisible(r rune) bool {
+	return r == 0x200B || r == 0x2060 || r == 0xFEFF || r == 0x180E
 }
 
 // RuneWidth is the number of terminal cells r occupies: 0 for combining and

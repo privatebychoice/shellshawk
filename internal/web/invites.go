@@ -56,17 +56,7 @@ func fmtExpiry(t *time.Time) string {
 	return fmtSince(*t)
 }
 
-func inviteState(inv auth.Invite, now time.Time) string {
-	switch {
-	case inv.RevokedAt != nil:
-		return "revoked"
-	case inv.Uses >= inv.MaxUses:
-		return "used up"
-	case inv.ExpiresAt != nil && !now.Before(*inv.ExpiresAt):
-		return "expired"
-	}
-	return "usable"
-}
+func inviteState(inv auth.Invite, now time.Time) string { return inv.State(now) }
 
 func (s *Server) handleInvites(w http.ResponseWriter, r *http.Request) {
 	sess, set := s.inviter(w, r)

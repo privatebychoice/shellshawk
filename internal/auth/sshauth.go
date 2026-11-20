@@ -115,7 +115,9 @@ func (a *SSHAuthenticator) Password(c sshd.ConnInfo, password []byte) (sshd.Iden
 			if ipLast {
 				a.svc.AuditLoginBlocked(ctx, BlockedAddress, 0, "ssh invite")
 			}
-			a.log.Info("invite login refused", "conn_id", c.ConnID)
+			// The reason never contains the code: "invalid, expired, used
+			// up or revoked", or that its creator can no longer issue it.
+			a.log.Info("invite login refused", "conn_id", c.ConnID, "reason", err)
 			return sshd.Identity{}, sshd.ErrDenied
 		}
 		a.ipLim.Forgive(ipKey)

@@ -285,3 +285,25 @@ func TestSourceLimit(t *testing.T) {
 		t.Errorf("source not truncated")
 	}
 }
+
+func TestEscape(t *testing.T) {
+	tests := []struct{ in, wantHTML string }{
+		{"Plain BBS", "Plain BBS"},
+		{"[click](https://evil.example)", "[click](https://evil.example)"},
+		{"# Big", "# Big"},
+		{"*bold* _it_ `code`", "*bold* _it_ `code`"},
+		{"Café & <b>", "Café &amp; &lt;b&gt;"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.in, func(t *testing.T) {
+			html, err := RenderHTML("Welcome to "+Escape(tt.in)+".", nil, UnderTitle)
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := "<p>Welcome to " + tt.wantHTML + ".</p>"
+			if strings.TrimSpace(string(html)) != want {
+				t.Errorf("rendered %q, want %q", html, want)
+			}
+		})
+	}
+}

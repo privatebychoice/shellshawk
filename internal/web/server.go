@@ -553,7 +553,8 @@ func (s *Server) handlePrivacy(w http.ResponseWriter, r *http.Request) {
 		t, err := ttemplate.New("policy").Parse(s.policy)
 		if err == nil {
 			err = t.Execute(&b, map[string]any{
-				"Site": s.cfg.SiteName(r.Context()), "ChatDays": s.cfg.ChatDays, "AuditDays": s.cfg.AuditDays, "GraceDays": s.cfg.GraceDays,
+				// The name is an admin setting: literal text, never markdown.
+				"Site": markdown.Escape(s.cfg.SiteName(r.Context())), "ChatDays": s.cfg.ChatDays, "AuditDays": s.cfg.AuditDays, "GraceDays": s.cfg.GraceDays,
 			})
 		}
 		if err != nil {

@@ -100,6 +100,26 @@ type Invite struct {
 	RequireApproval bool
 	Note            string
 	RevokedAt       *time.Time
+	// OnHold is set by Invites for a usable invite whose creator could not
+	// issue it now (locked, lost core.invite.create, or no longer able to
+	// assign one of its groups), so it would be refused (see checkInvite).
+	OnHold bool
+}
+
+// State describes the invite at now for staff lists: "revoked", "used
+// up", "expired", "on hold" or "usable".
+func (i Invite) State(now time.Time) string {
+	switch {
+	case i.RevokedAt != nil:
+		return "revoked"
+	case i.Uses >= i.MaxUses:
+		return "used up"
+	case i.ExpiresAt != nil && !now.Before(*i.ExpiresAt):
+		return "expired"
+	case i.OnHold:
+		return "on hold: its creator cannot issue it now"
+	}
+	return "usable"
 }
 
 // Usable reports whether the invite can still register an account at now.
@@ -377,7 +397,24 @@ func (s *Service) Invites(ctx context.Context, actor int64) ([]Invite, error) {
 		}
 		out = append(out, inv)
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	rows.Close()
+	now := s.now()
+	for i := range out {
+		if !out[i].Usable(now) {
+			continue
+		}
+		err := creatorStillVouches(ctx, s.db, out[i])
+		switch {
+		case errors.Is(err, ErrInviteInvalid):
+			out[i].OnHold = true
+		case err != nil:
+			return nil, err
+		}
+	}
+	return out, nil
 }
 
 // RevokeInvite revokes an invite: the actor's own, or any with

@@ -590,6 +590,23 @@ func TestInvitesFollowCreator(t *testing.T) {
 			}
 		})
 	}
+	// Staff lists show which of them are on hold (the unchanged creator's
+	// first invite was used above, so they make another).
+	f.invite(stays, InviteOptions{Groups: []string{perm.GroupModerator}})
+	list, err := f.svc.Invites(f.ctx, f.admin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	states := map[int64]string{}
+	for _, inv := range list { // newest first: the first seen per creator
+		if _, seen := states[inv.CreatedBy]; !seen {
+			states[inv.CreatedBy] = inv.State(f.clk.Now())
+		}
+	}
+	if !strings.HasPrefix(states[lockMe], "on hold") || states[stays] != "usable" {
+		t.Errorf("states: locked creator %q, unchanged creator %q", states[lockMe], states[stays])
+	}
+
 	// Unlocking the creator (once member no longer grants more than they
 	// hold) makes their invite work again: the refusals spent nothing.
 	if err := f.perms.Revoke(f.ctx, f.admin, memberGroup.ID, perm.AuditView); err != nil {

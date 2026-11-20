@@ -12,6 +12,7 @@ package markdown
 import (
 	"net/url"
 	"strings"
+	"unicode"
 
 	"github.com/yuin/goldmark"
 	"github.com/yuin/goldmark/ast"
@@ -141,4 +142,19 @@ const UnderTitle = 2
 // result is at most 6.
 func headingLevel(n *ast.Heading, top int) int {
 	return min(min(max(n.Level, 1), 3)+max(top, 1)-1, 6)
+}
+
+// Escape makes s literal text in markdown: every ASCII punctuation
+// character gets a backslash (CommonMark's escape), so text from settings,
+// such as the BBS name in the privacy policy, cannot add links, headings
+// or emphasis.
+func Escape(s string) string {
+	var b strings.Builder
+	for _, r := range s {
+		if r < 0x80 && (unicode.IsPunct(r) || unicode.IsSymbol(r)) {
+			b.WriteByte('\\')
+		}
+		b.WriteRune(r)
+	}
+	return b.String()
 }
