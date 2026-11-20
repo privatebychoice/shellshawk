@@ -90,18 +90,23 @@ func (p *Plugin) notificationKinds() []plugin.NotificationKind {
 		Default: true, OpenLabel: "Go to the chat", Open: p.openPage, WebPath: notify.RefPath("/c/")}}
 }
 
-// pageable reports whether from may page to now: to is online (over SSH,
-// or in a chat on the web), accepts pages from from (privacy setting "Who
-// can page you") and has page notifications on.
+// pageable reports whether from may page to now: to accepts pages from
+// from (privacy setting "Who can page you"), lets from see that they are
+// online ("That you are online now"), is online (over SSH, or in a chat on
+// the web) and has page notifications on. Every refusal looks the same to
+// from, and the privacy settings are checked before presence, so paging
+// never reveals that someone is online to a member who may not see it.
 func (p *Plugin) pageable(ctx context.Context, from, to int64) (bool, error) {
+	if p.h.Privacy != nil {
+		for _, f := range []privacy.Field{privacy.Pages, privacy.Online} {
+			if ok, err := p.h.Privacy.Allows(ctx, from, to, f); err != nil || !ok {
+				return false, err
+			}
+		}
+	}
 	online := p.h.Presence != nil && p.h.Presence.IsOnline(to)
 	if !online && !p.hub.present(to) {
 		return false, nil
-	}
-	if p.h.Privacy != nil {
-		if ok, err := p.h.Privacy.Allows(ctx, from, to, privacy.Pages); err != nil || !ok {
-			return false, err
-		}
 	}
 	return p.h.Notify.Enabled(ctx, to, NotifyPage)
 }

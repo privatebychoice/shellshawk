@@ -478,9 +478,11 @@ Package `notify`; tables `notifications` and `notification_settings`, and
   channels must already admit them. Refused alike (`ErrCannotPage`, "cannot
   be paged right now") when the member is offline (no SSH session in
   presence and not in any chat), does not
-  accept pages from the pager (privacy field `pages`, default friends) or
-  has page notifications off, so a page reveals nothing their settings
-  hide. One page per pair per admin-set interval (chat setting
+  accept pages from the pager (privacy field `pages`, default friends),
+  does not let the pager see that they are online (field `online`,
+  default friends) or has page notifications off, so a page reveals
+  nothing their settings hide. Both privacy fields are checked before
+  presence. One page per pair per admin-set interval (chat setting
   `page_minutes`, default 5; in memory). A member who is in any chat gets
   a live line there too, and the notification is then marked seen.
   *Page someone* (Chat menu, needs `chat.create` too) reuses or creates

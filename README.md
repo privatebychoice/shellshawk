@@ -348,9 +348,11 @@ groups hold that permission by default, and what can be done in it.
   them). The member gets a notification — or, if they are in a chat, a
   line there straight away — that takes them to the chat. Only members
   who are online (over SSH, or following a chat on the web), accept pages
-  from you (privacy setting *Who can page
-  you*, default *Friends only*) and have page notifications on can be
-  paged; the refusal does not say which. You can page the same person
+  from you (privacy setting *Who can page you*, default *Friends only*),
+  let you see that they are online (*That you are online now*, default
+  *Friends only*) and have page notifications on can be paged; the
+  refusal does not say which, so paging never tells you someone is online
+  when their settings hide it. You can page the same person
   again after 5 minutes (admin setting in *Plugin settings → Chat*).
   Paging needs `chat.page` (members and moderators by default); the menu
   action also needs `chat.create`.

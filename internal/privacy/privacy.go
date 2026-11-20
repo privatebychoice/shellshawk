@@ -68,7 +68,7 @@ var Fields = []struct {
 	{LastLogin, "Last login time"},
 	{Online, "That you are online now"},
 	{Messages, "Who can send you private messages"},
-	{Pages, "Who can page you (ask you to talk in chat)"},
+	{Pages, "Who can page you (ask you to talk in chat); they must also be able to see that you are online"},
 }
 
 // Defaults are privacy-first: members opt in to sharing.

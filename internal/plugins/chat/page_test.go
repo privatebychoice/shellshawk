@@ -40,7 +40,11 @@ func TestPage(t *testing.T) {
 	}{
 		{"offline", nil, f.alice, "bob", lobby, ErrCannotPage, ""},
 		{"online, but only friends may page", func() { f.Presence.Enter(f.bob) }, f.alice, "bob", lobby, ErrCannotPage, ""},
-		{"anyone may page", func() { f.Visibility(f.bob, privacy.Pages, privacy.Public) }, f.alice, "@bob", lobby, nil, ""},
+		// Paging is open to all, but bob shows that he is online only to
+		// friends: a page must not reveal it, so it is refused exactly as
+		// if he were offline.
+		{"anyone may page, online hidden", func() { f.Visibility(f.bob, privacy.Pages, privacy.Public) }, f.alice, "bob", lobby, ErrCannotPage, ""},
+		{"anyone may page", func() { f.Visibility(f.bob, privacy.Online, privacy.Public) }, f.alice, "@bob", lobby, nil, ""},
 		{"again too soon", nil, f.alice, "bob", lobby, ErrInvalid, "you paged bob recently; you can page them again in 5 minute(s)"},
 		{"yourself", nil, f.alice, "alice", lobby, ErrInvalid, "you cannot page yourself"},
 		{"nobody", nil, f.alice, "nobody", lobby, ErrInvalid, `no active member called "nobody"`},
@@ -78,6 +82,7 @@ func TestPage(t *testing.T) {
 	f.Perms.Grant(f.Ctx, f.Admin, member.ID, PermPage)
 	f.Presence.Enter(f.carol)
 	f.Visibility(f.carol, privacy.Pages, privacy.Public)
+	f.Visibility(f.carol, privacy.Online, privacy.Public)
 	talk, err := f.p.talkChat(f.Ctx, alice, carol)
 	if err != nil || talk.Name != "talk-alice-carol" || talk.Kind != KindAdHoc {
 		t.Fatalf("talk chat = %+v, %v", talk, err)
@@ -163,6 +168,7 @@ func TestPageTUI(t *testing.T) {
 	f := setup(t)
 	f.Presence.Enter(f.bob)
 	f.Visibility(f.bob, privacy.Pages, privacy.Public)
+	f.Visibility(f.bob, privacy.Online, privacy.Public)
 
 	// Chat menu: a Page someone; "nobody" is refused on the form; bob is
 	// paged; Enter dismisses the message; alice waits in the talk chat and
@@ -193,6 +199,7 @@ func TestPageTUI(t *testing.T) {
 	}
 	f.Presence.Enter(f.alice)
 	f.Visibility(f.alice, privacy.Pages, privacy.Public)
+	f.Visibility(f.alice, privacy.Online, privacy.Public)
 	bs := f.Session(f.bob, "/page alice\r/page alice\r/quit\r")
 	if err := k.Open(f.Ctx, bs, list[0]); err != nil {
 		t.Fatal(err)
@@ -222,7 +229,9 @@ func TestWebPaging(t *testing.T) {
 	lobby, _ := f.p.ByName(f.Ctx, "lobby")
 	lobbyID := map[string]string{"id": strconv.FormatInt(lobby.ID, 10)}
 	f.Visibility(f.bob, privacy.Pages, privacy.Public)
+	f.Visibility(f.bob, privacy.Online, privacy.Public)
 	f.Visibility(f.carol, privacy.Pages, privacy.Public)
+	f.Visibility(f.carol, privacy.Online, privacy.Public)
 
 	// The chat list offers paging; the form asks for a username.
 	if list, _ := f.WebGet(f.p, "/", nil, f.alice); !strings.Contains(string(list.Body), `href="/p/chat/page">Page someone`) {
