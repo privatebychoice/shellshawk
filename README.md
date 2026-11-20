@@ -33,7 +33,8 @@ no built-in defaults.
 | `SHELLSHAWK_SSH_MAX_CONNS` | no | `100` | Maximum concurrent SSH connections |
 | `SHELLSHAWK_INVITE_USER` | no | `new` | SSH login name for registering with an invite code |
 | `SHELLSHAWK_AUDIT_RETENTION_DAYS` | no | `365` | Audit log entries older than this are purged daily |
-| `SHELLSHAWK_SFTP_MAX_UPLOAD_BYTES` | no | `1048576` | Largest file accepted over SFTP (max 64 MiB; uploads are buffered in memory, and the uploads in progress in one SFTP session share this limit). Worst case memory is about connections × 2 × this, roughly 200 MiB at the defaults |
+| `SHELLSHAWK_SFTP_MAX_UPLOAD_BYTES` | no | `1048576` | Largest file accepted over SFTP (max 64 MiB; uploads are buffered in memory, and the uploads in progress in one SFTP session share this limit) |
+| `SHELLSHAWK_SFTP_MAX_UPLOAD_MEMORY` | no | 16 × the upload limit | Bytes all SFTP uploads in progress on the server may hold together (16 MiB at the default limit; at least the upload limit, at most 16 GiB). An upload that would go over fails and stores nothing |
 | `SHELLSHAWK_PBC_DATA_FILE` | no | built-in data only | Local pbc-classification JSON dataset, merged over the library's built-in data |
 | `SHELLSHAWK_FIRST_PARTY_DOMAINS` | no | — | Comma-separated list of your own domains, graded as first-party |
 | `SHELLSHAWK_ERASURE_GRACE_DAYS` | no | `14` | Days between an erasure request and the erasure (0 to 365) |
@@ -580,6 +581,8 @@ web footer and at `/version`. Run `make bump` before each deployment.
   affect them at all; only each address's attempts are limited.
 - Changing your password clears any block on your account from wrong
   passwords.
+- SFTP uploads in progress on the whole server share a memory limit,
+  `SHELLSHAWK_SFTP_MAX_UPLOAD_MEMORY` (default 16 × the upload limit).
 - Posts on the web must come from an `https` page of the site (unless
   insecure cookies are on for local testing).
 - Notifications on the web open with an *Open* button (a form) instead of

@@ -189,6 +189,7 @@ type env struct {
 	adminID  int64
 	member   ssh.Signer
 	memberID int64
+	srv      *Server
 }
 
 func newKey(t *testing.T) (ssh.Signer, string) {
@@ -246,6 +247,7 @@ func start(t *testing.T, maxUpload int64) *env {
 	if err != nil {
 		t.Fatal(err)
 	}
+	e.srv = srv
 	_, hostPriv, _ := ed25519.GenerateKey(rand.Reader)
 	host, _ := ssh.NewSignerFromKey(hostPriv)
 	sshSrv, err := sshd.New(sshd.Config{
@@ -556,7 +558,7 @@ func TestNewValidation(t *testing.T) {
 // when the connection drops, after reporting the error via TransferError.
 func TestInterruptedUploadNotStored(t *testing.T) {
 	mem := &memFS{files: map[string][]byte{}}
-	h := &handler{s: &Server{maxUpload: 100}, ctx: context.Background(), log: slog.New(slog.DiscardHandler)}
+	h := &handler{s: &Server{maxUpload: 100, memory: MemoryFactor * 100}, ctx: context.Background(), log: slog.New(slog.DiscardHandler)}
 	tests := []struct {
 		name      string
 		interrupt bool
@@ -660,6 +662,59 @@ func TestUploadMemoryPerSession(t *testing.T) {
 	if string(e.mem.files["a.txt"]) != "member1:123456" || string(e.mem.files["c.txt"]) != "member1:1234567890" { // memFS prefixes the uploader
 		t.Errorf("stored = %q", e.mem.files)
 	}
+	if _, ok := e.mem.files["b.txt"]; ok {
+		t.Error("the refused upload was stored")
+	}
+}
+
+// TestServerUploadMemory: uploads in progress on the whole server share
+// one memory limit, so many sessions cannot each hold the upload limit; it
+// is never set below the upload limit, so one full-size upload fits.
+func TestServerUploadMemory(t *testing.T) {
+	const max = 10
+	e := start(t, max)
+	e.srv.SetMemoryLimit(15)
+	first, err := e.client(t, "member1", ssh.PublicKeys(e.member))
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := e.client(t, "member1", ssh.PublicKeys(e.member))
+	if err != nil {
+		t.Fatal(err)
+	}
+	open := func(c *sftp.Client, name string) *sftp.File {
+		t.Helper()
+		f, err := c.OpenFile("/files/"+name, os.O_WRONLY|os.O_CREATE|os.O_TRUNC)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return f
+	}
+	a, b := open(first, "a.txt"), open(second, "b.txt")
+	if _, err := a.Write([]byte("1234567890")); err != nil {
+		t.Fatalf("a full-size upload in one session: %v", err)
+	}
+	if _, err := b.Write([]byte("123456")); err == nil {
+		t.Error("another session took the server over its upload memory")
+	}
+	b.Close()
+	if err := a.Close(); err != nil {
+		t.Fatal(err)
+	}
+	c := open(second, "c.txt")
+	if _, err := c.Write([]byte("123456")); err != nil {
+		t.Errorf("after the first upload finished: %v", err)
+	}
+	c.Close()
+
+	e.srv.SetMemoryLimit(1) // below the upload limit: raised to it
+	d := open(first, "d.txt")
+	if _, err := d.Write([]byte("1234567890")); err != nil {
+		t.Errorf("a full-size upload with the limit set too low: %v", err)
+	}
+	d.Close()
+	e.mem.mu.Lock()
+	defer e.mem.mu.Unlock()
 	if _, ok := e.mem.files["b.txt"]; ok {
 		t.Error("the refused upload was stored")
 	}

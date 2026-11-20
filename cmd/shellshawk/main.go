@@ -250,6 +250,10 @@ func (a *app) serve(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
+		if cfg.SFTPMaxUploadMemory > 0 {
+			sftpSrv.SetMemoryLimit(cfg.SFTPMaxUploadMemory)
+		}
+		log.Info("sftp upload limits", "per_file", cfg.SFTPMaxUpload, "server_memory", sftpSrv.MemoryLimit())
 		sshSrv, err = sshd.New(sshd.Config{
 			Addr:     cfg.SSHAddr,
 			HostKey:  hostKey,

@@ -182,3 +182,33 @@ func TestTrustedProxies(t *testing.T) {
 		}
 	}
 }
+
+func TestSFTPMaxUploadMemory(t *testing.T) {
+	tests := []struct {
+		name  string
+		env   map[string]string
+		want  int64
+		wantE bool
+	}{
+		{"unset: the default (0, meaning 16 x the upload limit)", nil, 0, false},
+		{"set", map[string]string{EnvSFTPMaxUploadMemory: "33554432"}, 32 << 20, false},
+		{"below the upload limit", map[string]string{EnvSFTPMaxUpload: "2097152", EnvSFTPMaxUploadMemory: "1048576"}, 0, true},
+		{"too high", map[string]string{EnvSFTPMaxUploadMemory: "99999999999999"}, 0, true},
+		{"not a number", map[string]string{EnvSFTPMaxUploadMemory: "lots"}, 0, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			e := map[string]string{EnvDBPath: "x"}
+			for k, v := range tt.env {
+				e[k] = v
+			}
+			got, err := Load(env(e))
+			if (err != nil) != tt.wantE {
+				t.Fatalf("err = %v, want error %v", err, tt.wantE)
+			}
+			if err == nil && got.SFTPMaxUploadMemory != tt.want {
+				t.Errorf("SFTPMaxUploadMemory = %d, want %d", got.SFTPMaxUploadMemory, tt.want)
+			}
+		})
+	}
+}

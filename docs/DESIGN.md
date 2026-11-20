@@ -679,11 +679,12 @@ TOML/JSON files; admins can add more.
   a complete transfer. The uploads in progress in one session share one
   limit's worth of memory (`handler.reserve`), so many files opened at once
   cannot multiply it; a finished or failed upload gives its share back.
-  There is no server-wide cap: the worst case is every connection
-  (`SHELLSHAWK_SSH_MAX_CONNS`, default 100) with 2 sessions each holding
-  the limit, about 200 MiB at the default 1 MiB, so raise the limit with
-  the server's memory in mind. Per-user quotas are left to the plugins
-  that store uploads.
+  All sessions' uploads together share a server-wide budget,
+  `SHELLSHAWK_SFTP_MAX_UPLOAD_MEMORY` (default `sftpd.MemoryFactor`, 16,
+  times the upload limit, and never below the limit), so upload memory is
+  bounded whatever the number of connections; an upload that would go
+  over fails, stores nothing and is logged. Per-user quotas are left to
+  the plugins that store uploads.
 - Implemented (stage 7): mounts are `sftpd.Mount{Name, AnyOf, FS}`; plugins
   declare them in `Manifest.SFTP` (name = plugin ID or `<id>-…`). Hidden
   mounts report "no such file". Only key logins to active accounts get the

@@ -21,6 +21,7 @@ const (
 	DefaultSSHMaxConns        = 100
 	DefaultSFTPMaxUpload      = 1 << 20  // 1 MiB
 	MaxSFTPMaxUpload          = 64 << 20 // uploads are buffered in memory
+	MaxSFTPUploadMemory       = 16 << 30 // all uploads in progress together
 	DefaultInviteUser         = "new"
 	DefaultAuditRetentionDays = 365
 	DefaultErasureGraceDays   = 14
@@ -46,10 +47,11 @@ const (
 	EnvHTTPTrustedProxies  = "SHELLSHAWK_HTTP_TRUSTED_PROXIES"
 	EnvPrivacyPolicyFile   = "SHELLSHAWK_PRIVACY_POLICY_FILE"
 
-	EnvSSHAddr       = "SHELLSHAWK_SSH_ADDR"
-	EnvSSHHostKey    = "SHELLSHAWK_SSH_HOST_KEY"
-	EnvSSHMaxConns   = "SHELLSHAWK_SSH_MAX_CONNS"
-	EnvSFTPMaxUpload = "SHELLSHAWK_SFTP_MAX_UPLOAD_BYTES"
+	EnvSSHAddr             = "SHELLSHAWK_SSH_ADDR"
+	EnvSSHHostKey          = "SHELLSHAWK_SSH_HOST_KEY"
+	EnvSSHMaxConns         = "SHELLSHAWK_SSH_MAX_CONNS"
+	EnvSFTPMaxUpload       = "SHELLSHAWK_SFTP_MAX_UPLOAD_BYTES"
+	EnvSFTPMaxUploadMemory = "SHELLSHAWK_SFTP_MAX_UPLOAD_MEMORY"
 
 	EnvInviteUser         = "SHELLSHAWK_INVITE_USER"
 	EnvAuditRetentionDays = "SHELLSHAWK_AUDIT_RETENTION_DAYS"
@@ -97,6 +99,9 @@ type Config struct {
 	SSHMaxConns int
 	// SFTPMaxUpload is the largest file accepted over SFTP, in bytes.
 	SFTPMaxUpload int64
+	// SFTPMaxUploadMemory is how many bytes all SFTP uploads in progress
+	// may hold together; 0 means sftpd.MemoryFactor times SFTPMaxUpload.
+	SFTPMaxUploadMemory int64
 	// InviteUser is the SSH login name for invite-code registration.
 	// Default: "new".
 	InviteUser string
@@ -227,6 +232,15 @@ func Load(getenv func(string) string) (Config, error) {
 			errs = append(errs, fmt.Errorf("%s: invalid value %q (want 1 to %d)", EnvSFTPMaxUpload, v, MaxSFTPMaxUpload))
 		} else {
 			cfg.SFTPMaxUpload = n
+		}
+	}
+
+	if v := strings.TrimSpace(getenv(EnvSFTPMaxUploadMemory)); v != "" {
+		n, err := strconv.ParseInt(v, 10, 64)
+		if err != nil || n < cfg.SFTPMaxUpload || n > MaxSFTPUploadMemory {
+			errs = append(errs, fmt.Errorf("%s: invalid value %q (want %d, the upload limit, to %d)", EnvSFTPMaxUploadMemory, v, cfg.SFTPMaxUpload, int64(MaxSFTPUploadMemory)))
+		} else {
+			cfg.SFTPMaxUploadMemory = n
 		}
 	}
 

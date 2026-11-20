@@ -49,7 +49,10 @@ sftp -P <port> <username>@<host>
   without error. The size limit is `SHELLSHAWK_SFTP_MAX_UPLOAD_BYTES`
   (default 1 MiB, at most 64 MiB); `/text` also limits each file to 64 KiB.
   Uploads in progress at the same time in one SFTP session share that
-  limit, so upload large files one after another.
+  limit, so upload large files one after another. All uploads in progress
+  on the server also share `SHELLSHAWK_SFTP_MAX_UPLOAD_MEMORY` (default 16
+  times the upload limit); when it is used up, an upload fails and nothing
+  is stored, so try again shortly.
 - **Times:** files show when their content was created or last changed, in
   UTC; generated files (such as `/me`) show the time of the request.
 

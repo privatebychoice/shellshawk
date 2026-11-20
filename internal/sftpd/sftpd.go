@@ -116,16 +116,61 @@ type Server struct {
 	perms     *perm.Service
 	maxUpload int64
 	log       *slog.Logger
+
+	// memory is how many bytes all sessions' unfinished uploads may hold
+	// together, and buffered how many they hold now. Each session also has
+	// its own budget of maxUpload (handler.reserve).
+	memMu    sync.Mutex
+	memory   int64
+	buffered int64
 }
 
+// MemoryFactor is the default server-wide upload memory, as a multiple of
+// the upload limit (see SetMemoryLimit).
+const MemoryFactor = 16
+
 var _ sshd.SFTPHandler = (*Server)(nil)
+
+// SetMemoryLimit sets how many bytes the uploads in progress on the whole
+// server may hold together (by default MemoryFactor times the upload
+// limit). It is never below the upload limit, so one full-size upload
+// always fits.
+func (s *Server) SetMemoryLimit(n int64) {
+	s.memMu.Lock()
+	defer s.memMu.Unlock()
+	s.memory = max(n, s.maxUpload)
+}
+
+// MemoryLimit returns the server-wide upload memory limit in bytes.
+func (s *Server) MemoryLimit() int64 {
+	s.memMu.Lock()
+	defer s.memMu.Unlock()
+	return s.memory
+}
+
+func (s *Server) reserve(n int64) bool {
+	s.memMu.Lock()
+	defer s.memMu.Unlock()
+	if s.buffered+n > s.memory {
+		return false
+	}
+	s.buffered += n
+	return true
+}
+
+func (s *Server) release(n int64) {
+	s.memMu.Lock()
+	s.buffered -= n
+	s.memMu.Unlock()
+}
 
 // New validates the mounts and returns a Server.
 func New(a *auth.Service, p *perm.Service, maxUpload int64, log *slog.Logger, mounts ...Mount) (*Server, error) {
 	if maxUpload <= 0 || maxUpload > MaxMaxUpload {
 		return nil, fmt.Errorf("sftpd: max upload must be 1 to %d bytes", MaxMaxUpload)
 	}
-	s := &Server{mounts: map[string]Mount{}, auth: a, perms: p, maxUpload: maxUpload, log: log.With("component", "sftpd")}
+	s := &Server{mounts: map[string]Mount{}, auth: a, perms: p, maxUpload: maxUpload, memory: MemoryFactor * maxUpload,
+		log: log.With("component", "sftpd")}
 	for _, m := range mounts {
 		if !mountName.MatchString(m.Name) || m.FS == nil {
 			return nil, fmt.Errorf("sftpd: invalid mount %q", m.Name)
@@ -175,22 +220,26 @@ type handler struct {
 	buffered int64
 }
 
-// reserve takes n bytes of the session's upload memory, reporting false
-// if that would go over the limit.
-func (h *handler) reserve(n int64) bool {
+// reserve takes n bytes of upload memory from this session's budget and
+// the server's. It returns "" on success, or which budget is used up.
+func (h *handler) reserve(n int64) string {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	if h.buffered+n > h.s.maxUpload {
-		return false
+		return "session"
+	}
+	if !h.s.reserve(n) {
+		return "server"
 	}
 	h.buffered += n
-	return true
+	return ""
 }
 
 func (h *handler) release(n int64) {
 	h.mu.Lock()
 	h.buffered -= n
 	h.mu.Unlock()
+	h.s.release(n)
 }
 
 // user loads the member fresh for every request, so locking an account or
@@ -472,8 +521,14 @@ func (w *upload) WriteAt(p []byte, off int64) (int, error) {
 		return 0, sftp.ErrSSHFxFailure
 	}
 	if grow := end - int64(len(w.buf)); grow > 0 {
-		if !w.h.reserve(grow) {
+		switch w.h.reserve(grow) {
+		case "session":
 			w.failed = fmt.Errorf("uploads in progress in this session exceed the %d byte limit together", w.max)
+			w.free()
+			return 0, sftp.ErrSSHFxFailure
+		case "server":
+			w.failed = errors.New("the server is holding as many uploads as it allows; try again shortly")
+			w.h.log.Warn("sftp upload refused: server upload memory in use", "mount", w.mount)
 			w.free()
 			return 0, sftp.ErrSSHFxFailure
 		}
