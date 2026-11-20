@@ -309,7 +309,9 @@ before erasing.
 | Poll votes | Aggregate totals kept; link to the user deleted (votes become anonymous) |
 | Chat log lines | Reattributed to the tombstone, or deleted, following the same (a)/(b) choice |
 | Invites they issued | Kept for audit, inviter replaced by the tombstone |
-| Audit log | Keep event type and timestamp, replace user id with the tombstone. All audit rows purged after **1 year** (configurable) |
+| The invite they registered with | Its note (often a real name) is cleared |
+| Their name written into stored text | Replaced with the tombstone name: talk chat names and default topics (`talk-alice-bob`, "alice and bob") and logged topic changes ("alice changed the topic to: …") |
+| Audit log | Keep event type and timestamp, replace user id with the tombstone; the key fingerprints in their `key.added`/`key.removed` entries are removed (published public keys could re-identify them). All audit rows purged after **1 year** (configurable) |
 | Backups | Document in the privacy policy that erased data ages out of backups after N days |
 
 Tombstone IDs are random per erased user (not derived from the username), so
@@ -317,7 +319,8 @@ erased users cannot be re-identified across the system.
 
 Implementation notes (stage 9): rather than deleting the user row and
 rewriting every reference, erasure turns the row into the tombstone — a
-random `former-xxxxxxxx` username (a reserved prefix), no password, keys,
+random `former-xxxxxxxx` username (a reserved prefix, chosen before plugins
+run and passed to them as `Event.Tombstone`), no password, keys,
 email, profile, preferences or groups — so everything kept stays attributed
 to the same anonymous name, including audit entries. Plugins handle
 `user.erased` first; if any fails, the erasure is retried on the next hourly

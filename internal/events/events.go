@@ -26,10 +26,11 @@ const (
 	ErasureRequested = "user.erasure_requested"
 	// UserErased is published when an account's grace period ends, before
 	// the account becomes an anonymous tombstone. Plugins must remove or
-	// detach the member's data; DeleteContent says whether the member
-	// asked for their posts and chat lines to be deleted (true) or kept,
-	// credited to the tombstone (false). A failing handler postpones the
-	// erasure to the next run.
+	// detach the member's data, and replace the member's username wherever
+	// they wrote it into stored text with Tombstone; DeleteContent says
+	// whether the member asked for their posts and chat lines to be
+	// deleted (true) or kept, credited to the tombstone (false). A failing
+	// handler postpones the erasure to the next run.
 	UserErased = "user.erased"
 )
 
@@ -40,6 +41,10 @@ type Event struct {
 	Actor  int64 // who caused it (0 = system)
 	// DeleteContent is set for UserErased only.
 	DeleteContent bool
+	// Tombstone, for UserErased only, is the anonymous name the account
+	// will have ("former-…"), so plugins can replace the member's name
+	// where it was written into stored text (such as chat names).
+	Tombstone string
 	// EraseAfter is set for ErasureRequested only.
 	EraseAfter time.Time
 }

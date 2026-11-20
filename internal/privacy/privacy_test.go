@@ -186,6 +186,16 @@ func (b *recordingBus) Publish(_ context.Context, e events.Event) error {
 func TestErasure(t *testing.T) {
 	f := setup(t)
 	f.svc.Update(f.ctx, f.alice, Profile{FullName: "Alice", Email: "alice@example.org"})
+	// Records kept after erasure that could re-identify her: the note on
+	// her invite and the fingerprints in her key audit entries.
+	if _, err := f.svc.db.Exec(`UPDATE invites SET note = 'for Alice Smith' WHERE id = (SELECT invite_id FROM users WHERE id = ?)`, f.alice); err != nil {
+		t.Fatal(err)
+	}
+	var keyRows int
+	f.svc.db.QueryRow(`SELECT count(*) FROM audit_log WHERE actor_id = ? AND action = 'key.added' AND detail LIKE 'SHA256:%'`, f.alice).Scan(&keyRows)
+	if keyRows == 0 {
+		t.Fatal("no key audit entry with a fingerprint to remove")
+	}
 	e, err := f.svc.RequestErasure(f.ctx, f.alice, true)
 	if err != nil {
 		t.Fatal(err)
@@ -224,6 +234,15 @@ func TestErasure(t *testing.T) {
 	u, err := f.auth.UserByID(f.ctx, f.alice)
 	if err != nil || !strings.HasPrefix(u.Username, auth.TombstonePrefix) || u.Email != "" || u.Status != auth.StatusLocked {
 		t.Fatalf("tombstone = %+v, %v", u, err)
+	}
+	if last.Tombstone != u.Username {
+		t.Errorf("event tombstone %q, account renamed %q", last.Tombstone, u.Username)
+	}
+	var fps, notes int
+	f.svc.db.QueryRow(`SELECT count(*) FROM audit_log WHERE actor_id = ? AND action IN ('key.added', 'key.removed') AND detail <> ''`, f.alice).Scan(&fps)
+	f.svc.db.QueryRow(`SELECT count(*) FROM invites WHERE note = 'for Alice Smith'`).Scan(&notes)
+	if fps != 0 || notes != 0 {
+		t.Errorf("identifying records kept: %d key fingerprints, %d invite notes", fps, notes)
 	}
 	if keys, _ := f.auth.Keys(f.ctx, f.alice); len(keys) != 0 {
 		t.Error("keys kept")

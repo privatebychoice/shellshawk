@@ -153,11 +153,18 @@ func (s *Service) RunDue(ctx context.Context, pub Publisher) (int, error) {
 	rows.Close()
 	done := 0
 	for _, d := range list {
-		if err := pub.Publish(ctx, events.Event{Topic: events.UserErased, UserID: d.id, DeleteContent: d.del}); err != nil {
+		// The anonymous name is chosen first so plugins can write it where
+		// the member's username appears in stored text.
+		name, err := s.tombstoneName(ctx)
+		if err != nil {
+			s.log.Error("erasure postponed: no anonymous name", "user_id", d.id, "err", err)
+			continue
+		}
+		if err := pub.Publish(ctx, events.Event{Topic: events.UserErased, UserID: d.id, DeleteContent: d.del, Tombstone: name}); err != nil {
 			s.log.Error("erasure postponed: a plugin could not remove the member's data", "user_id", d.id, "err", err)
 			continue
 		}
-		if err := s.anonymise(ctx, d.id); err != nil {
+		if err := s.anonymise(ctx, d.id, name); err != nil {
 			s.log.Error("erasure failed", "user_id", d.id, "err", err)
 			continue
 		}
@@ -166,26 +173,42 @@ func (s *Service) RunDue(ctx context.Context, pub Publisher) (int, error) {
 	return done, nil
 }
 
-// anonymise turns the account into a tombstone: a random "former-" name,
-// no credentials, keys, email, profile, preferences or groups. The row is
-// kept so content the member chose to keep (and messages they sent, and
-// audit entries) stays attributed to the same anonymous name.
-func (s *Service) anonymise(ctx context.Context, userID int64) error {
+// tombstoneName picks an unused random "former-" name. It is random, not
+// derived from the account, so an erased member cannot be re-identified.
+func (s *Service) tombstoneName(ctx context.Context) (string, error) {
+	for range 5 {
+		var b [4]byte
+		if _, err := rand.Read(b[:]); err != nil {
+			return "", err
+		}
+		name := auth.TombstonePrefix + hex.EncodeToString(b[:])
+		var taken bool
+		if err := s.db.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM users WHERE username = ?)`, name).Scan(&taken); err != nil {
+			return "", err
+		}
+		if !taken {
+			return name, nil
+		}
+	}
+	return "", errors.New("privacy: no free anonymous name")
+}
+
+// anonymise turns the account into a tombstone named name: no credentials,
+// keys, email, profile, preferences or groups. The row is kept so content
+// the member chose to keep (and messages they sent, and audit entries)
+// stays attributed to the same anonymous name. Identifying details are
+// also removed from records kept about the account: the key fingerprints
+// in its key audit entries (public keys are often published, so a
+// fingerprint could re-identify it) and the note on the invite it
+// registered with (such as "for Alice Smith").
+func (s *Service) anonymise(ctx context.Context, userID int64, name string) error {
 	return store.WithTx(ctx, s.db, func(tx *sql.Tx) error {
-		var name string
-		for range 5 {
-			var b [4]byte
-			if _, err := rand.Read(b[:]); err != nil {
-				return err
-			}
-			name = auth.TombstonePrefix + hex.EncodeToString(b[:])
-			var taken bool
-			if err := tx.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM users WHERE username = ?)`, name).Scan(&taken); err != nil {
-				return err
-			}
-			if !taken {
-				break
-			}
+		if _, err := tx.ExecContext(ctx, `UPDATE invites SET note = '' WHERE id = (SELECT invite_id FROM users WHERE id = ?)`, userID); err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, `UPDATE audit_log SET detail = '' WHERE actor_id = ? AND action IN (?, ?)`,
+			userID, audit.KeyAdded, audit.KeyRemoved); err != nil {
+			return err
 		}
 		// "!" can never be produced by HashPassword, so no password matches.
 		if _, err := tx.ExecContext(ctx, `UPDATE users SET username = ?, password_hash = '!erased', email = NULL, status = ?,

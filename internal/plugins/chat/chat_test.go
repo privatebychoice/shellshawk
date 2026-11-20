@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"go.privatebychoice.com/shellshawk/internal/auth"
+	"go.privatebychoice.com/shellshawk/internal/events"
 	"go.privatebychoice.com/shellshawk/internal/form"
 	"go.privatebychoice.com/shellshawk/internal/perm"
 	"go.privatebychoice.com/shellshawk/internal/plugin"
@@ -719,5 +720,68 @@ func TestInviteRights(t *testing.T) {
 	f.p.pages = pager{} // forget the interval between the pair
 	if _, _, err := f.p.pageToTalk(f.Ctx, f.user(t, f.alice), "bob"); err != nil {
 		t.Errorf("alice pages bob back into the talk chat bob started: %v", err)
+	}
+}
+
+// TestEraseReplacesName: an erased member's username is replaced with
+// their anonymous name where chat wrote it into stored text, while their
+// kept lines and everyone else's text stay as they were.
+func TestEraseReplacesName(t *testing.T) {
+	f := setup(t)
+	alice, bob, carol := f.user(t, f.alice), f.user(t, f.bob), f.user(t, f.carol)
+	talk := func(a, b auth.User) int64 {
+		t.Helper()
+		id, err := f.p.Create(f.Ctx, a.ID, NewChannel{Name: talkName(a.Username, b.Username), Kind: KindAdHoc,
+			Topic: a.Username + " and " + b.Username, RetentionDays: DefaultRetention})
+		if err != nil {
+			t.Fatal(err)
+		}
+		c, _ := f.p.Get(f.Ctx, id)
+		if err := f.p.Invite(f.Ctx, a.ID, c, b.ID); err != nil {
+			t.Fatal(err)
+		}
+		return id
+	}
+	started := talk(alice, bob)   // alice started it
+	invited := talk(carol, alice) // alice was invited
+	plans, err := f.p.createAdHoc(f.Ctx, f.alice, "plans", "", "bob")
+	if err != nil {
+		t.Fatal(err)
+	}
+	pc, _ := f.p.Get(f.Ctx, plans)
+	if err := f.p.changeTopic(f.Ctx, alice, pc, "Sunday"); err != nil {
+		t.Fatal(err)
+	}
+	f.p.record(f.Ctx, pc, f.alice, "message", "alice says hi", f.p.now())
+	f.p.record(f.Ctx, pc, f.bob, "event", "bob changed the topic to: alice's idea", f.p.now())
+
+	const tomb = "former-1a2b3c4d"
+	if err := f.Events.Publish(f.Ctx, events.Event{Topic: events.UserErased, UserID: f.alice, Tombstone: tomb}); err != nil {
+		t.Fatal(err)
+	}
+	for _, tt := range []struct {
+		id          int64
+		name, topic string
+	}{
+		{started, talkName(tomb, "bob"), tomb + " and bob"},
+		{invited, talkName(tomb, "carol"), "carol and " + tomb},
+		{plans, "plans", "Sunday"}, // not a talk chat: its name is the member's own content
+	} {
+		c, _ := f.p.Get(f.Ctx, tt.id)
+		if c.Name != tt.name || c.Topic != tt.topic {
+			t.Errorf("channel %d = %q, %q; want %q, %q", tt.id, c.Name, c.Topic, tt.name, tt.topic)
+		}
+	}
+	rows, _ := f.DB.Query(`SELECT body FROM chat_messages WHERE channel_id = ? ORDER BY id`, plans)
+	var got []string
+	for rows.Next() {
+		var b string
+		rows.Scan(&b)
+		got = append(got, b)
+	}
+	rows.Close()
+	want := []string{tomb + " changed the topic to: Sunday", "alice says hi", "bob changed the topic to: alice's idea"}
+	if strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Errorf("lines = %q\nwant    %q", got, want)
 	}
 }

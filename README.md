@@ -530,8 +530,12 @@ is imported anywhere.
   (both ways), received messages and notifications (yours and those you
   caused), and unlinks poll votes (totals are
   kept). The account becomes an anonymous `former-xxxxxxxx` name, so
-  messages you sent and content you chose to keep are credited to it. Text
-  others wrote that mentions you (for example quotes) is not changed.
+  messages you sent and content you chose to keep are credited to it, and
+  your username is replaced with that name where the BBS wrote it itself:
+  the names and topics of your talk chats and your logged topic changes.
+  The note on the invite you joined with and the key fingerprints in the
+  audit log are removed. Text others wrote that mentions you (for example
+  quotes), and names you chose for your own chats, are not changed.
   Erased data may remain in server backups until they are rotated; operators
   should state their backup retention in their privacy policy.
 
