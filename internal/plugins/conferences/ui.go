@@ -436,7 +436,18 @@ func (p *Plugin) thread(ctx context.Context, s plugin.Session, id int64) error {
 			case "delete":
 				q := "Delete this post?"
 				if po.ID == posts[0].ID {
+					var set perm.Set
+					var whole bool
+					if set, err = s.Permissions(ctx); err == nil {
+						whole, err = p.firstPostDeletesThread(ctx, set, s.UserID(), t.ID, po.ID)
+					}
+					if err != nil {
+						break
+					}
 					q = "This is the first post: deleting it deletes the whole thread. Continue?"
+					if !whole {
+						q = "This is the first post and others have replied: its text and the thread title will be removed, and the replies kept. Continue?"
+					}
 				}
 				ok, cerr := tui.Confirm(ctx, s.UI(), s.Title(t.Title), q)
 				if cerr != nil || !ok {

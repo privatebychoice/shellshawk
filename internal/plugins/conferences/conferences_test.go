@@ -560,3 +560,53 @@ func TestWebThreadChatPanel(t *testing.T) {
 		t.Errorf("member outside the groups gets the staff chat panel (err %v)", err)
 	}
 }
+
+// TestDeleteFirstPost: an author deleting their first post deletes the
+// thread only if nobody else has replied; otherwise the post and title are
+// blanked and the replies kept. A moderator still deletes the thread.
+func TestDeleteFirstPost(t *testing.T) {
+	f := setup(t)
+	tests := []struct {
+		name       string
+		replier    int64 // 0 = no reply
+		deleter    int64 // deletes the first post
+		wantGone   bool
+		wantKeepBy int64 // a reply that must survive (0 = none)
+	}{
+		{"no replies", 0, f.alice, true, 0},
+		{"only the author's own replies", f.alice, f.alice, true, 0},
+		{"someone else replied", f.bob, f.alice, false, f.bob},
+		{"a moderator, with replies", f.bob, f.mod, true, 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tid, first, err := f.p.StartThread(f.Ctx, f.alice, f.general, "Plans", "Saturday?")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if tt.replier != 0 {
+				if _, err := f.p.Reply(f.Ctx, tt.replier, tid, "a reply"); err != nil {
+					t.Fatal(err)
+				}
+			}
+			gone, err := f.p.DeletePost(f.Ctx, tt.deleter, first)
+			if err != nil || gone != tt.wantGone {
+				t.Fatalf("DeletePost = %v, %v; want gone %v", gone, err, tt.wantGone)
+			}
+			th, _, _, err := f.p.Thread(f.Ctx, f.alice, tid)
+			if tt.wantGone {
+				if !errors.Is(err, ErrNotFound) {
+					t.Errorf("thread still there: %v", err)
+				}
+				return
+			}
+			if err != nil || th.Title != AuthorRemovedTitle {
+				t.Fatalf("thread = %+v, %v", th, err)
+			}
+			posts, _ := f.p.Posts(f.Ctx, f.alice, tid)
+			if len(posts) != 2 || posts[0].Body != RemovedBody || posts[1].Body != "a reply" || posts[1].AuthorID != tt.wantKeepBy {
+				t.Errorf("posts = %+v", posts)
+			}
+		})
+	}
+}

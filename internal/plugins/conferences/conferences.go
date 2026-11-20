@@ -765,7 +765,10 @@ func (p *Plugin) Edit(ctx context.Context, user, id int64, body string) error {
 	return err
 }
 
-// DeletePost deletes a reply, or the whole thread if it is the first post.
+// DeletePost deletes a reply. The first post deletes the whole thread when
+// a moderator deletes it or nobody else has replied; once others have,
+// their replies are not the author's to delete, so the author's first post
+// is blanked instead (as erasure does) and the thread stays.
 func (p *Plugin) DeletePost(ctx context.Context, user, id int64) (threadDeleted bool, err error) {
 	po, t, set, err := p.post(ctx, user, id)
 	if err != nil {
@@ -779,7 +782,14 @@ func (p *Plugin) DeletePost(ctx context.Context, user, id int64) (threadDeleted 
 		return false, err
 	}
 	if first == id {
-		return true, p.deleteThread(ctx, t.ID)
+		whole, err := p.firstPostDeletesThread(ctx, set, user, t.ID, id)
+		if err != nil {
+			return false, err
+		}
+		if whole {
+			return true, p.deleteThread(ctx, t.ID)
+		}
+		return false, p.blankFirstPost(ctx, t.ID, id)
 	}
 	if p.polls != nil {
 		if err := p.polls.DeleteContext(ctx, pollContext(id)); err != nil {
@@ -790,8 +800,41 @@ func (p *Plugin) DeletePost(ctx context.Context, user, id int64) (threadDeleted 
 	return false, err
 }
 
-// DeleteThread deletes a thread (moderators, or its author if it has no
-// replies — handled through DeletePost on the first post).
+// firstPostDeletesThread reports whether deleting first, the thread's
+// first post, deletes the whole thread for user: a moderator, or nobody
+// else has replied. Otherwise the post is blanked.
+func (p *Plugin) firstPostDeletesThread(ctx context.Context, set perm.Set, user, thread, first int64) (bool, error) {
+	if set.Has(PermModerate) {
+		return true, nil
+	}
+	var others int
+	err := p.h.DB.QueryRowContext(ctx, `SELECT count(*) FROM conferences_posts WHERE thread_id = ? AND id <> ? AND (author_id IS NULL OR author_id <> ?)`,
+		thread, first, user).Scan(&others)
+	return others == 0, err
+}
+
+// blankFirstPost removes the author's own content from a thread others
+// have replied to: the first post's text, the title and any poll on it.
+func (p *Plugin) blankFirstPost(ctx context.Context, thread, id int64) error {
+	if p.polls != nil {
+		if err := p.polls.DeleteContext(ctx, pollContext(id)); err != nil {
+			return err
+		}
+	}
+	return store.WithTx(ctx, p.h.DB, func(tx *sql.Tx) error {
+		if _, err := tx.ExecContext(ctx, `UPDATE conferences_posts SET body = ?, edited_at = ? WHERE id = ?`, RemovedBody, store.FormatTime(p.now()), id); err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, `UPDATE conferences_threads SET title = ? WHERE id = ?`, AuthorRemovedTitle, thread); err != nil {
+			return err
+		}
+		p.h.Log.Info("first post blanked by its author", "thread_id", thread)
+		return nil
+	})
+}
+
+// DeleteThread deletes a thread (moderators, or its author if nobody else
+// has replied — handled through DeletePost on the first post).
 func (p *Plugin) DeleteThread(ctx context.Context, user, thread int64) error {
 	if _, _, set, err := p.Thread(ctx, user, thread); err != nil {
 		return err

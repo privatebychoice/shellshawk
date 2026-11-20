@@ -12,6 +12,9 @@ import (
 const (
 	RemovedBody  = "*[removed by author]*"
 	RemovedTitle = "Thread by a former member"
+	// AuthorRemovedTitle replaces the title when an author removes the
+	// first post of a thread others have replied to.
+	AuthorRemovedTitle = "[removed by author]"
 )
 
 // export returns every post the member wrote.
