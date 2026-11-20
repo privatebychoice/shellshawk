@@ -19,7 +19,7 @@ func message(err error) string {
 	case errors.Is(err, perm.ErrForbidden):
 		return "You do not have permission to do that."
 	case errors.Is(err, ErrInvalid), errors.Is(err, ErrLocked), errors.Is(err, ErrNotFound), errors.Is(err, ErrNotEmpty), errors.Is(err, ErrExists):
-		return err.Error() + "."
+		return tui.Sentence(err, ErrInvalid)
 	}
 	return ""
 }

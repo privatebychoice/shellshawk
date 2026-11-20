@@ -44,7 +44,7 @@ func (s *session) privacyMenu(ctx context.Context) error {
 			err = s.eraseAccount(ctx)
 		}
 		if errors.Is(err, privacy.ErrInvalid) {
-			err = tui.Message(ctx, s.ui, s.Title("Privacy and profile"), err.Error()+".")
+			err = tui.Message(ctx, s.ui, s.Title("Privacy and profile"), tui.Sentence(err, privacy.ErrInvalid))
 		}
 		if err != nil && !errors.Is(err, tui.ErrCancelled) {
 			return err
@@ -156,7 +156,7 @@ func (s *session) eraseAccount(ctx context.Context) error {
 	}
 	e, err := s.h.Privacy.RequestErasure(ctx, s.userID, v["content"] == "delete")
 	if errors.Is(err, privacy.ErrLastAdminErase) {
-		return tui.Message(ctx, s.ui, s.Title("Erase my account"), err.Error()+".")
+		return tui.Message(ctx, s.ui, s.Title("Erase my account"), tui.Sentence(err))
 	}
 	if err != nil {
 		return err

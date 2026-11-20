@@ -14,6 +14,7 @@ import (
 
 	"go.privatebychoice.com/shellshawk/internal/auth"
 	"go.privatebychoice.com/shellshawk/internal/plugin"
+	"go.privatebychoice.com/shellshawk/internal/tui"
 )
 
 // keepAlive is how often an idle stream sends a comment (so proxies keep
@@ -91,9 +92,9 @@ func (p *Plugin) webSend(r *http.Request, s plugin.WebSession) (plugin.WebPage, 
 	}
 	switch err := p.Say(r.Context(), c, u, text); {
 	case errors.Is(err, ErrSlowDown):
-		return plugin.WebPage{}, &plugin.WebError{Status: http.StatusTooManyRequests, Message: sentence(err)}
+		return plugin.WebPage{}, &plugin.WebError{Status: http.StatusTooManyRequests, Message: tui.Sentence(err, ErrInvalid)}
 	case errors.Is(err, ErrInvalid):
-		return plugin.WebPage{}, &plugin.WebError{Status: http.StatusBadRequest, Message: sentence(err)}
+		return plugin.WebPage{}, &plugin.WebError{Status: http.StatusBadRequest, Message: tui.Sentence(err, ErrInvalid)}
 	case err != nil:
 		return plugin.WebPage{}, err
 	}

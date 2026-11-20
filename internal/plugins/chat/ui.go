@@ -31,22 +31,12 @@ func eventLine(at time.Time, text string) tui.Line {
 	return tui.Styled("["+clock(at)+"] * "+text, theme.Style{FG: theme.Muted})
 }
 
-// sentence turns an ErrInvalid or ErrSlowDown error into a sentence for
-// the member: "invalid: the message is empty" → "The message is empty."
-func sentence(err error) string {
-	msg := strings.TrimPrefix(err.Error(), ErrInvalid.Error()+": ")
-	if msg == "" {
-		return ""
-	}
-	return strings.ToUpper(msg[:1]) + msg[1:] + "."
-}
-
 func errorMessage(err error) string {
 	switch {
 	case errors.Is(err, perm.ErrForbidden):
 		return "You do not have permission to do that."
 	case errors.Is(err, ErrInvalid), errors.Is(err, ErrExists), errors.Is(err, ErrNotFound):
-		return err.Error() + "."
+		return tui.Sentence(err, ErrInvalid)
 	}
 	return ""
 }
@@ -409,7 +399,7 @@ func (p *Plugin) submit(ctx context.Context, s plugin.Session, u auth.User, chID
 		switch err := p.Say(ctx, c, u, text); {
 		case err == nil:
 		case errors.Is(err, ErrSlowDown), errors.Is(err, ErrInvalid):
-			return say("%s", sentence(err)), false, 0
+			return say("%s", tui.Sentence(err, ErrInvalid)), false, 0
 		default:
 			s.Log().Error("chat log write failed", "err", err)
 			return say("Your message could not be sent."), false, 0

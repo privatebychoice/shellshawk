@@ -84,7 +84,7 @@ func (p *Plugin) edit(ctx context.Context, s plugin.Session, current string) err
 		return err
 	}
 	if err := p.Set(ctx, s.UserID(), body); errors.Is(err, ErrInvalid) {
-		return tui.Message(ctx, s.UI(), s.Title("Message of the day"), "Not saved: "+err.Error()+".")
+		return tui.Message(ctx, s.UI(), s.Title("Message of the day"), "Not saved. "+tui.Sentence(err, ErrInvalid))
 	} else if err != nil {
 		return err
 	}

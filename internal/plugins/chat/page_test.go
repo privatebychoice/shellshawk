@@ -48,7 +48,7 @@ func TestPage(t *testing.T) {
 		{"again too soon", nil, f.alice, "bob", lobby, ErrInvalid, "you paged bob recently; you can page them again in 5 minute(s)"},
 		{"yourself", nil, f.alice, "alice", lobby, ErrInvalid, "you cannot page yourself"},
 		{"nobody", nil, f.alice, "nobody", lobby, ErrInvalid, `no active member called "nobody"`},
-		{"to a channel they cannot join", nil, f.mod, "bob", staffCh, ErrInvalid, "bob cannot join #staff"},
+		{"to a channel they cannot join", nil, f.mod, "bob", staffCh, ErrInvalid, "#staff is not open to bob; page them from a private chat instead"},
 		{"pages turned off", func() { f.Notify.SetSettings(f.Ctx, f.bob, map[string]bool{NotifyPage: false}) }, f.carol, "bob", lobby, ErrCannotPage, ""},
 		{"without chat.page", func() {
 			member, _ := f.Perms.GroupByName(f.Ctx, perm.GroupMember)

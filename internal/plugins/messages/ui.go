@@ -239,18 +239,21 @@ func (p *Plugin) compose(ctx context.Context, s plugin.Session, d Draft, errs fo
 		case errors.As(err, &re), errors.Is(err, ErrNoneToSend):
 			errs = form.Errors{"to": err}
 		case errors.Is(err, ErrInvalid):
+			field := errors.New(strings.TrimPrefix(err.Error(), ErrInvalid.Error()+": "))
 			if strings.Contains(err.Error(), "subject") {
-				errs = form.Errors{"subject": err}
+				errs = form.Errors{"subject": field}
 			} else if strings.Contains(err.Error(), "recipients") {
-				errs = form.Errors{"to": err}
+				errs = form.Errors{"to": field}
 			} else {
-				if err := tui.Message(ctx, s.UI(), s.Title("Messages"), err.Error()+"."); err != nil {
+				if err := tui.Message(ctx, s.UI(), s.Title("Messages"), tui.Sentence(err, ErrInvalid)); err != nil {
 					return err
 				}
 				errs = form.Errors{}
 			}
-		case errors.Is(err, ErrRateLimit), errors.Is(err, perm.ErrForbidden):
-			return tui.Message(ctx, s.UI(), s.Title("Messages"), err.Error()+".")
+		case errors.Is(err, perm.ErrForbidden):
+			return tui.Message(ctx, s.UI(), s.Title("Messages"), "You do not have permission to send messages.")
+		case errors.Is(err, ErrRateLimit):
+			return tui.Message(ctx, s.UI(), s.Title("Messages"), tui.Sentence(err))
 		default:
 			return err
 		}

@@ -182,7 +182,7 @@ func (s *session) addKeyForm(ctx context.Context, intro string) (bool, error) {
 		case err == nil:
 			return true, nil
 		case errors.Is(err, auth.ErrKeyLimit):
-			return false, tui.Message(ctx, s.ui, s.Title("Add SSH key"), err.Error()+".")
+			return false, tui.Message(ctx, s.ui, s.Title("Add SSH key"), tui.Sentence(err))
 		case fieldForError(err) != "":
 			errs = form.Errors{fieldForError(err): err}
 		default:

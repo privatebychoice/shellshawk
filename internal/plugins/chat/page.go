@@ -144,7 +144,7 @@ func (p *Plugin) Page(ctx context.Context, from auth.User, targetName string, c 
 		if err != nil {
 			return to, err
 		}
-		return to, fmt.Errorf("%w: %s cannot join #%s; page them from a private chat instead", ErrInvalid, to.Username, c.Name)
+		return to, fmt.Errorf("%w: #%s is not open to %s; page them from a private chat instead", ErrInvalid, c.Name, to.Username)
 	}
 	every := p.pageEvery(ctx)
 	if left := p.pages.wait(from.ID, to.ID, p.now(), every); left > 0 {
@@ -176,7 +176,7 @@ func pageMessage(name string, err error) string {
 		return name + " cannot be paged right now."
 	}
 	if errors.Is(err, ErrInvalid) {
-		return sentence(err)
+		return tui.Sentence(err, ErrInvalid)
 	}
 	return errorMessage(err)
 }

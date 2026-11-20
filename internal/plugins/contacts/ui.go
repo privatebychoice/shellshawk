@@ -16,7 +16,7 @@ func userMessage(err error) string {
 	switch {
 	case errors.Is(err, ErrUnknownUser), errors.Is(err, ErrSelf), errors.Is(err, ErrExists),
 		errors.Is(err, ErrLimit), errors.Is(err, ErrInvalid), errors.Is(err, ErrNotFound):
-		return err.Error() + "."
+		return tui.Sentence(err, ErrInvalid)
 	}
 	return ""
 }

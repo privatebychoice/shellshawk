@@ -485,7 +485,7 @@ func (s *session) menuError(ctx context.Context, err error) error {
 	case errors.Is(err, menu.ErrProtected):
 		return tui.Message(ctx, s.ui, s.Title("Menu editor"), "Administration cannot be deleted, so nobody is ever locked out of it. You can rename or move it.")
 	case errors.Is(err, menu.ErrNotEmpty), errors.Is(err, menu.ErrInvalid):
-		return tui.Message(ctx, s.ui, s.Title("Menu editor"), err.Error()+".")
+		return tui.Message(ctx, s.ui, s.Title("Menu editor"), tui.Sentence(err, menu.ErrInvalid))
 	}
 	if msg := adminErrorMessage(err); msg != "" {
 		return tui.Message(ctx, s.ui, s.Title("Menu editor"), msg)

@@ -129,8 +129,11 @@ func (p *Plugin) run(ctx context.Context, s plugin.Session) error {
 		if errors.Is(err, tui.ErrCancelled) {
 			err = nil
 		}
-		if errors.Is(err, perm.ErrForbidden) || errors.Is(err, ErrNotFound) || errors.Is(err, ErrInvalid) {
-			err = tui.Message(ctx, s.UI(), s.Title("Wall"), "That could not be done: "+err.Error()+".")
+		switch {
+		case errors.Is(err, perm.ErrForbidden):
+			err = tui.Message(ctx, s.UI(), s.Title("Wall"), "You do not have permission to do that.")
+		case errors.Is(err, ErrNotFound) || errors.Is(err, ErrInvalid):
+			err = tui.Message(ctx, s.UI(), s.Title("Wall"), "That could not be done. "+tui.Sentence(err, ErrInvalid))
 		}
 		if err != nil {
 			return err

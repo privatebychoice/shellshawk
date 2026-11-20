@@ -12,6 +12,7 @@ import (
 	"go.privatebychoice.com/shellshawk/internal/auth"
 	"go.privatebychoice.com/shellshawk/internal/perm"
 	"go.privatebychoice.com/shellshawk/internal/plugin"
+	"go.privatebychoice.com/shellshawk/internal/tui"
 )
 
 // Web pages: the channel list, search, a page per channel with the live
@@ -139,7 +140,7 @@ func webMessage(err error) string {
 	case errors.Is(err, perm.ErrForbidden):
 		return "You do not have permission to do that."
 	case errors.Is(err, ErrInvalid), errors.Is(err, ErrExists):
-		return sentence(err)
+		return tui.Sentence(err, ErrInvalid)
 	}
 	return ""
 }
@@ -228,7 +229,7 @@ func (p *Plugin) webFind(r *http.Request, s plugin.WebSession) (plugin.WebPage, 
 	found, err := p.FindAccessible(r.Context(), s.UserID(), q)
 	switch {
 	case errors.Is(err, ErrInvalid):
-		data["None"] = sentence(err)
+		data["None"] = tui.Sentence(err, ErrInvalid)
 	case err != nil:
 		return plugin.WebPage{}, err
 	case len(found) == 0:
@@ -349,7 +350,7 @@ func (p *Plugin) privateAction(form, done string, do func(r *http.Request, c Cha
 func (p *Plugin) webInvite(r *http.Request, c Channel, u auth.User) error {
 	acct, err := p.member(r.Context(), r.PostFormValue("username"))
 	if err == nil && acct.Status != auth.StatusActive {
-		err = fmt.Errorf("%w: %s's account is not active", ErrInvalid, acct.Username)
+		err = fmt.Errorf("%w: the account %s is not active", ErrInvalid, acct.Username)
 	}
 	if err == nil {
 		err = p.Invite(r.Context(), u.ID, c, acct.ID)

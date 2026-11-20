@@ -144,7 +144,7 @@ func TestSubmitCommandsAndKick(t *testing.T) {
 		{"topic by invitee refused", bob, "/topic Sunday", "permission", false, false},
 		{"topic by creator", alice, "/topic Sunday", "", false, false},
 		{"invite", alice, "/invite carol", "carol can now join", false, false},
-		{"invite unknown", alice, "/invite ghost", "no member called", false, false},
+		{"invite unknown", alice, "/invite ghost", `No member called "ghost".`, false, false},
 		{"kick self refused", alice, "/kick alice", "cannot kick yourself", false, false},
 		{"kick by invitee refused", bob, "/kick alice", "permission", false, false},
 		{"unknown command", bob, "/dance", "Unknown command /dance", false, false},

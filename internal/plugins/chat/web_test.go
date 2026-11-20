@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"go.privatebychoice.com/shellshawk/internal/plugin"
+	"go.privatebychoice.com/shellshawk/internal/tui"
 )
 
 func TestSay(t *testing.T) {
@@ -48,7 +49,7 @@ func TestSay(t *testing.T) {
 	if err := f.p.Say(f.Ctx, lobby, bob, "one too many"); !errors.Is(err, ErrSlowDown) {
 		t.Errorf("flood err = %v, want ErrSlowDown", err)
 	}
-	if got := sentence(fmt.Errorf("%w: the message is empty", ErrInvalid)); got != "The message is empty." {
+	if got := tui.Sentence(fmt.Errorf("%w: the message is empty", ErrInvalid), ErrInvalid); got != "The message is empty." {
 		t.Errorf("sentence = %q", got)
 	}
 }

@@ -19,7 +19,7 @@ import (
 func message(err error) string {
 	switch {
 	case errors.Is(err, ErrInvalid), errors.Is(err, ErrClosed), errors.Is(err, ErrBadVote), errors.Is(err, ErrNotFound):
-		return err.Error() + "."
+		return tui.Sentence(err, ErrInvalid, ErrBadVote)
 	case errors.Is(err, perm.ErrForbidden):
 		return "You do not have permission to do that."
 	}
