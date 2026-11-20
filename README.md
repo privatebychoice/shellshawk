@@ -7,6 +7,7 @@ interface. See [docs/DESIGN.md](docs/DESIGN.md) for the full design.
 > accounts, TUI (full-screen and screen-reader), markdown with graded links,
 > plugins and menus, administration, SFTP, the core plugins, privacy and
 > erasure, and a web interface for reading, messaging, live chat and voting.
+> The current release is **1.0.1**; see [Release notes](#release-notes).
 
 ## Build
 
@@ -561,3 +562,91 @@ Logs never contain client IP addresses, user agents, cookies, query strings,
 or attempted SSH user names. Client IP addresses are held in memory only, for
 rate limiting.
 shellshawk makes no outbound network requests.
+
+## Release notes
+
+The build number is the third part of the version (`1.0.x`), shown in the
+web footer and at `/version`. Run `make bump` before each deployment.
+
+### 1.0.1 (2026-11-20)
+
+The first numbered release: 1.0.0 was the initial skeleton, and the build
+number had not been raised since. It contains everything in the design
+(see *Status* above) plus the changes below, including the fixes from a
+full security audit.
+
+#### Upgrading
+
+- **Back up the database first.** Core migration 11 runs on the first
+  start and adds `user_id_high`, so a deleted account's ID is never given
+  to a new account.
+- **Behind a reverse proxy**, set `SHELLSHAWK_HTTP_TRUSTED_PROXIES` to the
+  proxy's address and make sure the proxy sends `X-Forwarded-For`.
+  Without it, every web visitor shares one login failure count.
+- **New admin settings** under *Plugin settings*, with these defaults:
+  - Chat: at most 20 open private chats per member and 50 invitations per
+    chat.
+  - Conferences: at most 30 posts (replies and new threads) per member per
+    hour; moderators are not limited.
+  - Polls: at most 5 open polls per member; poll managers are not limited.
+- `SFTP.md` is new: every SFTP folder, the permission it needs and what can
+  be done in it.
+
+#### New
+
+- **Notifications** for pages, new messages and replies to your threads,
+  over SSH and on the web (`/notifications`, with the count in the
+  navigation), with per-kind settings.
+- **Paging**: ask a member to come and talk, from the Chat menu, with
+  `/page`, or on the web.
+- **Web navigation follows the member menu**, including submenus
+  (`/menu/{id}`), labels, order and extra permissions; *Administration*
+  opens a page of the staff pages you may use.
+- **Change password** under *SSH keys* (needs a key login less than 15
+  minutes old).
+- **Data export** now holds every message (also those removed from Sent
+  that a recipient still has), your display settings, the invites you
+  issued and the audit entries about you.
+
+#### Security
+
+- Staff can no longer put themselves or others into groups they are not in
+  (group membership can open members-only content), weaken a group that
+  holds permissions they lack, or read the email address of someone who
+  outranks them.
+- Invites are checked against their creator when used: locking or
+  demoting someone stops their outstanding invites (shown as *on hold*).
+- Requesting erasure ends every SSH, SFTP and web session of the account.
+- Paging no longer reveals that someone is online when they hide it.
+- Private chat invitations follow *Who can send me private messages*,
+  only a chat's creator and chat moderators can invite, and private chats
+  are capped.
+- Login limits: a successful login no longer clears an address's failure
+  count, IPv6 is counted per /64, parallel attempts cannot slip past the
+  limit, web logins are limited per visitor behind a trusted proxy, and
+  each block is recorded in the audit log.
+- Wrong web login codes no longer lock a member out: after 5, the member's
+  outstanding code is voided instead.
+- Access is re-checked while you are in a chat over SSH, and live web
+  pages end when you lose the permission they need.
+- Erasure replaces the member's name in talk chat names, topics and logged
+  topic changes, and removes key fingerprints and invite notes that could
+  identify them.
+- A thread's author deleting their first post no longer deletes everyone
+  else's replies.
+- Uploads in one SFTP session share the upload limit; chat logs, threads
+  and messages downloaded over SFTP are cleaned of terminal control
+  characters.
+- Thread chats whose plugin is missing are closed rather than open; more
+  invisible characters are removed from text; the BBS name cannot add
+  markdown to the privacy policy; flood limits for posts, polls and
+  join/leave lines; rejected applicants' IDs are never reused.
+
+#### Changes you will notice
+
+- Chat tags are now `[C]` channel, `[P]` private chat and `[T]` thread
+  chat, and *Page someone* is `a` in the Chat menu.
+- Error messages are plain sentences (no more `invalid:` at the start).
+- The web home page no longer repeats the navigation links.
+- "joined" and "left" lines appear at most once a minute per member and
+  channel.
