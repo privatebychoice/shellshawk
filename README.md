@@ -276,6 +276,9 @@ if the transfer completes. `rename` and links are refused, and so are
 Password (add-key) logins cannot use SFTP. Permissions are re-checked on
 every request, so locking an account takes effect immediately.
 
+[SFTP.md](SFTP.md) lists every folder, the permission it needs, which
+groups hold that permission by default, and what can be done in it.
+
 ## Contacts and messages
 
 - **Conferences**: areas of conferences, each open to every member or
