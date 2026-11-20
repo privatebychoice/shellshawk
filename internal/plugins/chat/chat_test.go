@@ -216,12 +216,23 @@ func drain(ch <-chan tui.Line) string {
 	}
 }
 
+// closedWith reports whether ch closes within a few seconds, having
+// delivered a line containing want. It gives up rather than wait forever,
+// so a broken test fails instead of hanging the whole run.
 func closedWith(ch <-chan tui.Line, want string) bool {
 	got := ""
-	for l := range ch {
-		got += l.Plain() + "\n"
+	deadline := time.After(5 * time.Second)
+	for {
+		select {
+		case l, ok := <-ch:
+			if !ok {
+				return strings.Contains(got, want)
+			}
+			got += l.Plain() + "\n"
+		case <-deadline:
+			return false
+		}
 	}
-	return strings.Contains(got, want)
 }
 
 func TestFloodControl(t *testing.T) {
@@ -854,5 +865,25 @@ func TestMemberGroupCannotGate(t *testing.T) {
 				t.Errorf("err = %v, want %q", err, tt.msg)
 			}
 		})
+	}
+}
+
+// TestClosedWithGivesUp: the helper fails a test whose channel never
+// closes, instead of hanging the run until the global test timeout.
+func TestClosedWithGivesUp(t *testing.T) {
+	open := make(chan tui.Line, 1)
+	open <- tui.Text("still here")
+	start := time.Now()
+	if closedWith(open, "still here") {
+		t.Error("a channel that never closed was reported closed")
+	}
+	if waited := time.Since(start); waited > 10*time.Second {
+		t.Errorf("gave up after %v", waited)
+	}
+	closed := make(chan tui.Line, 1)
+	closed <- tui.Text("bye")
+	close(closed)
+	if !closedWith(closed, "bye") {
+		t.Error("a closed channel with the line was not reported")
 	}
 }

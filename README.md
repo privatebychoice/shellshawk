@@ -297,8 +297,11 @@ nothing maps to the server's files:
 |------|----------|
 | `/me/profile.md` | Your account details (read-only) |
 | `/me/keys.pub` | Your public keys in `authorized_keys` format (read-only) |
+| `/me/export/…` | Everything stored about you (see *Download my data*) |
+| `/messages/inbox/`, `/messages/sent/` | Your private messages as markdown files (read-only) |
+| `/conferences/<area>/<conference>/…` | Whole threads you may read, one markdown file each (read-only) |
+| `/chat/<channel>/<YYYYMMDD>.log` | Logs of channels you may enter that are logged (read-only) |
 | `/text/<profile>/<file>` | Transition screen art, for members with `core.transitions.manage` (see *Transition screens*) |
-| `/<plugin>/…` | Plugin data, e.g. conference threads (later stages) |
 
 Directories you lack permission for do not appear. Uploads are accepted only
 where a plugin allows them, up to the configured size, and are stored only

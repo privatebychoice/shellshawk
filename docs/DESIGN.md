@@ -118,21 +118,38 @@ themes/                  built-in theme files (embedded)
 docs/
 ```
 
-### 3.1 Plugin interface (sketch)
+### 3.1 Plugin interface
+
+As implemented (`internal/plugin`); a plugin declares everything up front
+in its manifest:
 
 ```go
 type Plugin interface {
-    Manifest() Manifest                 // id, name, version, permissions it defines, settings schema
-    Migrations() []store.Migration      // plugin-owned tables, prefixed by plugin id
-    Init(h Host) error                  // Host = store, perm, privacy, events, logger, settings
-    MenuItems() []tui.MenuItem          // optional
-    WebRoutes() []web.Route             // optional
-    SFTPRoutes() []sftpd.Route          // optional, read/write declared per route
+    Manifest() Manifest                     // see below
+    Init(ctx context.Context, h *Host) error // after permissions and migrations
+}
+
+type Manifest struct {
+    ID, Name, Version, Description string
+    Permissions   []Permission       // "<id>.…", with default groups
+    Settings      []Setting          // standard form fields with defaults
+    Migrations    []store.Migration  // only "<id>_…" tables
+    MenuItems     []MenuItem         // with AnyOf, Run and an optional WebPath
+    SFTP          []sftpd.Mount      // "<id>" or "<id>-…" folders
+    Web           []WebRoute         // pages, POST actions and streams under /p/<id>/
+    Export        func(ctx context.Context, userID int64) ([]export.File, error)
+    OnLogin       func(ctx context.Context, s Session) error
+    WebHome       func(r *http.Request, s WebSession) (template.HTML, error)
+    Notifications []NotificationKind
 }
 ```
 
-- Plugins **never** get the raw `*sql.DB` of other plugins; they get a scoped
-  store handle plus the core APIs (users, groups, contacts, privacy check).
+- Plugins are compiled in and trusted: `Host` gives the shared `*sql.DB`
+  plus the core services (accounts, permissions, events, presence, privacy,
+  notifications, the plugin's own settings). By convention a plugin only
+  touches its own `<id>_` tables and uses the services for anything else;
+  migrations enforce the naming, but the convention is not a security
+  boundary.
 - Every route/menu item declares the permission it needs; the host checks it
   before calling the plugin (deny by default).
 - **Settings**: the manifest declares settings using the standard form controls
@@ -967,7 +984,7 @@ audits, as for SSH and SFTP.
 | **User list** | All users (respecting privacy), my contacts, contact groups, online now. Stage 8: shows usernames and join dates only; online status (in-memory presence of open BBS sessions) only between friends until the privacy settings define it. |
 | **Message of the day** | Added after stage 10. One markdown message (`motd_message`, versioned) set by `motd.edit` (moderators by default). Shown once after SSH login via the plugin `OnLogin` hook until the member has seen the current version (`motd_seen`); clearing it bumps the version so a later message is shown again. Readable from the menu; shown on the web home page via the `WebHome` hook. Erasure forgets what a member saw and their name on the message. |
 | **Wall** | Added after stage 10. One line per member (`wall_entries`, keyed by user), at most 200 characters, emphasis only: `**bold**`, `*italic*`/`_italic_` (own parser: unmatched markers shown as typed, `_` only at word boundaries, backslash escapes, everything else plain text; HTML is escaped with only `<strong>`/`<em>` added). Expires an admin-set time after its last edit (default 168 hours), filtered on read and deleted at startup and hourly. `wall.write` for members, `wall.moderate` for moderators by default; administrators pick the groups for each from the Wall menu, which grants and revokes those permissions through the audited group permissions (the admin group is not offered: administrators can always do both). Username prefix search for finding lines and for moderators' removal. Read-only web page. |
-| **Chat** | Channel types shown as a tag: `[C]` channel (persistent), `[T]` thread (conference), `[P]` private (ad hoc), `[D]` direct. Commands `/who /channels /join /part /topic /kick /invite /createchat /destroychat`. Logging on by default, stored in SQLite, downloadable over SFTP by permitted users. Retention **90 days** default, overridable per channel (0 = logging off). Web uses SSE (no third-party websocket libraries). |
+| **Chat** | Channel types shown as a tag: `[C]` channel (persistent), `[T]` thread (conference), `[P]` private (ad hoc); a direct message between two members is a private chat with one invitee. Commands `/who /channels /join /part /topic /kick /invite /createchat /destroychat`. Logging on by default, stored in SQLite, downloadable over SFTP by permitted users. Retention **90 days** default, overridable per channel (0 = logging off). Web uses SSE (no third-party websocket libraries). |
 
 Each channel's join banner states whether it is logged and for how long. A
 persistent channel is open to everyone who can chat or limited to one or
