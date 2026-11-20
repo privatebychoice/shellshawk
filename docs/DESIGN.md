@@ -923,6 +923,12 @@ every 25 seconds (`watchAccess`, the web stream's interval); once they
 can no longer enter it (removed from its group or a restricted
 conference, uninvited, or without `chat.use`) they are put out of the
 room with "You no longer have access to #name.", like a kick.
+Only a private chat's creator and chat moderators (`canModerate`, who
+may also remove members, change the topic and close it) can invite, so an
+invitee cannot bring back someone the creator removed; inviting someone
+already in is a no-op, which lets either of a talk chat's pair page the
+other into it. The web shows other participants "ask <creator>" instead
+of the invite form.
 `Invite` (from `/invite`, `/createchat` and the web) needs the invitee to
 be active and to accept private messages from the inviter (privacy
 field `messages`), so an invitation cannot get round "who can message

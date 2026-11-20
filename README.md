@@ -354,6 +354,9 @@ groups hold that permission by default, and what can be done in it.
   If you lose access to a channel while you are in it (for example you
   are taken out of its group), you are put out of it within about 25
   seconds, over SSH and on the web.
+  Only the person who started a private chat and chat moderators can
+  invite people into it (or remove them, change the topic and close it);
+  others in the chat ask them.
   You can only invite someone who accepts private messages from you
   (privacy setting *Who can send me private messages*, default *Friends
   only*); paging uses *Who can page you* instead. A member can have at
@@ -435,7 +438,7 @@ on) are left out, and so is a submenu with nothing in it for the web.
 | `/admin` | *Administration*: the staff pages below that you may use |
 | `/notifications` | Your notifications, newest first, with *New* marks (the navigation link shows the count, e.g. *Notifications (2 new)*). A notification links to what it is about (the message, the thread or the chat) and opening it marks it seen; delete one, mark all as seen, or delete all (with a ticked box). *Notification settings* chooses which kinds you receive and whether new ones are listed between screens over SSH |
 | `/p/conferences/` | Areas, conferences and threads you may read; polls on posts can be voted in, and a thread with a chat shows it live, and you can send messages |
-| `/p/chat/` | Channels, private chats and thread chats you may join (with who is there and the topic), and a search by name or topic. Each channel has a live page: messages arrive as they are sent and you can send your own. Start a private chat with invitations; inside one, anyone in it can invite, and its creator (or a chat moderator) can change the topic, remove someone or close it. With `chat.page`, each channel page has *Page a member* (into that channel), and *Page someone* on the list pages a member into your private chat with them (`#talk-<you>-<them>`, also needs `chat.create`) and opens it. A member paged while following a chat on the web gets a line there pointing to Notifications |
+| `/p/chat/` | Channels, private chats and thread chats you may join (with who is there and the topic), and a search by name or topic. Each channel has a live page: messages arrive as they are sent and you can send your own. Start a private chat with invitations; inside one, its creator (or a chat moderator) can invite, change the topic, remove someone or close it, and others see whom to ask. With `chat.page`, each channel page has *Page a member* (into that channel), and *Page someone* on the list pages a member into your private chat with them (`#talk-<you>-<them>`, also needs `chat.create`) and opens it. A member paged while following a chat on the web gets a line there pointing to Notifications |
 | `/p/messages/` | Inbox, Sent and Deleted, with unread marks and counts; opening a message marks it read. Write a message (to usernames and your contact groups; markdown) or reply, with the same limits and privacy rules as over SSH. Delete (to Deleted, restorable), move back to the inbox, delete permanently, remove from Sent and empty the Deleted folder; the ones that cannot be undone need a ticked confirmation box |
 | `/p/polls/` | Open polls (pinned first) and closed polls; vote or change your vote, and see results under the same rules as over SSH |
 | `/p/wall/` | The wall (read-only); the message of the day is on `/home` |

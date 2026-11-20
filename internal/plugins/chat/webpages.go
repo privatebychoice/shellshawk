@@ -53,13 +53,15 @@ var pagesTmpl = template.Must(template.New("pages").Parse(`
 {{end}}{{if .Private}}<section aria-labelledby="private-heading">
 <h2 id="private-heading">Private chat</h2>
 <p>Started by {{.Creator}}. Invited: {{if .Invited}}{{.InvitedList}}{{else}}nobody yet{{end}}.</p>
-<form method="post" action="{{.Actions.invite}}" class="form">
+{{if .Manage}}<form method="post" action="{{.Actions.invite}}" class="form">
 <input type="hidden" name="csrf" value="{{.CSRF}}">
 <p><label for="invite-name">Invite a member (username)</label>
 <input type="text" id="invite-name" name="username" maxlength="32" required autocomplete="off" autocapitalize="none" spellcheck="false" value="{{.Values.invite}}"{{if .Errors.invite}} aria-invalid="true" aria-describedby="invite-error"{{end}}></p>
 {{if .Errors.invite}}<p class="error" id="invite-error" role="alert">{{.Errors.invite}}</p>{{end}}
 <p><button type="submit">Invite</button></p>
 </form>
+{{else}}{{if .Errors.invite}}<p class="error" id="invite-error" role="alert">{{.Errors.invite}}</p>{{end}}
+<p>To bring someone else in, ask {{.Creator}}.</p>{{end}}
 {{if .Manage}}
 <form method="post" action="{{.Actions.topic}}" class="form">
 <input type="hidden" name="csrf" value="{{.CSRF}}">

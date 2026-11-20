@@ -595,10 +595,12 @@ func (p *Plugin) SetRetention(ctx context.Context, actor int64, c Channel, days 
 	})
 }
 
-// Invite allows user to enter an ad hoc chat. The actor must be able to
-// enter it, user must be active and accept private messages from the
-// actor (privacy setting "Who can send me private messages"), and the
-// chat must be under its invitation limit.
+// Invite allows user to enter an ad hoc chat. Only its creator and chat
+// moderators may invite (the people who may also remove members), so an
+// invitee cannot bring back someone the creator removed. user must be
+// active and accept private messages from the actor (privacy setting "Who
+// can send me private messages"), and the chat must be under its
+// invitation limit.
 func (p *Plugin) Invite(ctx context.Context, actor int64, c Channel, user int64) error {
 	return p.invite(ctx, actor, c, user, true)
 }
@@ -612,12 +614,19 @@ func (p *Plugin) invite(ctx context.Context, actor int64, c Channel, user int64,
 	if ok, err := p.CanAccess(ctx, actor, c); err != nil || !ok {
 		return errors.Join(perm.ErrForbidden, err)
 	}
+	// Someone already in needs nothing (this lets either of a talk chat's
+	// pair page the other into it, whoever started it).
 	var already bool
 	if err := p.h.DB.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM chat_invites WHERE channel_id = ? AND user_id = ?)`, c.ID, user).Scan(&already); err != nil {
 		return fmt.Errorf("chat: invite: %w", err)
 	}
 	if already || user == c.CreatorID {
 		return nil
+	}
+	if ok, err := p.canModerate(ctx, actor, c); err != nil {
+		return err
+	} else if !ok {
+		return fmt.Errorf("%w: only the person who started #%s or a chat moderator can invite people", ErrInvalid, c.Name)
 	}
 	if checkPrivacy {
 		if err := p.mayInvite(ctx, actor, user); err != nil {

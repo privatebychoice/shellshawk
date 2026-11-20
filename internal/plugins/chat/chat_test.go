@@ -669,3 +669,55 @@ func TestWatchAccess(t *testing.T) {
 		t.Errorf("in the room: %v", got)
 	}
 }
+
+// TestInviteRights: only a private chat's creator and chat moderators may
+// invite, so an invitee cannot bring back someone the creator removed;
+// paging between a talk chat's pair still works whoever started it.
+func TestInviteRights(t *testing.T) {
+	f := setup(t)
+	id, err := f.p.createAdHoc(f.Ctx, f.alice, "plans", "", "bob,carol")
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, _ := f.p.Get(f.Ctx, id)
+	if err := f.p.Kick(f.Ctx, f.alice, c, f.carol); err != nil {
+		t.Fatal(err)
+	}
+	dave := f.User("dave")
+	f.Visibility(dave, privacy.Messages, privacy.Public)
+	steps := []struct {
+		name  string
+		actor int64
+		user  int64
+		msg   string // "" = allowed
+	}{
+		{"an invitee cannot bring back the removed", f.bob, f.carol, "only the person who started #plans or a chat moderator can invite people"},
+		{"an invitee cannot invite anyone else", f.bob, dave, "only the person who started #plans"},
+		{"re-inviting someone already in is harmless", f.bob, f.alice, ""},
+		{"the creator can", f.alice, f.carol, ""},
+		{"a chat moderator can", f.mod, dave, ""},
+	}
+	for _, st := range steps {
+		t.Run(st.name, func(t *testing.T) {
+			err := f.p.Invite(f.Ctx, st.actor, c, st.user)
+			if st.msg == "" && err != nil || st.msg != "" && (err == nil || !strings.Contains(err.Error(), st.msg)) {
+				t.Errorf("err = %v, want %q", err, st.msg)
+			}
+		})
+	}
+
+	// bob starts the talk chat by paging alice; later alice, its invitee,
+	// pages bob back into it.
+	for _, u := range []int64{f.alice, f.bob} {
+		f.Visibility(u, privacy.Pages, privacy.Public)
+		f.Visibility(u, privacy.Online, privacy.Public)
+		f.Presence.Enter(u)
+	}
+	if _, _, err := f.p.pageToTalk(f.Ctx, f.user(t, f.bob), "alice"); err != nil {
+		t.Fatalf("bob pages alice: %v", err)
+	}
+	f.p.pages = pager{} // forget the interval between the pair
+	if _, _, err := f.p.pageToTalk(f.Ctx, f.user(t, f.alice), "bob"); err != nil {
+		t.Errorf("alice pages bob back into the talk chat bob started: %v", err)
+	}
+}

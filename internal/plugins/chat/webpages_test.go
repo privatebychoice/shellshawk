@@ -89,7 +89,7 @@ func TestWebChannelPage(t *testing.T) {
 			"<h2 id=\"chat-heading\">Messages</h2>", "Started by alice. Invited: bob.", `action="/p/chat/c/` + strconv.FormatInt(priv, 10) + `/invite"`,
 			"Change the topic", `<option value="bob">bob</option>`, "Close this chat", `type="checkbox" name="confirm" value="yes" required`,
 		}, nil, false},
-		{"invited member: invite only", priv, f.bob, []string{"Invite a member"}, []string{"Change the topic", "Remove a member", "Close this chat"}, false},
+		{"invited member: asks the creator", priv, f.bob, []string{"To bring someone else in, ask alice."}, []string{"Invite a member", "Change the topic", "Remove a member", "Close this chat"}, false},
 		{"chat moderator may manage", priv, f.mod, []string{"Change the topic", "Close this chat"}, nil, false},
 		{"not invited", priv, f.carol, nil, nil, true},
 		{"public channel: no private chat forms", lobby.ID, f.alice, []string{"#lobby, channel."}, []string{"Private chat", "Invite a member"}, false},
@@ -139,8 +139,9 @@ func TestWebPrivateActions(t *testing.T) {
 		formError  string // the form shown again with this error
 		notFound   bool
 	}{
-		{"invite", "/c/{id}/invite", priv, f.bob, url.Values{"username": {"@carol"}}, base + "?done=invite#private-heading", "", false},
-		{"invite unknown", "/c/{id}/invite", priv, f.bob, url.Values{"username": {"ghost"}}, "", "No member called &#34;ghost&#34;.", false},
+		{"invite needs the creator", "/c/{id}/invite", priv, f.bob, url.Values{"username": {"@carol"}}, "", "Only the person who started #plans or a chat moderator can invite people.", false},
+		{"invite", "/c/{id}/invite", priv, f.alice, url.Values{"username": {"@carol"}}, base + "?done=invite#private-heading", "", false},
+		{"invite unknown", "/c/{id}/invite", priv, f.alice, url.Values{"username": {"ghost"}}, "", "No member called &#34;ghost&#34;.", false},
 		{"topic needs the creator", "/c/{id}/topic", priv, f.bob, url.Values{"topic": {"Mine"}}, "", "", false},
 		{"topic", "/c/{id}/topic", priv, f.alice, url.Values{"topic": {"Pizza"}}, base + "?done=topic#private-heading", "", false},
 		{"topic with escapes", "/c/{id}/topic", priv, f.alice, url.Values{"topic": {"a\x1b[2J"}}, "", "Topics are at most", false},
@@ -194,11 +195,11 @@ func TestWebPrivateActionEffects(t *testing.T) {
 		return page
 	}
 
-	post("/c/{id}/invite", url.Values{"username": {"carol"}}, f.bob)
+	post("/c/{id}/invite", url.Values{"username": {"carol"}}, f.alice)
 	if ok, _ := f.p.CanAccess(f.Ctx, f.carol, c); !ok {
 		t.Error("invited member cannot enter")
 	}
-	page := post("/c/{id}/invite", url.Values{"username": {"nobody here"}}, f.bob)
+	page := post("/c/{id}/invite", url.Values{"username": {"nobody here"}}, f.alice)
 	if !strings.Contains(string(page.Body), `value="nobody here" aria-invalid="true"`) {
 		t.Errorf("refused invite did not keep the input:\n%s", page.Body)
 	}
