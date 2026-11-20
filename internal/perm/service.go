@@ -285,6 +285,30 @@ func holdsAll(actor Set, perms []string) bool {
 	return true
 }
 
+// MayAssign reports whether an actor holding set may put accounts in g,
+// directly or through an invite. Administrators always may. Anyone else
+// must hold every permission g grants and, because membership alone can
+// open members-only content (a group-only conference or channel), must
+// already be in g. The built-in member group, which new accounts join by
+// default, needs only the permissions.
+func MayAssign(ctx context.Context, db store.DBTX, actor int64, set Set, g Group) (bool, error) {
+	if set.Has(Admin) {
+		return true, nil
+	}
+	if !holdsAll(set, g.Permissions) {
+		return false, nil
+	}
+	if g.Builtin && g.Name == GroupMember {
+		return true, nil
+	}
+	var in int
+	err := db.QueryRowContext(ctx, `SELECT count(*) FROM user_access_groups WHERE user_id = ? AND group_id = ?`, actor, g.ID).Scan(&in)
+	if err != nil {
+		return false, fmt.Errorf("perm: membership: %w", err)
+	}
+	return in > 0, nil
+}
+
 // actorFor loads actor's permissions in tx and checks GroupsManage.
 func actorFor(ctx context.Context, tx store.DBTX, actor int64) (Set, error) {
 	set, err := permissions(ctx, tx, actor)
@@ -382,8 +406,9 @@ func (s *Service) Grant(ctx context.Context, actor, groupID int64, p string) err
 	})
 }
 
-// Revoke removes permission p from a group. The admin group always keeps
-// core.admin.
+// Revoke removes permission p from a group. The actor must hold p and
+// every other permission the group grants, so nobody can weaken a group
+// more powerful than they are. The admin group always keeps core.admin.
 func (s *Service) Revoke(ctx context.Context, actor, groupID int64, p string) error {
 	return store.WithTx(ctx, s.db, func(tx *sql.Tx) error {
 		set, err := actorFor(ctx, tx, actor)
@@ -404,6 +429,9 @@ func (s *Service) Revoke(ctx context.Context, actor, groupID int64, p string) er
 		if g.Builtin && g.Name == GroupAdmin && p == Admin {
 			return ErrProtected
 		}
+		if !holdsAll(set, g.Permissions) {
+			return ErrForbidden
+		}
 		if _, err := tx.ExecContext(ctx, `DELETE FROM access_group_permissions WHERE group_id = ? AND permission = ?`, groupID, p); err != nil {
 			return fmt.Errorf("perm: revoke: %w", err)
 		}
@@ -415,8 +443,7 @@ func (s *Service) Revoke(ctx context.Context, actor, groupID int64, p string) er
 	})
 }
 
-// AddMember puts userID in a group. The actor must hold every permission the
-// group grants.
+// AddMember puts userID in a group, if the actor may assign it (MayAssign).
 func (s *Service) AddMember(ctx context.Context, actor, groupID, userID int64) error {
 	return store.WithTx(ctx, s.db, func(tx *sql.Tx) error {
 		set, err := actorFor(ctx, tx, actor)
@@ -427,8 +454,12 @@ func (s *Service) AddMember(ctx context.Context, actor, groupID, userID int64) e
 		if err != nil {
 			return err
 		}
-		if !holdsAll(set, g.Permissions) {
-			return ErrForbidden
+		if ok, err := MayAssign(ctx, tx, actor, set, g); err != nil || !ok {
+			if err == nil {
+				s.log.Info("group member refused", "actor", actor, "group", g.Name)
+				err = ErrForbidden
+			}
+			return err
 		}
 		if err := AddMemberSystem(ctx, tx, userID, groupID); err != nil {
 			return err
@@ -438,8 +469,9 @@ func (s *Service) AddMember(ctx context.Context, actor, groupID, userID int64) e
 	})
 }
 
-// RemoveMember takes userID out of a group, refusing to remove the last
-// active administrator.
+// RemoveMember takes userID out of a group. The actor must be able to
+// assign the group (MayAssign) and outrank userID (RequireOutranks), and
+// the last active administrator is never removed.
 func (s *Service) RemoveMember(ctx context.Context, actor, groupID, userID int64) error {
 	return store.WithTx(ctx, s.db, func(tx *sql.Tx) error {
 		set, err := actorFor(ctx, tx, actor)
@@ -454,8 +486,15 @@ func (s *Service) RemoveMember(ctx context.Context, actor, groupID, userID int64
 		if err != nil {
 			return err
 		}
-		if !holdsAll(set, g.Permissions) {
-			return ErrForbidden
+		if ok, err := MayAssign(ctx, tx, actor, set, g); err != nil || !ok {
+			if err == nil {
+				s.log.Info("group member removal refused", "actor", actor, "group", g.Name)
+				err = ErrForbidden
+			}
+			return err
+		}
+		if err := RequireOutranks(ctx, tx, actor, userID, GroupsManage); err != nil {
+			return err
 		}
 		res, err := tx.ExecContext(ctx, `DELETE FROM user_access_groups WHERE user_id = ? AND group_id = ?`, userID, groupID)
 		if err != nil {

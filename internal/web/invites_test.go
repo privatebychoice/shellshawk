@@ -64,7 +64,7 @@ func TestInvites(t *testing.T) {
 		t.Errorf("invalid uses = %d:\n%s", bad.StatusCode, b)
 	}
 	forbidden := create(url.Values{"f-uses": {"1"}, "f-days": {"7"}, "f-groups": {"admin"}})
-	if b := body(forbidden); forbidden.StatusCode != 403 || !strings.Contains(b, "Groups cannot include a group with permissions you do not have.") {
+	if b := body(forbidden); forbidden.StatusCode != 403 || !strings.Contains(b, "Groups cannot include a group you are not in, or one with permissions you do not have.") {
 		t.Errorf("admin group = %d:\n%s", forbidden.StatusCode, b)
 	}
 

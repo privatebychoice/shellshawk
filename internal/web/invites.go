@@ -15,8 +15,8 @@ import (
 
 // Invites: create (core.invite.create), list and revoke (your own, or all
 // with core.invite.manage). The auth service checks the permissions,
-// including that an invite only grants groups whose permissions the
-// creator holds. A new code is shown once, in the response to the form;
+// including that an invite only puts accounts in groups the creator may
+// assign (perm.MayAssign). A new code is shown once, in the response to the form;
 // it is never put in a URL or stored.
 
 const errInviteForbidden = "You do not have permission to manage invites."
@@ -121,7 +121,7 @@ func (s *Server) inviteForm(r *http.Request) (*form.Form, error) {
 			Min: form.Bound(1), Max: form.Bound(auth.MaxInviteTTL.Hours() / 24)},
 		{Name: "approval", Label: "New accounts need approval", Kind: form.Boolean},
 		{Name: "groups", Label: "Groups", Kind: form.Choice, Multi: true, Options: opts,
-			Help: "Groups new accounts join. None selected means member. You can only choose groups whose permissions you have."},
+			Help: "Groups new accounts join. None selected means member. You can only choose groups whose permissions you have, and apart from member, only groups you are in yourself."},
 		{Name: "note", Label: "Note for administrators", Kind: form.SingleLine, MaxLen: 200, Help: "Optional, e.g. who it is for. Never shown to the invitee."},
 	}}, nil
 }
@@ -183,7 +183,7 @@ func (s *Server) handleInviteCreate(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case errors.Is(err, perm.ErrForbidden) && len(groups) > 0:
 		s.renderInviteForm(w, r, http.StatusForbidden, sess, fm, raw,
-			form.Errors{"groups": errors.New("cannot include a group with permissions you do not have")}, "The invite was not created.")
+			form.Errors{"groups": errors.New("cannot include a group you are not in, or one with permissions you do not have")}, "The invite was not created.")
 		return
 	case err != nil:
 		s.inviteFailure(w, r, err)

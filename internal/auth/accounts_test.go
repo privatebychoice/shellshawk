@@ -145,6 +145,12 @@ func TestInvitePermissions(t *testing.T) {
 	f := newFixture(t)
 	mod := f.user("mod1", perm.GroupModerator)
 	member := f.user("member1")
+	// "vips" grants nothing but opens group-only content: only its own
+	// members (and administrators) may invite into it.
+	if _, err := f.perms.CreateGroup(f.ctx, f.admin, "vips", ""); err != nil {
+		t.Fatal(err)
+	}
+	vipMod := f.user("mod2", perm.GroupModerator, "vips")
 
 	tests := []struct {
 		name  string
@@ -156,6 +162,9 @@ func TestInvitePermissions(t *testing.T) {
 		{"moderator, default group", mod, InviteOptions{}, nil},
 		{"moderator, moderator group", mod, InviteOptions{Groups: []string{perm.GroupModerator}}, nil},
 		{"moderator cannot invite admins", mod, InviteOptions{Groups: []string{perm.GroupAdmin}}, perm.ErrForbidden},
+		{"moderator not in vips cannot invite into it", mod, InviteOptions{Groups: []string{"vips"}}, perm.ErrForbidden},
+		{"moderator in vips invites into it", vipMod, InviteOptions{Groups: []string{"vips"}}, nil},
+		{"admin invites into any group", f.admin, InviteOptions{Groups: []string{"vips"}}, nil},
 		{"member cannot invite", member, InviteOptions{}, perm.ErrForbidden},
 		{"unknown group", f.admin, InviteOptions{Groups: []string{"nope"}}, perm.ErrNotFound},
 		{"too many uses", f.admin, InviteOptions{MaxUses: MaxInviteUses + 1}, ErrInviteOptions},

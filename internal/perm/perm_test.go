@@ -218,3 +218,64 @@ func TestRequireOutranks(t *testing.T) {
 		})
 	}
 }
+
+// TestGroupMembershipGate: group membership can open group-only content,
+// so managing a group's members needs membership of it as well as its
+// permissions; and nobody can weaken a group more powerful than they are.
+func TestGroupMembershipGate(t *testing.T) {
+	f := newFixture(t)
+	f.svc.Registry().Register("notes.read", "read notes")
+	admin := f.user("admin1", "active", GroupAdmin)
+	mk := func(name string, perms ...string) int64 {
+		t.Helper()
+		id, err := f.svc.CreateGroup(f.ctx, admin, name, "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, p := range perms {
+			if err := f.svc.Grant(f.ctx, admin, id, p); err != nil {
+				t.Fatal(err)
+			}
+		}
+		return id
+	}
+	mk("managers", GroupsManage, "notes.read")
+	vips := mk("vips")                     // grants nothing; guards content
+	readers := mk("readers", "notes.read") // grants only what managers hold
+	if err := f.svc.Grant(f.ctx, admin, f.group(GroupModerator), "notes.read"); err != nil {
+		t.Fatal(err)
+	}
+	mgr := f.user("mgr", "active", "managers")
+	vipMgr := f.user("vipmgr", "active", "managers", "vips")
+	vip := f.user("vip", "active", "vips")
+	outsider := f.user("outsider", "active", GroupMember)
+	adminVip := f.user("admin2", "active", GroupAdmin, "vips")
+
+	tests := []struct {
+		name string
+		do   func() error
+		want error
+	}{
+		{"manager cannot join a group they are not in", func() error { return f.svc.AddMember(f.ctx, mgr, vips, mgr) }, ErrForbidden},
+		{"manager cannot add others to it", func() error { return f.svc.AddMember(f.ctx, mgr, vips, outsider) }, ErrForbidden},
+		{"holding a group's permissions is not enough", func() error { return f.svc.AddMember(f.ctx, mgr, readers, mgr) }, ErrForbidden},
+		{"a member of the group adds others", func() error { return f.svc.AddMember(f.ctx, vipMgr, vips, outsider) }, nil},
+		{"an administrator adds to any group", func() error { return f.svc.AddMember(f.ctx, admin, readers, mgr) }, nil},
+		{"anyone with the permissions adds to member", func() error { return f.svc.AddMember(f.ctx, mgr, f.group(GroupMember), mgr) }, nil},
+		{"manager not in the group cannot remove from it", func() error { return f.svc.RemoveMember(f.ctx, mgr, vips, vip) }, ErrForbidden},
+		{"cannot remove someone who outranks you", func() error { return f.svc.RemoveMember(f.ctx, vipMgr, vips, adminVip) }, ErrForbidden},
+		{"a member of the group removes a peer", func() error { return f.svc.RemoveMember(f.ctx, vipMgr, vips, vip) }, nil},
+		{"cannot revoke from a group granting more than you hold", func() error { return f.svc.Revoke(f.ctx, mgr, f.group(GroupModerator), "notes.read") }, ErrForbidden},
+		{"revoke from a group within your permissions", func() error { return f.svc.Revoke(f.ctx, mgr, readers, "notes.read") }, nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if err := tt.do(); !errors.Is(err, tt.want) {
+				t.Errorf("err = %v, want %v", err, tt.want)
+			}
+		})
+	}
+	if ok, _ := f.svc.Has(f.ctx, f.user("check", "active", GroupModerator), "notes.read"); !ok {
+		t.Error("moderator group lost notes.read")
+	}
+}

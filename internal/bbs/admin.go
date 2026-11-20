@@ -91,7 +91,7 @@ func adminErrorMessage(err error) string {
 	case err == nil:
 		return ""
 	case errors.Is(err, perm.ErrForbidden):
-		return "You do not have permission to do that. It may involve permissions you do not hold yourself."
+		return "You do not have permission to do that. You can only change groups whose permissions you all hold, and only add or remove members of groups you are in yourself, and never someone holding permissions you lack."
 	case errors.Is(err, perm.ErrLastAdmin):
 		return "That would leave the BBS without an active administrator, so it was not done."
 	case errors.Is(err, perm.ErrProtected):
@@ -169,7 +169,7 @@ func (s *session) createInvite(ctx context.Context) error {
 				Min: form.Bound(1), Max: form.Bound(auth.MaxInviteTTL.Hours() / 24)},
 			{Name: "approval", Label: "New accounts need approval", Kind: form.Boolean},
 			{Name: "groups", Label: "Groups", Kind: form.Choice, Multi: true, Options: opts,
-				Help: "Groups new accounts join. None selected means member. You can only choose groups whose permissions you have."},
+				Help: "Groups new accounts join. None selected means member. You can only choose groups whose permissions you have, and apart from member, only groups you are in yourself."},
 			{Name: "note", Label: "Note for administrators", Kind: form.SingleLine, MaxLen: 200, Help: "Optional, e.g. who it is for. Never shown to the invitee."},
 		},
 	}
@@ -192,7 +192,7 @@ func (s *session) createInvite(ctx context.Context) error {
 			RequireApproval: v["approval"] == form.True, Groups: gs, Note: v["note"],
 		})
 		if errors.Is(err, perm.ErrForbidden) && len(gs) > 0 {
-			errs = form.Errors{"groups": errors.New("you cannot invite into a group with permissions you do not have")}
+			errs = form.Errors{"groups": errors.New("you cannot invite into a group you are not in, or one with permissions you do not have")}
 			continue
 		}
 		if err != nil {

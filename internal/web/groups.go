@@ -15,7 +15,9 @@ import (
 
 // Groups and permissions, for holders of core.groups.manage. perm.Service
 // checks the permission, that the actor holds every permission involved,
-// the built-in groups and the last-administrator guard, and audits.
+// that only members of a group (or administrators) change its members
+// (perm.MayAssign), the rank rule, the built-in groups and the
+// last-administrator guard, and audits.
 
 var groupNotices = map[string]string{
 	"created": "The group has been created. Grant it permissions below.",
@@ -185,7 +187,7 @@ func (s *Server) groupDone(w http.ResponseWriter, r *http.Request, sess *websess
 func groupErrorText(err error) (string, int) {
 	switch {
 	case errors.Is(err, perm.ErrForbidden):
-		return "You do not have permission to do that. It may involve permissions you do not hold yourself.", http.StatusForbidden
+		return "You do not have permission to do that. You can only change groups whose permissions you all hold, and only add or remove members of groups you are in yourself, and never someone holding permissions you lack.", http.StatusForbidden
 	case errors.Is(err, perm.ErrLastAdmin):
 		return "That would leave the BBS without an active administrator, so it was not done.", http.StatusConflict
 	case errors.Is(err, perm.ErrProtected):

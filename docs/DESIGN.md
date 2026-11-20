@@ -157,10 +157,16 @@ to use. The web navigation follows the same tree (§11).
 - Built-in groups: `admin`, `moderator`, `member`. Accounts awaiting approval
   have status `pending` (rather than a `pending` group) and hold no
   permissions until approved; status `locked` blocks all logins.
-- Escalation rules: an actor can only grant permissions, assign groups, or
-  attach groups to invites if they hold every permission involved, and can
-  only approve/reject/lock accounts whose permissions they fully hold. The
-  last active administrator cannot be removed or locked.
+- Escalation rules: an actor can only grant permissions they hold, and
+  only revoke from or delete a group whose permissions they all hold.
+  Group membership is itself a capability (group-only conferences and
+  channels), so adding or removing members, and attaching a group to an
+  invite, also require being in that group (`perm.MayAssign`);
+  administrators always may, and the built-in `member` group (the default
+  for new accounts) needs only its permissions. Removing a member also
+  needs the rank rule (`RequireOutranks`). An actor can only
+  approve/reject/lock accounts whose permissions they fully hold. The last
+  active administrator cannot be removed or locked.
 - Locking an account publishes `user.locked`, and rejecting a pending one
   `user.rejected`; on either, `sessions.Service` ends every open SSH
   connection of the account (`presence.Conns.EndUser`) with a
@@ -833,7 +839,8 @@ generic renderer), `POST /admin/groups/new`, `GET /admin/groups/{id}`, and
 POSTs `/grant`, `/revoke` (`perm=`), `/members/add` (`username=`),
 `/members/remove` (`user=<id>`) and `/delete` (ticked box), for holders of
 `core.groups.manage`. `perm.Service` enforces escalation (only what the
-actor holds), built-in group protection and the last-administrator guard,
+actor holds; members only of groups the actor is in, see §4), built-in
+group protection and the last-administrator guard,
 and audits; refusals come back on the group's page. Revoking and removing
 are single buttons, as over SSH, since both can be undone. Permissions a
 group still holds but no installed plugin provides are listed so they can

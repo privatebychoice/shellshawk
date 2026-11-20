@@ -135,7 +135,7 @@ func (s *Service) CreateInvite(ctx context.Context, actor int64, opt InviteOptio
 		if !actorPerms.Has(perm.InviteCreate) {
 			return perm.ErrForbidden
 		}
-		groupIDs, err := s.resolveInviteGroups(ctx, opt.Groups, actorPerms)
+		groupIDs, err := s.resolveInviteGroups(ctx, tx, actor, opt.Groups, actorPerms)
 		if err != nil {
 			return err
 		}
@@ -150,7 +150,10 @@ func (s *Service) CreateInvite(ctx context.Context, actor int64, opt InviteOptio
 	return code, inv, err
 }
 
-func (s *Service) resolveInviteGroups(ctx context.Context, names []string, actorPerms perm.Set) ([]int64, error) {
+// resolveInviteGroups returns the IDs of the groups an invite puts its
+// accounts in (member by default). The actor must be able to assign each
+// one (perm.MayAssign).
+func (s *Service) resolveInviteGroups(ctx context.Context, tx *sql.Tx, actor int64, names []string, actorPerms perm.Set) ([]int64, error) {
 	if len(names) == 0 {
 		names = []string{perm.GroupMember}
 	}
@@ -160,10 +163,12 @@ func (s *Service) resolveInviteGroups(ctx context.Context, names []string, actor
 		if err != nil {
 			return nil, err
 		}
-		for _, p := range g.Permissions {
-			if !actorPerms.Has(p) {
-				return nil, fmt.Errorf("%w: group %q grants %s", perm.ErrForbidden, g.Name, p)
-			}
+		ok, err := perm.MayAssign(ctx, tx, actor, actorPerms, g)
+		if err != nil {
+			return nil, err
+		}
+		if !ok {
+			return nil, fmt.Errorf("%w: you cannot invite into group %q", perm.ErrForbidden, g.Name)
 		}
 		ids = append(ids, g.ID)
 	}

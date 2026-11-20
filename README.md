@@ -180,7 +180,21 @@ main menu, showing only the sections they may use:
 | Transitions (text art between the menu and applications) | `core.transitions.manage` |
 | Audit log | `core.audit.view` |
 
-`admin` has every permission. The member menu can be rearranged, renamed,
+`admin` has every permission. Staff can never hand out more than they
+have:
+
+- **Permissions:** you can only grant a permission you hold, and only
+  revoke from a group whose permissions you all hold.
+- **Group members and invites:** being in a group can open group-only
+  conferences and channels, so to add someone to a group, remove someone
+  from it, or create an invite into it, you must hold every permission it
+  grants **and** be in the group yourself. Administrators can always; the
+  built-in `member` group, which new accounts join, needs only its
+  permissions.
+- **Accounts:** you cannot act on an account holding permissions you lack,
+  and the last active administrator is always kept.
+
+The member menu can be rearranged, renamed,
 split into submenus and restricted by permission; *Administration* can be
 moved or renamed but never deleted. There is no Log out entry: `q` (or Esc)
 in the main menu logs out.
@@ -399,8 +413,8 @@ on) are left out, and so is a submenu with nothing in it for the web.
 | `/p/polls/` | Open polls (pinned first) and closed polls; vote or change your vote, and see results under the same rules as over SSH |
 | `/p/wall/` | The wall (read-only); the message of the day is on `/home` |
 | `/admin/users` | Users, for staff with `core.users.manage` or `core.groups.manage` (listed under *Administration* only for them): find accounts by the start of the username, then on an account's page see its status, groups, registration, last login and any erasure request. With `core.users.manage`: lock or unlock it, cancel an erasure request (each with a ticked box), and show its email address (a button; the address appears on the page that answers it and the viewing is audited). With `core.groups.manage`: add it to or remove it from a group. You cannot lock yourself, act on an account holding permissions you lack, or remove the last active administrator |
-| `/admin/groups` | Groups and permissions, for staff with `core.groups.manage` (listed under *Administration* only for them): every group with its permission and member counts, and creating a group. A group's page lists its permissions (Revoke) with a Grant select, its members (Remove) with an Add field taking a username, and Delete for groups that are not built in (with a ticked box). You can only grant or attach what you hold yourself; built-in groups and the last active administrator are protected |
-| `/admin/invites` | Invites, for staff with `core.invite.create` (their own) or `core.invite.manage` (all, with who created each): state, uses, expiry and note, and Revoke for usable ones (with a ticked confirmation box). **Create an invite** (`core.invite.create`) takes the same options as over SSH (uses, days, approval, groups, note) and shows the new code once, on the page that answers the form: it is never put in a URL and cannot be shown again. You can only attach groups whose permissions you hold |
+| `/admin/groups` | Groups and permissions, for staff with `core.groups.manage` (listed under *Administration* only for them): every group with its permission and member counts, and creating a group. A group's page lists its permissions (Revoke) with a Grant select, its members (Remove) with an Add field taking a username, and Delete for groups that are not built in (with a ticked box). The rules above apply: you can only grant what you hold, revoke from groups whose permissions you all hold, and add or remove members of groups you are in; built-in groups and the last active administrator are protected |
+| `/admin/invites` | Invites, for staff with `core.invite.create` (their own) or `core.invite.manage` (all, with who created each): state, uses, expiry and note, and Revoke for usable ones (with a ticked confirmation box). **Create an invite** (`core.invite.create`) takes the same options as over SSH (uses, days, approval, groups, note) and shows the new code once, on the page that answers the form: it is never put in a URL and cannot be shown again. You can only attach groups whose permissions you hold and, apart from `member`, that you are in yourself |
 | `/admin/pending` | Accounts awaiting approval, for staff with `core.users.approve` (administrators and moderators; linked as *Approvals* only for them): username and registration time, never the email address. Approve with one button; Reject (which deletes the account and its keys, and ends its connections) needs a ticked confirmation box. Nobody can approve or reject an account that would receive permissions they lack |
 | `/admin/audit` | Audit log, for staff with `core.audit.view` (listed under *Administration* only for them): administrative actions as a table, newest first, 100 to a page with Older and Newest links; times in UTC. Read-only |
 | `/admin/transitions` | Transition screens, for staff with `core.transitions.manage` (listed under *Administration* only for them): the profiles with their file counts and what they show, Add a profile, and a table of every menu item (plus the default) with a select each for opening it and returning to the menu (the default, nothing, or a profile), saved together. A profile's page lists its files, uploads a file (UTF-8 or code page 437, up to 64 KiB, cleaned as over SFTP; a file with the same name is replaced), writes a new one in a monospace text box, sets the name and which file it shows, and deletes the profile (with a ticked box). A file's page shows a preview, edits it and deletes it (with a ticked box). Same rules as *Administration → Transitions* |
