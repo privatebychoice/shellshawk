@@ -88,7 +88,9 @@ erased. It can run while the server is running.
 
 Passwords must be 15–256 characters (NIST SP 800-63B-4, single-factor),
 hashed with argon2id. Password attempts are rate-limited: 5 failures per
-account and 10 per IP address in 15 minutes. Invite codes are 128-bit,
+account and 10 per IP address in 15 minutes (an IPv6 address counts with
+the rest of its /64 network). Logging in successfully clears only that
+account's count, never the address's. Invite codes are 128-bit,
 stored only as SHA-256 hashes, and shown once.
 
 A password can add a key, so change it if it may have leaked: *SSH keys →

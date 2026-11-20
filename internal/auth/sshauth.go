@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"errors"
 	"log/slog"
+	"net/netip"
 	"strconv"
 	"time"
 
@@ -18,6 +19,11 @@ import (
 // clients routinely offer several keys before the right one, and a key
 // cannot be guessed. Invite logins are limited per IP only, so one abuser
 // cannot block registration for everyone.
+//
+// A success never clears the per-IP count: it proves only that the
+// client knew one password (or held one invite), so clearing it would let
+// one address try 9 guesses, log in to an account of its own, and repeat.
+// The per-account count is cleared when that account's password is right.
 const (
 	ipFailLimit   = 10
 	userFailLimit = 5
@@ -93,7 +99,7 @@ func (a *SSHAuthenticator) Password(c sshd.ConnInfo, password []byte) (sshd.Iden
 	ctx, cancel := context.WithTimeout(context.Background(), authDBTimeout)
 	defer cancel()
 
-	ipKey := "ip:" + c.RemoteIP.String()
+	ipKey := IPLimitKey(c.RemoteIP)
 	if a.ipLim.Blocked(ipKey) {
 		a.log.Info("password login rate-limited", "conn_id", c.ConnID, "scope", "ip")
 		return sshd.Identity{}, sshd.ErrDenied
@@ -107,7 +113,6 @@ func (a *SSHAuthenticator) Password(c sshd.ConnInfo, password []byte) (sshd.Iden
 			a.log.Info("invite login refused", "conn_id", c.ConnID)
 			return sshd.Identity{}, sshd.ErrDenied
 		}
-		a.ipLim.Reset(ipKey)
 		a.log.Info("invite login accepted", "conn_id", c.ConnID)
 		return sshd.Identity{Mode: sshd.ModeRegister, InviteCode: code}, nil
 	}
@@ -145,10 +150,23 @@ func (a *SSHAuthenticator) Password(c sshd.ConnInfo, password []byte) (sshd.Iden
 		a.log.Info("password login refused: account locked", "conn_id", c.ConnID, "user_id", userID)
 		return sshd.Identity{}, sshd.ErrDenied
 	}
-	a.ipLim.Reset(ipKey)
 	a.usrLim.Reset(userKey)
 	a.log.Info("password login accepted for key management", "conn_id", c.ConnID, "user_id", userID)
 	return sshd.Identity{UserID: strconv.FormatInt(userID, 10), Mode: sshd.ModeAddKey}, nil
+}
+
+// IPLimitKey is the rate-limit key for a client address. An IPv6 client
+// is counted by its /64 network, the block one site or customer normally
+// gets, so changing the address within it does not reset the count; an
+// IPv4 (or IPv4-mapped) client by its address.
+func IPLimitKey(ip netip.Addr) string {
+	ip = ip.Unmap()
+	if ip.Is6() {
+		if p, err := ip.Prefix(64); err == nil {
+			return "ip6:" + p.String()
+		}
+	}
+	return "ip:" + ip.String()
 }
 
 // RecordLogin stamps last-login times once a connection is fully

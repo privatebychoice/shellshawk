@@ -193,3 +193,62 @@ func TestLimiter(t *testing.T) {
 		t.Fatal("blocked after Reset")
 	}
 }
+
+// TestSSHIPLimitNotResetBySuccess: logging in successfully (with a
+// password or an invite) does not clear the per-IP failure count, so one
+// address cannot spray guesses by logging in to its own account between
+// rounds; and IPv6 clients are counted per /64.
+func TestSSHIPLimitNotResetBySuccess(t *testing.T) {
+	tests := []struct {
+		name      string
+		ip, other string // other: an address in the same limit bucket
+		success   func(f *fixture, a *SSHAuthenticator, ip string) error
+	}{
+		{"password login", "192.0.2.50", "192.0.2.50", func(f *fixture, a *SSHAuthenticator, ip string) error {
+			_, err := a.Password(conn("own", ip), []byte(testPassword))
+			return err
+		}},
+		{"invite login", "192.0.2.51", "192.0.2.51", func(f *fixture, a *SSHAuthenticator, ip string) error {
+			_, err := a.Password(conn("new", ip), []byte(f.invite(f.admin, InviteOptions{})))
+			return err
+		}},
+		{"IPv6, same /64", "2001:db8:1:2::10", "2001:db8:1:2:ffff::99", func(f *fixture, a *SSHAuthenticator, ip string) error {
+			_, err := a.Password(conn("own", ip), []byte(testPassword))
+			return err
+		}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			f := newFixture(t)
+			a := NewSSHAuthenticator(f.svc)
+			f.user("own")
+			for i := range ipFailLimit - 1 {
+				a.Password(conn("victim"+strconv.Itoa(i), tt.ip), []byte("wrong password here"))
+			}
+			if err := tt.success(f, a, tt.ip); err != nil {
+				t.Fatalf("own login refused: %v", err)
+			}
+			// One more failure reaches the limit; then even a right
+			// password from the same bucket is refused.
+			a.Password(conn("victim", tt.other), []byte("wrong password here"))
+			if _, err := a.Password(conn("own", tt.other), []byte(testPassword)); err == nil {
+				t.Error("the success reset the per-IP count")
+			}
+		})
+	}
+}
+
+func TestIPLimitKey(t *testing.T) {
+	tests := []struct{ ip, want string }{
+		{"192.0.2.7", "ip:192.0.2.7"},
+		{"::ffff:192.0.2.7", "ip:192.0.2.7"},
+		{"2001:db8:1:2:3:4:5:6", "ip6:2001:db8:1:2::/64"},
+		{"2001:db8:1:2::", "ip6:2001:db8:1:2::/64"},
+		{"2001:db8:1:3::1", "ip6:2001:db8:1:3::/64"},
+	}
+	for _, tt := range tests {
+		if got := IPLimitKey(netip.MustParseAddr(tt.ip)); got != tt.want {
+			t.Errorf("IPLimitKey(%s) = %q, want %q", tt.ip, got, tt.want)
+		}
+	}
+}

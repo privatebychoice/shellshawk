@@ -70,7 +70,10 @@ These are invariants, enforced in code and covered by tests:
      detail.
    - Max **3** public keys per user.
    - Rate limiting and lockout on failed attempts per IP and per account, kept
-     in memory plus an audit row.
+     in memory plus an audit row. IPv6 clients are counted per /64
+     (`auth.IPLimitKey`). A successful password or invite login clears the
+     account's count but never the IP's, so one address cannot alternate
+     guesses with logins to an account of its own.
 5. **Input sanitisation.** All user content is stored as markdown source and
    rendered through one renderer (§8) with raw HTML disabled. Terminal output
    strips all C0/C1 control characters and escape sequences from user content
