@@ -76,12 +76,12 @@ func (p *Plugin) run(ctx context.Context, s plugin.Session) error {
 			actions = append(actions, tui.Action{Key: 'n', Value: "new", Label: "Start a private chat"})
 		}
 		if set.Has(PermCreate) && set.Has(PermPage) && p.h.Notify != nil {
-			actions = append(actions, tui.Action{Key: 'p', Value: "page", Label: "Page someone"})
+			actions = append(actions, tui.Action{Key: 'a', Value: "page", Label: "Page someone"})
 		}
 		if set.Has(PermModerate) {
 			actions = append(actions, tui.Action{Key: 'm', Value: "manage", Label: "Manage channels"})
 		}
-		intro := "[P] channel, [A] private chat, [T] conference thread chat."
+		intro := "[C] channel, [P] private chat, [T] conference thread chat."
 		if len(chans) == 0 {
 			intro = "There are no channels you can join."
 		}

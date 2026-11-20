@@ -633,7 +633,7 @@ func TestChatBetweenTwoSessions(t *testing.T) {
 	a := e.interactive(t, "lee", ssh.PublicKeys(leeKey))
 	a.waitFor("7. Chat")
 	a.send("7\r")
-	a.waitFor("#lobby [P]")
+	a.waitFor("#lobby [C]")
 	a.send("1\r")
 	a.waitFor("This chat is logged")
 
@@ -641,7 +641,7 @@ func TestChatBetweenTwoSessions(t *testing.T) {
 	b := e.interactive(t, "mia", ssh.PublicKeys(miaKey))
 	b.waitFor("6. Chat")
 	b.send("6\r")
-	b.waitFor("#lobby [P] (1 here)")
+	b.waitFor("#lobby [C] (1 here)")
 	b.send("1\r")
 	a.waitFor("* mia joined")
 
@@ -656,7 +656,7 @@ func TestChatBetweenTwoSessions(t *testing.T) {
 	a.send("/kick mia\r")
 	a.waitFor("* mia was removed by lee")
 	b.waitFor("You were removed from this chat.")
-	b.waitFor("#lobby [P] (1 here)") // back at the channel list
+	b.waitFor("#lobby [C] (1 here)") // back at the channel list
 	a.waitFor("* mia left")
 }
 

@@ -209,16 +209,16 @@ type Channel struct {
 	Context       string
 }
 
-// Tag is the one-letter channel type shown in listings: [P] persistent,
-// [A] ad hoc (private), [T] thread.
+// Tag is the one-letter channel type shown in listings: [C] channel
+// (persistent), [P] private (ad hoc), [T] thread.
 func (c Channel) Tag() string {
 	switch c.Kind {
 	case KindAdHoc:
-		return "[A]"
+		return "[P]"
 	case KindThread:
 		return "[T]"
 	}
-	return "[P]"
+	return "[C]"
 }
 
 // KindName is the channel type in words.

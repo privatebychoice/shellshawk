@@ -316,14 +316,14 @@ every request, so locking an account takes effect immediately.
   your contacts and contact groups, and a member's profile with *Add to my
   contacts* and *Send a message*. Until privacy settings exist, online
   status is shown only between friends (mutual contacts).
-- **Chat**: live channels. `[P]` persistent channels are run by chat
+- **Chat**: live channels. `[C]` channels are run by chat
   moderators (who can limit them to one or more groups — members of any
   chosen group, plus administrators — and set how long the log is kept,
-  0 = not logged); `[A]` private chats are invite-only and can be
+  0 = not logged); `[P]` private chats are invite-only and can be
   started by any member; `[T]` thread chats belong to conference threads.
   *Find a channel* searches the names and topics of the channels you can
   join.
-  **Paging** asks someone to come and talk: *Page someone* (`p` in the
+  **Paging** asks someone to come and talk: *Page someone* (`a` in the
   Chat menu) opens a private chat `#talk-<you>-<them>` (the same one again
   next time, from either side), invites them, pages them and waits there
   for them; `/page USER` in any chat pages someone into that chat (a

@@ -164,15 +164,15 @@ func TestPageTUI(t *testing.T) {
 	f.Presence.Enter(f.bob)
 	f.Visibility(f.bob, privacy.Pages, privacy.Public)
 
-	// Chat menu: p Page someone; "nobody" is refused on the form; bob is
+	// Chat menu: a Page someone; "nobody" is refused on the form; bob is
 	// paged; Enter dismisses the message; alice waits in the talk chat and
 	// leaves; q.
-	s := f.Session(f.alice, strings.Join([]string{"p", "nobody", "bob", "", "/quit", "q"}, "\r")+"\r")
+	s := f.Session(f.alice, strings.Join([]string{"a", "nobody", "bob", "", "/quit", "q"}, "\r")+"\r")
 	if err := f.p.run(f.Ctx, s); err != nil {
 		t.Fatalf("run: %v\n%s", err, s.Out)
 	}
 	out := s.Out.String()
-	for _, want := range []string{"p Page someone", `No member called "nobody"`, "bob has been paged. Wait for them in #talk-alice-bob.", "#talk-alice-bob, private chat."} {
+	for _, want := range []string{"a Page someone", `No member called "nobody"`, "bob has been paged. Wait for them in #talk-alice-bob.", "#talk-alice-bob, private chat."} {
 		if !strings.Contains(out, want) {
 			t.Errorf("output missing %q\n%s", want, out)
 		}
