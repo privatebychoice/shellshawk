@@ -26,6 +26,7 @@ const (
 	KeyRemoved         = "key.removed"
 	PasswordChanged    = "password.changed"
 	LoginBlocked       = "login.blocked"
+	LoginSlowed        = "login.slowed"
 	InviteCreated      = "invite.created"
 	InviteRevoked      = "invite.revoked"
 	GroupCreated       = "group.created"

@@ -69,13 +69,23 @@ These are invariants, enforced in code and covered by tests:
      left open cannot be used), audited as `password.changed` with no
      detail.
    - Max **3** public keys per user.
-   - Rate limiting and lockout on failed attempts per IP and per account, kept
-     in memory (a password change clears the account's count,
-     `auth.Service.OnPasswordChanged`), with one `login.blocked` audit row
-     each time an account or an address reaches its limit (target `user` with the account ID, or 0
-     for a name that is no account; or `address`, never the address
-     itself; detail `ssh password`, `ssh invite` or `web code`). Once per
-     block rather than per attempt, so guessing cannot fill the audit log. IPv6 clients are counted per /64
+   - Rate limiting on failed attempts per IP and per account, kept in
+     memory (a password change clears the account's count,
+     `auth.Service.OnPasswordChanged`). An address is blocked at its limit,
+     with one `login.blocked` audit row (target `address`, never the
+     address itself; detail `ssh password`, `ssh invite` or `web code`).
+     An account is never blocked, since that would let anyone stop a
+     member who lost their key from adding one: past 5 wrong passwords in
+     the window, each attempt waits before the check (`passwordDelay`: 2 s
+     doubling to 30 s, so three prompts fit in the 120 s handshake), and
+     the right password still works. Attempts are counted before the wait
+     (`Limiter.Attempt`), so parallel connections all get the longer
+     delays; guessing from many addresses is bounded by the per-address
+     limit and the connection limit. One `login.slowed` row (target `user`
+     with the account ID, or 0 for a name that is no account or an erased
+     one) marks the start. Once per window rather than per attempt, so
+     guessing cannot fill the audit log. An erased account's name is
+     checked against the dummy hash, like an unknown one. IPv6 clients are counted per /64
      (`auth.IPLimitKey`). A successful password or invite login clears the
      account's count but never the IP's, so one address cannot alternate
      guesses with logins to an account of its own.
@@ -155,9 +165,10 @@ type Manifest struct {
 - **Settings**: the manifest declares settings using the standard form controls
   (§7), so the admin TUI can render a settings screen for any plugin without
   plugin-specific UI code.
-- Plugins publish/subscribe to an in-process event bus (e.g.
-  `user.erased`, `user.renamed`, `group.changed`) — this is how Right to Forget
-  reaches plugin data (§5).
+- Plugins publish/subscribe to an in-process event bus (`internal/events`:
+  `user.registered`, `user.approved`, `user.rejected`, `user.locked`,
+  `user.unlocked`, `user.erasure_requested`, `user.erased`) — this is how
+  Right to Forget reaches plugin data (§5).
 
 Implementation notes (stage 6): `plugin.Manifest` carries the ID,
 permissions (each with optional default groups, granted once and never
@@ -983,7 +994,7 @@ audits, as for SSH and SFTP.
 | **Messages** | Subject + markdown body, threaded replies, per-user unread/read/deleted counters (computed, with a restorable Deleted folder; copies there are removed permanently after an admin-set period, default 30 days, checked hourly, or sooner by the member — one message or the whole folder; a message's text is deleted once no recipient copy and no Sent copy remain, including after the sender's erasure), recipients by username or contact group, admin-set limits (recipients, per hour, length), read-only SFTP `/messages/{inbox,sent}`. Honouring the recipient's DM privacy setting arrives with the privacy settings (stage 9). Each recipient but the sender gets a `messages:new` notification (§6.6). |
 | **User list** | All users (respecting privacy), my contacts, contact groups, online now. Stage 8: shows usernames and join dates only; online status (in-memory presence of open BBS sessions) only between friends until the privacy settings define it. |
 | **Message of the day** | Added after stage 10. One markdown message (`motd_message`, versioned) set by `motd.edit` (moderators by default). Shown once after SSH login via the plugin `OnLogin` hook until the member has seen the current version (`motd_seen`); clearing it bumps the version so a later message is shown again. Readable from the menu; shown on the web home page via the `WebHome` hook. Erasure forgets what a member saw and their name on the message. |
-| **Wall** | Added after stage 10. One line per member (`wall_entries`, keyed by user), at most 200 characters, emphasis only: `**bold**`, `*italic*`/`_italic_` (own parser: unmatched markers shown as typed, `_` only at word boundaries, backslash escapes, everything else plain text; HTML is escaped with only `<strong>`/`<em>` added). Expires an admin-set time after its last edit (default 168 hours), filtered on read and deleted at startup and hourly. `wall.write` for members, `wall.moderate` for moderators by default; administrators pick the groups for each from the Wall menu, which grants and revokes those permissions through the audited group permissions (the admin group is not offered: administrators can always do both). Username prefix search for finding lines and for moderators' removal. Read-only web page. |
+| **Wall** | Added after stage 10. One line per member (`wall_entries`, keyed by user), at most 200 characters, emphasis only: `**bold**`, `*italic*`/`_italic_` (own parser: unmatched markers shown as typed, `_` only at word boundaries, backslash escapes, everything else plain text; HTML is escaped with only `<strong>`/`<em>` added). Expires an admin-set time after its last edit (default 168 hours), filtered on read and deleted at startup and hourly. Lines of locked accounts (including ones waiting to be erased) are not shown, and come back on unlock. `wall.write` for members, `wall.moderate` for moderators by default; administrators pick the groups for each from the Wall menu, which grants and revokes those permissions through the audited group permissions (the admin group is not offered: administrators can always do both). Username prefix search for finding lines and for moderators' removal. Read-only web page. |
 | **Chat** | Channel types shown as a tag: `[C]` channel (persistent), `[T]` thread (conference), `[P]` private (ad hoc); a direct message between two members is a private chat with one invitee. Commands `/who /channels /join /part /topic /kick /invite /createchat /destroychat`. Logging on by default, stored in SQLite, downloadable over SFTP by permitted users. Retention **90 days** default, overridable per channel (0 = logging off). Web uses SSE (no third-party websocket libraries). |
 
 Each channel's join banner states whether it is logged and for how long. A

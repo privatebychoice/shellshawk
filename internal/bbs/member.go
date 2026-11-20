@@ -151,7 +151,7 @@ func (s *session) keys(ctx context.Context) error {
 // take over the password.
 func (s *session) changePassword(ctx context.Context) error {
 	title := s.Title("Change password")
-	if time.Since(s.started) > freshLogin {
+	if s.loginStale() {
 		return tui.Message(ctx, s.ui, title,
 			fmt.Sprintf("For your safety, changing your password needs a fresh login. Disconnect, log in again with your SSH key and come straight here within %d minutes.", int(freshLogin.Minutes())))
 	}

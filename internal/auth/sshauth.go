@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/netip"
 	"strconv"
+	"strings"
 	"time"
 
 	"golang.org/x/crypto/ssh"
@@ -24,12 +25,35 @@ import (
 // client knew one password (or held one invite), so clearing it would let
 // one address try 9 guesses, log in to an account of its own, and repeat.
 // The per-account count is cleared when that account's password is right.
+//
+// An account is never blocked: that would let anyone keep a member who has
+// lost their key from adding a new one. After userFailLimit wrong passwords
+// in the window, each further attempt for the account waits before it is
+// checked, 2 seconds doubling up to maxPasswordDelay, and the right
+// password still works after the wait. Attempts are counted before the
+// wait, so parallel connections all get the longer delays. Guessing from
+// many addresses is bounded by the per-address limit and the connection
+// limit (each delayed attempt holds a connection).
 const (
-	ipFailLimit   = 10
-	userFailLimit = 5
-	failWindow    = 15 * time.Minute
-	authDBTimeout = 10 * time.Second
+	ipFailLimit      = 10
+	userFailLimit    = 5
+	failWindow       = 15 * time.Minute
+	maxPasswordDelay = 30 * time.Second // 3 prompts fit in the 120 s handshake
+	authDBTimeout    = 10 * time.Second
 )
+
+// passwordDelay is the wait before checking an account's n-th password
+// attempt in the window.
+func passwordDelay(n int) time.Duration {
+	over := n - userFailLimit
+	if over <= 0 {
+		return 0
+	}
+	if over > 5 {
+		return maxPasswordDelay
+	}
+	return min(2*time.Second<<(over-1), maxPasswordDelay)
+}
 
 // SSHAuthenticator implements sshd.Authenticator and sshd.LoginRecorder
 // against the account database.
@@ -38,6 +62,7 @@ type SSHAuthenticator struct {
 	ipLim  *Limiter
 	usrLim *Limiter
 	log    *slog.Logger
+	sleep  func(time.Duration) // time.Sleep; tests record the delays
 }
 
 var (
@@ -52,6 +77,7 @@ func NewSSHAuthenticator(svc *Service) *SSHAuthenticator {
 		ipLim:  NewLimiter(ipFailLimit, failWindow, svc.now),
 		usrLim: NewLimiter(userFailLimit, failWindow, svc.now),
 		log:    svc.log.With("component", "sshauth"),
+		sleep:  time.Sleep,
 	}
 	// A new password starts with a clean count for its account (the
 	// addresses' counts are kept: they are about who guessed, not what).
@@ -130,11 +156,14 @@ func (a *SSHAuthenticator) Password(c sshd.ConnInfo, password []byte) (sshd.Iden
 	}
 
 	userKey := "user:" + username
-	userOK, userLast := a.usrLim.Try(userKey)
-	if !userOK {
-		a.ipLim.Forgive(ipKey) // refused before any check: not a guess
-		a.log.Info("password login rate-limited", "conn_id", c.ConnID, "scope", "account")
-		return sshd.Identity{}, sshd.ErrDenied
+	n := a.usrLim.Attempt(userKey)
+	if d := passwordDelay(n); d > 0 {
+		a.log.Info("password login slowed", "conn_id", c.ConnID, "delay", d)
+		a.sleep(d)
+		// The database timeout starts after the wait.
+		waited, cancelWaited := context.WithTimeout(context.Background(), authDBTimeout)
+		defer cancelWaited()
+		ctx = waited
 	}
 
 	var userID int64
@@ -146,7 +175,12 @@ func (a *SSHAuthenticator) Password(c sshd.ConnInfo, password []byte) (sshd.Iden
 		a.log.Error("user lookup failed", "conn_id", c.ConnID, "err", err)
 		return sshd.Identity{}, sshd.ErrDenied
 	}
-	if !exists {
+	// An erased account has no password ("!erased", which no hash can
+	// match). It is checked against the dummy hash like an unknown name,
+	// so the time taken does not reveal tombstones and nothing is logged
+	// as an error.
+	erased := exists && strings.HasPrefix(hash, "!")
+	if !exists || erased {
 		hash = dummyHash // equalise timing so usernames cannot be probed
 	}
 	ok, err := VerifyPassword(ctx, password, hash)
@@ -154,16 +188,16 @@ func (a *SSHAuthenticator) Password(c sshd.ConnInfo, password []byte) (sshd.Iden
 		a.log.Error("password verification error", "conn_id", c.ConnID, "err", err)
 		ok = false
 	}
-	if !ok || !exists {
+	if !ok || !exists || erased {
 		if ipLast {
 			a.svc.AuditLoginBlocked(ctx, BlockedAddress, 0, "ssh password")
 		}
-		if userLast {
+		if n == userFailLimit {
 			var id int64
-			if exists {
+			if exists && !erased {
 				id = userID
 			}
-			a.svc.AuditLoginBlocked(ctx, BlockedAccount, id, "ssh password")
+			a.svc.AuditLoginSlowed(ctx, id, "ssh password")
 		}
 		a.log.Info("password login refused", "conn_id", c.ConnID)
 		return sshd.Identity{}, sshd.ErrDenied

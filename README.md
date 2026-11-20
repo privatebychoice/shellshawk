@@ -90,12 +90,16 @@ erased. It can run while the server is running.
 | Password | Username + account password | Add-a-key screen only — a password never grants BBS access |
 
 Passwords must be 15–256 characters (NIST SP 800-63B-4, single-factor),
-hashed with argon2id. Password attempts are rate-limited: 5 failures per
-account and 10 per IP address in 15 minutes (an IPv6 address counts with
-the rest of its /64 network). Logging in successfully clears only that
-account's count, never the address's. Each time an account or an address
-is blocked this way, the audit log records it once (`login.blocked`,
-naming the account; addresses are never recorded). Invite codes are 128-bit,
+hashed with argon2id. Password attempts are rate-limited. An IP address
+is blocked after 10 failures in 15 minutes (an IPv6 address counts with
+the rest of its /64 network). An account is never blocked, so nobody can
+keep you from adding a key: after 5 wrong passwords for it in 15 minutes,
+each further attempt waits before it is checked (2 seconds, doubling up to
+30), and the right password still works after the wait. Logging in
+successfully clears only that account's count, never the address's. The
+audit log records each blocked address once (`login.blocked`; the address
+itself is never recorded) and each account that starts being slowed once
+(`login.slowed`, naming the account). Invite codes are 128-bit,
 stored only as SHA-256 hashes, and shown once. An invite works only while
 its creator could still make it: if they are locked, lose
 `core.invite.create`, or could no longer assign one of its groups, their
@@ -105,7 +109,7 @@ A password can add a key, so change it if it may have leaked: *SSH keys →
 Change password*. For your safety this needs a key login less than 15
 minutes old (log in again if it says so); you do not need the old
 password. The old one stops working at once, the change is audited, and
-any block on the account from wrong passwords is cleared.
+any slowdown on the account from wrong passwords is cleared.
 Then check *View keys* and remove any key you do not recognise.
 
 Built-in groups: `admin` (`core.admin`, implies everything), `moderator`
@@ -414,7 +418,8 @@ groups hold that permission by default, and what can be done in it.
   age. Use `**bold**` and `*italic*` (or `_italic_`); nothing else is
   formatted. Edit or remove your line any time; it disappears 7 days after
   your last edit (administrators can change this under the Wall settings,
-  1 hour to 365 days) and is then deleted. *Find a member's line*
+  1 hour to 365 days) and is then deleted. Lines of locked accounts are
+  hidden until they are unlocked. *Find a member's line*
   searches by username (or the start of one); moderators use the same
   search to remove a line. `wall.write` goes to members and
   `wall.moderate` (remove anyone's line) to moderators by default;
@@ -576,6 +581,22 @@ shellshawk makes no outbound network requests.
 
 The build number is the third part of the version (`1.0.x`), shown in the
 web footer and at `/version`. Run `make bump` before each deployment.
+
+### Unreleased
+
+- **Wrong SSH passwords slow an account down instead of blocking it.**
+  After 5 in 15 minutes, each further password attempt for that account
+  waits 2 seconds, doubling up to 30, and the right password still works,
+  so nobody can stop a member who lost their key from adding a new one.
+  Addresses are still blocked after 10 failures. The audit log records
+  `login.slowed` (once per account and window) instead of `login.blocked`
+  for accounts.
+- The wall hides lines from locked accounts, including ones waiting to be
+  erased; they come back if the account is unlocked.
+- A password login with an erased account's name is answered like an
+  unknown name (same time, nothing logged as an error).
+- `pbc-classification` updated to commit `5030ba2` (Go 1.27; no code
+  changes).
 
 ### 1.0.2 (2026-11-20)
 

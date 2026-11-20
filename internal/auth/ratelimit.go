@@ -92,7 +92,27 @@ func (l *Limiter) Try(key string) (ok, reachedLimit bool) {
 	return true, e.failures == l.max
 }
 
-// Forgive takes back an attempt counted by Try that succeeded.
+// Attempt counts an attempt for key, like Try, but never refuses: it
+// returns how many attempts key has had in the window, this one included,
+// for callers that slow attempts down rather than block them. Forgive and
+// Reset work as for Try.
+func (l *Limiter) Attempt(key string) int {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	now := l.now()
+	e, found := l.entries[key]
+	if !found || now.Sub(e.start) >= l.window {
+		if !found && len(l.entries) >= maxLimiterEntries {
+			l.prune(now)
+		}
+		e = &limitEntry{start: now}
+		l.entries[key] = e
+	}
+	e.failures++
+	return e.failures
+}
+
+// Forgive takes back an attempt counted by Try or Attempt that succeeded.
 func (l *Limiter) Forgive(key string) {
 	l.mu.Lock()
 	defer l.mu.Unlock()

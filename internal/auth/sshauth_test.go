@@ -1,8 +1,12 @@
 package auth
 
 import (
+	"bytes"
+	"fmt"
+	"log/slog"
 	"net/netip"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -116,23 +120,66 @@ func TestSSHPassword(t *testing.T) {
 	}
 }
 
+// recordDelays makes a's waits instant and returns the delays it asked for.
+func recordDelays(a *SSHAuthenticator) *[]time.Duration {
+	var d []time.Duration
+	a.sleep = func(x time.Duration) { d = append(d, x) }
+	return &d
+}
+
+func TestPasswordDelay(t *testing.T) {
+	tests := []struct {
+		n    int
+		want time.Duration
+	}{
+		{1, 0}, {userFailLimit, 0},
+		{userFailLimit + 1, 2 * time.Second}, {userFailLimit + 2, 4 * time.Second},
+		{userFailLimit + 3, 8 * time.Second}, {userFailLimit + 4, 16 * time.Second},
+		{userFailLimit + 5, maxPasswordDelay}, {userFailLimit + 6, maxPasswordDelay},
+		{1000, maxPasswordDelay},
+	}
+	for _, tt := range tests {
+		if got := passwordDelay(tt.n); got != tt.want {
+			t.Errorf("passwordDelay(%d) = %v, want %v", tt.n, got, tt.want)
+		}
+	}
+}
+
 func TestSSHPasswordRateLimits(t *testing.T) {
 	f := newFixture(t)
 	a := NewSSHAuthenticator(f.svc)
+	slept := recordDelays(a)
 	f.user("alice")
 
-	// Per-account: after userFailLimit failures even the right password is
-	// refused, from any IP, until the window passes.
+	// Per-account: after userFailLimit wrong passwords, from any addresses,
+	// further attempts wait longer and longer, but the account is never
+	// blocked: the right password still works after the wait.
 	for i := range userFailLimit {
 		a.Password(conn("alice", "192.0.2."+strconv.Itoa(10+i)), []byte("wrong password here"))
 	}
-	if _, err := a.Password(conn("alice", "192.0.2.99"), []byte(testPassword)); err == nil {
-		t.Error("account not rate-limited after repeated failures")
+	if len(*slept) != 0 {
+		t.Errorf("waited within the free attempts: %v", *slept)
+	}
+	for i := range 6 {
+		a.Password(conn("alice", "192.0.2."+strconv.Itoa(30+i)), []byte("wrong password here"))
+	}
+	want := []time.Duration{2 * time.Second, 4 * time.Second, 8 * time.Second, 16 * time.Second, maxPasswordDelay, maxPasswordDelay}
+	if fmt.Sprint(*slept) != fmt.Sprint(want) {
+		t.Errorf("delays = %v, want %v", *slept, want)
+	}
+	*slept = nil
+	if id, err := a.Password(conn("alice", "192.0.2.99"), []byte(testPassword)); err != nil || id.Mode != sshd.ModeAddKey {
+		t.Fatalf("right password while slowed = %+v, %v (the account must never be blocked)", id, err)
+	}
+	if fmt.Sprint(*slept) != fmt.Sprint([]time.Duration{maxPasswordDelay}) {
+		t.Errorf("right password waited %v, want the current delay", *slept)
+	}
+	*slept = nil
+	a.Password(conn("alice", "192.0.2.98"), []byte("wrong password here"))
+	if len(*slept) != 0 {
+		t.Errorf("the right password did not clear the count: waited %v", *slept)
 	}
 	f.clk.Advance(failWindow + time.Second)
-	if _, err := a.Password(conn("alice", "192.0.2.99"), []byte(testPassword)); err != nil {
-		t.Errorf("account still blocked after window: %v", err)
-	}
 
 	// Per-IP: invite guessing from one address is cut off; other addresses
 	// can still register.
@@ -268,10 +315,11 @@ func TestIPLimitKey(t *testing.T) {
 func TestLoginBlocksAudited(t *testing.T) {
 	f := newFixture(t)
 	a := NewSSHAuthenticator(f.svc)
+	recordDelays(a)
 	alice := f.user("alice")
 	rows := func() []audit.Entry {
 		t.Helper()
-		r, err := f.db.QueryContext(f.ctx, `SELECT target_type, target_id, detail FROM audit_log WHERE action = ? ORDER BY id`, audit.LoginBlocked)
+		r, err := f.db.QueryContext(f.ctx, `SELECT action, target_type, target_id, detail FROM audit_log WHERE action IN (?, ?) ORDER BY id`, audit.LoginBlocked, audit.LoginSlowed)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -280,7 +328,7 @@ func TestLoginBlocksAudited(t *testing.T) {
 		for r.Next() {
 			var e audit.Entry
 			var target string
-			r.Scan(&e.TargetType, &target, &e.Detail)
+			r.Scan(&e.Action, &e.TargetType, &target, &e.Detail)
 			e.TargetID, _ = strconv.ParseInt(target, 10, 64)
 			out = append(out, e)
 		}
@@ -295,8 +343,8 @@ func TestLoginBlocksAudited(t *testing.T) {
 		a.Password(conn("ghost"+strconv.Itoa(i), "198.51.100.9"), []byte("wrong password here"))
 	}
 	want := []audit.Entry{
-		{TargetType: BlockedAccount, TargetID: alice, Detail: "ssh password"},
-		{TargetType: BlockedAddress, Detail: "ssh password"},
+		{Action: audit.LoginSlowed, TargetType: BlockedAccount, TargetID: alice, Detail: "ssh password"},
+		{Action: audit.LoginBlocked, TargetType: BlockedAddress, Detail: "ssh password"},
 	}
 	got := rows()
 	if len(got) != len(want) {
@@ -348,29 +396,49 @@ func TestLimiterTry(t *testing.T) {
 	}
 }
 
-// TestPasswordChangeClearsAccountCount: once an account is blocked by
-// wrong passwords, changing the password clears its count, so the new one
-// works at once; other accounts' counts are untouched.
+// TestPasswordChangeClearsAccountCount: once an account is slowed by wrong
+// passwords, changing the password clears its count, so the new one works
+// without waiting; other accounts' counts are untouched.
 func TestPasswordChangeClearsAccountCount(t *testing.T) {
 	f := newFixture(t)
 	a := NewSSHAuthenticator(f.svc)
+	slept := recordDelays(a)
 	alice := f.user("alice")
 	f.user("bob")
 	for i := range userFailLimit {
 		a.Password(conn("alice", "192.0.2."+strconv.Itoa(10+i)), []byte("wrong password here"))
 		a.Password(conn("bob", "198.51.100."+strconv.Itoa(10+i)), []byte("wrong password here"))
 	}
-	if _, err := a.Password(conn("alice", "203.0.113.1"), []byte(testPassword)); err == nil {
-		t.Fatal("alice not blocked before the change")
-	}
 	const fresh = "a brand new long passphrase"
 	if err := f.svc.ChangePassword(f.ctx, alice, fresh); err != nil {
 		t.Fatal(err)
 	}
-	if id, err := a.Password(conn("alice", "203.0.113.1"), []byte(fresh)); err != nil || id.Mode != sshd.ModeAddKey {
-		t.Errorf("new password right after the change = %+v, %v", id, err)
+	if id, err := a.Password(conn("alice", "203.0.113.1"), []byte(fresh)); err != nil || id.Mode != sshd.ModeAddKey || len(*slept) != 0 {
+		t.Errorf("new password right after the change = %+v, %v, waited %v", id, err, *slept)
 	}
-	if _, err := a.Password(conn("bob", "203.0.113.2"), []byte(testPassword)); err == nil {
-		t.Error("bob's block was cleared by alice's change")
+	if a.Password(conn("bob", "203.0.113.2"), []byte(testPassword)); len(*slept) != 1 {
+		t.Errorf("bob's count was cleared by alice's change: waited %v", *slept)
+	}
+}
+
+// TestErasedAccountPassword: an erased account's name is answered like an
+// unknown one (checked against the dummy hash, so it takes as long), and
+// nothing is logged as an error.
+func TestErasedAccountPassword(t *testing.T) {
+	f := newFixture(t)
+	a := NewSSHAuthenticator(f.svc)
+	var buf bytes.Buffer
+	a.log = slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	gone := f.user("gone")
+	if _, err := f.db.ExecContext(f.ctx, `UPDATE users SET password_hash = '!erased' WHERE id = ?`, gone); err != nil {
+		t.Fatal(err)
+	}
+	for _, pw := range []string{testPassword, "!erased", ""} {
+		if _, err := a.Password(conn("gone", "192.0.2.1"), []byte(pw)); err == nil {
+			t.Errorf("password %q let an erased account in", pw)
+		}
+	}
+	if strings.Contains(buf.String(), "level=ERROR") {
+		t.Errorf("an erased account's login was logged as an error:\n%s", buf.String())
 	}
 }

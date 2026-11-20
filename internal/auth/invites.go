@@ -148,7 +148,7 @@ func (s *Service) CreateInvite(ctx context.Context, actor int64, opt InviteOptio
 	var code string
 	var id int64
 	err := store.WithTx(ctx, s.db, func(tx *sql.Tx) error {
-		actorPerms, err := s.perms.Permissions(ctx, actor)
+		actorPerms, err := perm.PermissionsTx(ctx, tx, actor) // inside the transaction
 		if err != nil {
 			return err
 		}
@@ -421,7 +421,7 @@ func (s *Service) Invites(ctx context.Context, actor int64) ([]Invite, error) {
 // core.invite.manage.
 func (s *Service) RevokeInvite(ctx context.Context, actor, inviteID int64) error {
 	return store.WithTx(ctx, s.db, func(tx *sql.Tx) error {
-		set, err := s.perms.Permissions(ctx, actor)
+		set, err := perm.PermissionsTx(ctx, tx, actor) // inside the transaction
 		if err != nil {
 			return err
 		}

@@ -315,3 +315,41 @@ func TestAccessFormTUI(t *testing.T) {
 		}
 	}
 }
+
+// TestLockedAccountsHidden: lines from locked accounts (including ones
+// waiting to be erased) are not shown, and come back when unlocked.
+func TestLockedAccountsHidden(t *testing.T) {
+	f := setup(t)
+	for _, u := range []int64{f.alice, f.bob} {
+		if err := f.p.Set(f.Ctx, u, "hello"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	shown := func() map[int64]bool {
+		t.Helper()
+		es, err := f.p.Entries(f.Ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		m := map[int64]bool{}
+		for _, e := range es {
+			m[e.UserID] = true
+		}
+		return m
+	}
+	tests := []struct {
+		name   string
+		locked bool
+	}{{"locked: hidden", true}, {"unlocked: shown again", false}}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if err := f.Auth.SetLocked(f.Ctx, f.Admin, f.alice, tt.locked); err != nil {
+				t.Fatal(err)
+			}
+			got := shown()
+			if got[f.alice] == tt.locked || !got[f.bob] {
+				t.Errorf("shown = %v (alice locked %v)", got, tt.locked)
+			}
+		})
+	}
+}

@@ -5,7 +5,7 @@ go 1.27
 require (
 	github.com/pkg/sftp v1.13.12
 	github.com/yuin/goldmark v1.8.7
-	go.privatebychoice.com/pbc-classification v0.0.0-20260730135944-80efcd7146bf
+	go.privatebychoice.com/pbc-classification v0.0.0-20261117114245-5030ba219422
 	golang.org/x/crypto v0.59.0
 	modernc.org/sqlite v1.62.0
 )

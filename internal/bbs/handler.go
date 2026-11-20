@@ -51,9 +51,22 @@ type Handler struct {
 	Perms  *perm.Service
 	Prefs  *prefs.Service
 	Log    *slog.Logger
+	// Now is the clock for session ages (nil means time.Now); tests set it.
+	Now func() time.Time
 }
 
 var _ sshd.SessionHandler = (*Handler)(nil)
+
+func (h *Handler) now() time.Time {
+	if h.Now != nil {
+		return h.Now()
+	}
+	return time.Now()
+}
+
+// loginStale reports whether the session's key login is too old for
+// changing the password or erasing the account (freshLogin).
+func (s *session) loginStale() bool { return s.h.now().Sub(s.started) > freshLogin }
 
 // Conn is what a session needs from the transport. It exists so sessions can
 // be driven in tests without an SSH server.
@@ -114,7 +127,7 @@ func (h *Handler) Run(ctx context.Context, c Conn) {
 		}
 	}()
 
-	s := &session{h: h, conn: c, t: term.New(c.RW, c.RW, c.PTY != nil, size, resize), log: log, name: h.Settings.BBSName(ctx), started: time.Now()}
+	s := &session{h: h, conn: c, t: term.New(c.RW, c.RW, c.PTY != nil, size, resize), log: log, name: h.Settings.BBSName(ctx), started: h.now()}
 	if c.Identity.UserID != "" {
 		id, err := strconv.ParseInt(c.Identity.UserID, 10, 64)
 		if err != nil {

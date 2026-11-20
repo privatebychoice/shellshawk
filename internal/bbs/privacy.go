@@ -108,7 +108,7 @@ func (s *session) editVisibility(ctx context.Context) error {
 }
 
 func (s *session) eraseAccount(ctx context.Context) error {
-	if time.Since(s.started) > freshLogin {
+	if s.loginStale() {
 		return tui.Message(ctx, s.ui, s.Title("Erase my account"),
 			fmt.Sprintf("For your safety, erasing your account needs a fresh login. Disconnect, log in again with your SSH key and come straight here within %d minutes.", int(freshLogin.Minutes())))
 	}

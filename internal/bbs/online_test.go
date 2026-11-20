@@ -3,6 +3,7 @@ package bbs
 import (
 	"context"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -293,5 +294,53 @@ func TestChangePasswordScreen(t *testing.T) {
 		User: "mel", Auth: []ssh.AuthMethod{ssh.Password(testPassword)}, HostKeyCallback: ssh.FixedHostKey(e.hostKey), Timeout: 5 * time.Second,
 	}); err == nil {
 		t.Error("the old password still works")
+	}
+}
+
+// TestFreshLoginRequired: changing the password and erasing the account
+// need a key login from the last 15 minutes. An older session is told to
+// log in again and nothing changes; a session just inside the limit gets
+// the screen.
+func TestFreshLoginRequired(t *testing.T) {
+	tests := []struct {
+		name    string
+		age     time.Duration
+		keys    []string // from the main menu
+		want    string
+		changed bool // whether the screen may be used
+	}{
+		{"change password, stale", 16 * time.Minute, []string{"3", "4"}, "changing your password needs a fresh login", false},
+		{"change password, 14 minutes", 14 * time.Minute, []string{"3", "4"}, "New password", true},
+		{"erase, stale", 16 * time.Minute, []string{"2", "4"}, "erasing your account needs a fresh login", false},
+		{"erase, 14 minutes", 14 * time.Minute, []string{"2", "4"}, "erased after 14 days", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			e := startBBS(t)
+			_ = e.accessibleAdmin(t, "ada")
+			melKey := e.member(t, "ada", "mel")
+			ctx := context.Background()
+			mel, _ := e.auth.UserByUsername(ctx, "mel")
+			p := prefs.Default()
+			p.Profile = theme.ProfileAccessible
+			e.prefs.Set(ctx, mel.ID, p)
+			var offset atomic.Int64
+			base := time.Now()
+			e.handler.Now = func() time.Time { return base.Add(time.Duration(offset.Load())) }
+
+			l := e.interactive(t, "mel", ssh.PublicKeys(melKey))
+			l.waitFor("Main menu")
+			offset.Store(int64(tt.age))
+			for _, k := range tt.keys {
+				l.send(k + "\r")
+			}
+			l.waitFor(tt.want)
+			if got := strings.Contains(l.out.String(), "needs a fresh login"); got == tt.changed {
+				t.Errorf("refused = %v, want %v\n%s", got, !tt.changed, l.out.String())
+			}
+			if _, ok, _ := e.privacy.Erasure(ctx, mel.ID); ok {
+				t.Error("an erasure was requested just by opening the screen")
+			}
+		})
 	}
 }

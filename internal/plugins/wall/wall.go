@@ -189,11 +189,14 @@ func (p *Plugin) Remove(ctx context.Context, actor, owner int64) error {
 	return nil
 }
 
-// Entries returns the lines that have not expired, newest first.
+// Entries returns the lines that have not expired, newest first, from
+// active accounts only: a locked account's lines (including one waiting to
+// be erased) are hidden, and come back if it is unlocked.
 func (p *Plugin) Entries(ctx context.Context) ([]Entry, error) {
 	exp := p.Expiry(ctx)
-	rows, err := p.h.DB.QueryContext(ctx, `SELECT user_id, text, updated_at FROM wall_entries
-		WHERE updated_at >= ? ORDER BY updated_at DESC, user_id`, store.FormatTime(p.now().Add(-exp)))
+	rows, err := p.h.DB.QueryContext(ctx, `SELECT w.user_id, w.text, w.updated_at FROM wall_entries w
+		JOIN users u ON u.id = w.user_id AND u.status = 'active'
+		WHERE w.updated_at >= ? ORDER BY w.updated_at DESC, w.user_id`, store.FormatTime(p.now().Add(-exp)))
 	if err != nil {
 		return nil, fmt.Errorf("wall: list: %w", err)
 	}

@@ -222,6 +222,18 @@ func (s *Service) Reject(ctx context.Context, actor, userID int64) error {
 	return err
 }
 
+// AuditLoginSlowed records, once per window, that repeated wrong passwords
+// for an account mean its further password attempts are now delayed (it is
+// never blocked). userID is 0 if the name typed is not an account; the
+// name itself is not recorded.
+func (s *Service) AuditLoginSlowed(ctx context.Context, userID int64, via string) {
+	e := audit.Entry{Actor: audit.SystemActor, Action: audit.LoginSlowed, TargetType: BlockedAccount, TargetID: userID, Detail: via}
+	if err := audit.Record(ctx, s.db, s.now(), e); err != nil {
+		s.log.Error("audit login slowdown", "err", err)
+	}
+	s.log.Warn("password logins slowed after repeated failures", "user_id", userID, "via", via)
+}
+
 // Login-block scopes and methods for AuditLoginBlocked.
 const (
 	BlockedAccount = "user"    // an account's failure limit
