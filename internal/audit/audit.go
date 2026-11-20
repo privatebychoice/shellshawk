@@ -24,6 +24,7 @@ const (
 	UserUnlocked       = "user.unlocked"
 	KeyAdded           = "key.added"
 	KeyRemoved         = "key.removed"
+	PasswordChanged    = "password.changed"
 	InviteCreated      = "invite.created"
 	InviteRevoked      = "invite.revoked"
 	GroupCreated       = "group.created"

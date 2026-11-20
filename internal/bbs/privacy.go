@@ -12,9 +12,9 @@ import (
 	"go.privatebychoice.com/shellshawk/internal/tui"
 )
 
-// eraseFreshness is how recent the key login must be to request erasure
+// freshLogin is how recent the key login must be to request erasure
 // (docs/DESIGN.md §5.2: "requires re-authentication by public key").
-const eraseFreshness = 15 * time.Minute
+const freshLogin = 15 * time.Minute
 
 func (s *session) privacyMenu(ctx context.Context) error {
 	for {
@@ -108,9 +108,9 @@ func (s *session) editVisibility(ctx context.Context) error {
 }
 
 func (s *session) eraseAccount(ctx context.Context) error {
-	if time.Since(s.started) > eraseFreshness {
+	if time.Since(s.started) > freshLogin {
 		return tui.Message(ctx, s.ui, s.Title("Erase my account"),
-			fmt.Sprintf("For your safety, erasing your account needs a fresh login. Disconnect, log in again with your SSH key and come straight here within %d minutes.", int(eraseFreshness.Minutes())))
+			fmt.Sprintf("For your safety, erasing your account needs a fresh login. Disconnect, log in again with your SSH key and come straight here within %d minutes.", int(freshLogin.Minutes())))
 	}
 	u, err := s.h.Auth.UserByID(ctx, s.userID)
 	if err != nil {

@@ -255,3 +255,43 @@ func TestErasureEndsConnections(t *testing.T) {
 		t.Error("web session came back after the request was cancelled")
 	}
 }
+
+// TestChangePasswordScreen: a member changes their password from SSH keys
+// (a fresh key login), and the new password, not the old one, then opens
+// the add-key screen over a password login.
+func TestChangePasswordScreen(t *testing.T) {
+	e := startBBS(t)
+	_ = e.accessibleAdmin(t, "ada")
+	melKey := e.member(t, "ada", "mel")
+	ctx := context.Background()
+	mel, _ := e.auth.UserByUsername(ctx, "mel")
+	p := prefs.Default()
+	p.Profile = theme.ProfileAccessible
+	e.prefs.Set(ctx, mel.ID, p)
+
+	const newPassword = "my new and much longer passphrase"
+	// Main menu 3 = SSH keys; 4 = Change password; a repeat that does not
+	// match (only the repeat is asked again), then the right one; dismiss;
+	// q back; q logs out.
+	input := strings.Join([]string{"3", "4", newPassword, "something else entirely", newPassword, "", "q", "q"}, "\r") + "\r"
+	out := e.session(t, "mel", ssh.PublicKeys(melKey), input)
+	for _, want := range []string{"4. Change password", "does not match the new password", "Your password has been changed."} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q", want)
+		}
+	}
+	if strings.Contains(out, newPassword) {
+		t.Error("the password was echoed")
+	}
+	if t.Failed() {
+		t.Logf("output:\n%s", out)
+	}
+	if out := e.session(t, "mel", ssh.Password(newPassword), "\x03"); !strings.Contains(out, "Add SSH key") {
+		t.Errorf("new password does not open the add-key screen:\n%s", out)
+	}
+	if _, err := ssh.Dial("tcp", e.addr, &ssh.ClientConfig{
+		User: "mel", Auth: []ssh.AuthMethod{ssh.Password(testPassword)}, HostKeyCallback: ssh.FixedHostKey(e.hostKey), Timeout: 5 * time.Second,
+	}); err == nil {
+		t.Error("the old password still works")
+	}
+}

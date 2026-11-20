@@ -63,6 +63,11 @@ These are invariants, enforced in code and covered by tests:
    - Password auth exists **only** for: (a) the invite/registration flow and
      (b) a logged-in user adding a public key. A password login never grants
      the main menu. *(See §6 for the flow.)*
+   - Because a password can add a key, members can change it: *SSH keys →
+     Change password*, from a key login less than 15 minutes old (the same
+     freshness as erasure, so the old password is not needed and a session
+     left open cannot be used), audited as `password.changed` with no
+     detail.
    - Max **3** public keys per user.
    - Rate limiting and lockout on failed attempts per IP and per account, kept
      in memory plus an audit row.

@@ -148,6 +148,30 @@ func (s *Service) RemoveKey(ctx context.Context, userID, keyID int64) error {
 	})
 }
 
+// ChangePassword replaces an active member's password, checking the
+// policy. The caller makes sure the member is who they say (the BBS asks
+// for a fresh key login). It is audited without any detail.
+func (s *Service) ChangePassword(ctx context.Context, userID int64, pw string) error {
+	if err := ValidatePassword(pw); err != nil {
+		return err
+	}
+	hash, err := HashPassword(ctx, pw)
+	if err != nil {
+		return err
+	}
+	return store.WithTx(ctx, s.db, func(tx *sql.Tx) error {
+		res, err := tx.ExecContext(ctx, `UPDATE users SET password_hash = ? WHERE id = ? AND status = ?`, hash, userID, StatusActive)
+		if err != nil {
+			return fmt.Errorf("auth: change password: %w", err)
+		}
+		if n, _ := res.RowsAffected(); n == 0 {
+			return ErrNotFound
+		}
+		s.log.Info("password changed", "user_id", userID)
+		return audit.Record(ctx, tx, s.now(), audit.Entry{Actor: userID, Action: audit.PasswordChanged, TargetType: "user", TargetID: userID})
+	})
+}
+
 const keyColumns = `id, fingerprint, public_key, key_type, label, created_at, last_used_at`
 
 func scanKey(row interface{ Scan(...any) error }) (Key, error) {

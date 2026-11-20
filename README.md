@@ -91,11 +91,16 @@ hashed with argon2id. Password attempts are rate-limited: 5 failures per
 account and 10 per IP address in 15 minutes. Invite codes are 128-bit,
 stored only as SHA-256 hashes, and shown once.
 
+A password can add a key, so change it if it may have leaked: *SSH keys →
+Change password*. For your safety this needs a key login less than 15
+minutes old (log in again if it says so); you do not need the old
+password. The old one stops working at once, and the change is audited.
+Then check *View keys* and remove any key you do not recognise.
+
 Built-in groups: `admin` (`core.admin`, implies everything), `moderator`
-(approve accounts, create invites) and `member` (default). Nobody can grant a
-permission, assign a group, or attach a group to an invite unless they hold
-every permission involved, and the last active administrator cannot be
-removed or locked.
+(approve accounts, create invites) and `member` (default). Staff can never
+hand out more than they have; see *Administration* below for the rules.
+The last active administrator cannot be removed or locked.
 
 Locking an account ends its open SSH connections at once, telling the member
 why, and deletes its web sessions and unused web login codes, so unlocking

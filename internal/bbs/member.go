@@ -115,6 +115,8 @@ func (s *session) keys(ctx context.Context) error {
 		if len(keys) > 0 {
 			items = append(items, tui.MenuItem{Value: "remove", Label: "Remove a key"})
 		}
+		items = append(items, tui.MenuItem{Value: "password", Label: "Change password",
+			Help: "The password that adds a new key if you lose yours"})
 
 		choice, err := s.ui.Choose(ctx, tui.Menu{Title: s.Title("SSH keys"), Intro: intro, Items: items})
 		if errors.Is(err, tui.ErrCancelled) {
@@ -134,9 +136,59 @@ func (s *session) keys(ctx context.Context) error {
 			}
 		case "remove":
 			err = s.removeKey(ctx, keys)
+		case "password":
+			err = s.changePassword(ctx)
 		}
 		if err != nil && !errors.Is(err, tui.ErrCancelled) {
 			return err
+		}
+	}
+}
+
+// changePassword sets a new password. It needs a fresh key login, as
+// erasure does, rather than the old password: members log in by key and
+// often no longer know it, and a stale session left open cannot be used to
+// take over the password.
+func (s *session) changePassword(ctx context.Context) error {
+	title := s.Title("Change password")
+	if time.Since(s.started) > freshLogin {
+		return tui.Message(ctx, s.ui, title,
+			fmt.Sprintf("For your safety, changing your password needs a fresh login. Disconnect, log in again with your SSH key and come straight here within %d minutes.", int(freshLogin.Minutes())))
+	}
+	fm := &form.Form{
+		Title: "Change password",
+		Intro: "Your password is only used to add a new SSH key if you lose yours. The old one stops working at once.",
+		Fields: []form.Field{
+			{Name: fPassword, Label: "New password", Kind: form.SingleLine, Subtype: form.Password, Required: true,
+				MinLen: auth.MinPasswordLen, MaxLen: auth.MaxPasswordLen, Help: "A long passphrase is easiest to remember."},
+			{Name: fConfirm, Label: "Repeat new password", Kind: form.SingleLine, Subtype: form.Password, Required: true},
+		},
+		Check: func(v form.Values) map[string]error {
+			if v[fPassword] != v[fConfirm] {
+				return map[string]error{fConfirm: errors.New("does not match the new password")}
+			}
+			return nil
+		},
+	}
+	errs := form.Errors{}
+	for {
+		v, err := s.Form(ctx, fm, form.Values{}, errs)
+		if errors.Is(err, tui.ErrCancelled) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		err = s.h.Auth.ChangePassword(ctx, s.userID, v[fPassword])
+		switch {
+		case err == nil:
+			return tui.Message(ctx, s.ui, title, "Your password has been changed.",
+				"If you think someone else knew the old one, check View keys and remove any key you do not recognise.")
+		case errors.Is(err, auth.ErrPasswordPolicy):
+			errs = form.Errors{fPassword: err}
+		default:
+			s.log.Error("change password failed", "err", err)
+			return tui.Message(ctx, s.ui, title, "Sorry, your password could not be changed. Please try again later.")
 		}
 	}
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -453,5 +454,54 @@ func TestMembersDirectory(t *testing.T) {
 	page2, total, _ := f.svc.Members(f.ctx, "", 2, 2)
 	if total != 3 || len(page2) != 1 || page2[0].Username != "sysadmin1" {
 		t.Errorf("page 2 = %v", page2)
+	}
+}
+
+func TestChangePassword(t *testing.T) {
+	f := newFixture(t)
+	alice := f.user("alice")
+	locked := f.user("lockme")
+	if err := f.svc.SetLocked(f.ctx, f.admin, locked, true); err != nil {
+		t.Fatal(err)
+	}
+	hash := func(id int64) string {
+		t.Helper()
+		var h string
+		if err := f.db.QueryRowContext(f.ctx, `SELECT password_hash FROM users WHERE id = ?`, id).Scan(&h); err != nil {
+			t.Fatal(err)
+		}
+		return h
+	}
+	const newPassword = "a brand new long passphrase"
+	tests := []struct {
+		name string
+		user int64
+		pw   string
+		want error
+	}{
+		{"too short", alice, "short", ErrPasswordPolicy},
+		{"too long", alice, strings.Repeat("x", MaxPasswordLen+1), ErrPasswordPolicy},
+		{"locked account", locked, newPassword, ErrNotFound},
+		{"no such account", 9999, newPassword, ErrNotFound},
+		{"changed", alice, newPassword, nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if err := f.svc.ChangePassword(f.ctx, tt.user, tt.pw); !errors.Is(err, tt.want) {
+				t.Errorf("err = %v, want %v", err, tt.want)
+			}
+		})
+	}
+	for pw, want := range map[string]bool{newPassword: true, testPassword: false} {
+		if ok, err := VerifyPassword(f.ctx, []byte(pw), hash(alice)); ok != want || err != nil {
+			t.Errorf("password %q works = %v, %v; want %v", pw, ok, err, want)
+		}
+	}
+	var detail string
+	if err := f.db.QueryRowContext(f.ctx, `SELECT detail FROM audit_log WHERE action = ? AND actor_id = ?`, audit.PasswordChanged, alice).Scan(&detail); err != nil || detail != "" {
+		t.Errorf("audit row: detail %q, %v", detail, err)
+	}
+	if n := f.auditCount(audit.PasswordChanged); n != 1 {
+		t.Errorf("%d audit rows, want 1 (refusals are not changes)", n)
 	}
 }
