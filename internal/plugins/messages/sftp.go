@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"go.privatebychoice.com/shellshawk/internal/sftpd"
+	"go.privatebychoice.com/shellshawk/internal/tui/term"
 )
 
 // mailFS serves a member's own mail read-only over SFTP:
@@ -89,7 +90,9 @@ func (f *mailFS) Read(ctx context.Context, u sftpd.User, file []string) ([]byte,
 		}
 		doc := fmt.Sprintf("---\nfrom: %s\nto: %s\ndate: %s\nsubject: %q\n---\n\n%s\n",
 			m.From, strings.Join(to, ", "), m.CreatedAt.UTC().Format(time.RFC3339), m.Subject, body)
-		return []byte(doc), m.CreatedAt, nil
+		// Checked when sent; cleaned again on the way out because members
+		// open the file in a terminal.
+		return []byte(term.Sanitize(doc, true)), m.CreatedAt, nil
 	}
 	return nil, time.Time{}, sftpd.ErrNotExist
 }

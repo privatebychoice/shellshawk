@@ -576,3 +576,28 @@ func TestExportHasRemovedFromSent(t *testing.T) {
 		t.Errorf("export = %+v", got)
 	}
 }
+
+// TestSFTPMessageCleaned: a message file is cleaned on the way out, while
+// its newlines are kept.
+func TestSFTPMessageCleaned(t *testing.T) {
+	f := setup(t)
+	id, err := f.p.Send(f.Ctx, f.alice, Draft{To: "bob", Subject: "Hi", Body: "first"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.DB.Exec(`UPDATE messages_messages SET body = 'line one' || char(27) || ']0;title' || char(7) || char(10) || 'line two' WHERE id = ?`, id); err != nil {
+		t.Fatal(err)
+	}
+	fs := &mailFS{p: f.p}
+	list, _ := fs.List(f.Ctx, sftpd.User{ID: f.bob}, []string{Inbox})
+	if len(list) != 1 {
+		t.Fatalf("inbox = %+v", list)
+	}
+	data, _, err := fs.Read(f.Ctx, sftpd.User{ID: f.bob}, []string{Inbox, list[0].Name})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := string(data); strings.ContainsAny(got, "\x1b\x07") || !strings.Contains(got, "line one]0;title\nline two\n") {
+		t.Errorf("file = %q", got)
+	}
+}

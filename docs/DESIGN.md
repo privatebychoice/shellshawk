@@ -664,6 +664,11 @@ TOML/JSON files; admins can add more.
 /messages/inbox/ …                                     (if the plugin opts in)
 ```
 
+- Text files built from stored content (chat logs, conference threads,
+  messages) are passed through `term.Sanitize` (keeping newlines) as they
+  are served: input is already checked, but members open these files in
+  terminals, so anything a terminal would act on is removed again on the
+  way out (defence in depth).
 - Routes are registered by plugins with a path pattern, a permission, and
   read/write mode. Unknown paths → `ENOENT`; no route lists another route's tree.
 - Upload size is set in config (`SHELLSHAWK_SFTP_MAX_UPLOAD_BYTES`, default

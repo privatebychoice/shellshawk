@@ -812,3 +812,22 @@ func TestAnnounceThrottle(t *testing.T) {
 		}
 	}
 }
+
+// TestSFTPLogCleaned: the chat log file is cleaned on the way out, so
+// text that reached the database by another route cannot act on the
+// terminal of a member who opens it.
+func TestSFTPLogCleaned(t *testing.T) {
+	f := setup(t)
+	if _, err := f.DB.Exec(`INSERT INTO chat_messages (channel_id, user_id, kind, body, created_at)
+		VALUES (1, ?, 'message', 'red' || char(27) || '[31m line' || char(8238) || 'x' || char(8203) || 'y', '2026-11-20T10:00:00Z')`, f.alice); err != nil {
+		t.Fatal(err)
+	}
+	data, _, err := (&logFS{p: f.p}).Read(f.Ctx, sftpd.User{ID: f.alice}, []string{"lobby", "20261120.log"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := string(data)
+	if strings.ContainsAny(got, "\x1b‮​") || !strings.Contains(got, "alice: red[31m linexy\n") {
+		t.Errorf("log = %q", got)
+	}
+}

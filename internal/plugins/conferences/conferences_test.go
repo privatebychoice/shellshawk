@@ -658,3 +658,26 @@ func TestPostRateLimit(t *testing.T) {
 		})
 	}
 }
+
+// TestSFTPThreadCleaned: a thread file is cleaned on the way out, while
+// the post's newlines are kept.
+func TestSFTPThreadCleaned(t *testing.T) {
+	f := setup(t)
+	tid, first, err := f.p.StartThread(f.Ctx, f.alice, f.general, "Plans", "Saturday?")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.DB.Exec(`UPDATE conferences_posts SET body = 'bold' || char(27) || '[1m' || char(10) || 'next line' WHERE id = ?`, first); err != nil {
+		t.Fatal(err)
+	}
+	fs := &threadFS{p: f.p}
+	th, _, _, _ := f.p.Thread(f.Ctx, f.alice, tid)
+	confs, _ := f.p.Conferences(f.Ctx, f.alice, 1)
+	data, _, err := fs.Read(f.Ctx, sftpd.User{ID: f.alice}, []string{"general", confs[0].Slug, threadFile(th)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := string(data); strings.Contains(got, "\x1b") || !strings.Contains(got, "bold[1m\nnext line") {
+		t.Errorf("file = %q", got)
+	}
+}

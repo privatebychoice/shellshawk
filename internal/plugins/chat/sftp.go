@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"go.privatebychoice.com/shellshawk/internal/sftpd"
+	"go.privatebychoice.com/shellshawk/internal/tui/term"
 )
 
 // logFS serves chat logs read-only over SFTP:
@@ -103,5 +104,8 @@ func (f *logFS) Read(ctx context.Context, u sftpd.User, file []string) ([]byte, 
 			fmt.Fprintf(&b, "[%s] %s: %s\n", e.At.UTC().Format("15:04:05"), e.Name, e.Body)
 		}
 	}
-	return []byte(b.String()), entries[len(entries)-1].At, nil
+	// Lines are checked when they are said, but the file goes to members'
+	// terminals (cat), so it is cleaned again on the way out in case the
+	// database holds anything a terminal would act on.
+	return []byte(term.Sanitize(b.String(), true)), entries[len(entries)-1].At, nil
 }

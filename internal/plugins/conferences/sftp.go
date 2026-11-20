@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"go.privatebychoice.com/shellshawk/internal/sftpd"
+	"go.privatebychoice.com/shellshawk/internal/tui/term"
 )
 
 // threadFS serves whole threads read-only over SFTP:
@@ -148,5 +149,7 @@ func (f *threadFS) Read(ctx context.Context, u sftpd.User, file []string) ([]byt
 	}
 	doc := fmt.Sprintf("---\ntitle: %q\nconference: %s/%s\nstarted: %s\nposts: %d\n---\n\n# %s\n\n%s",
 		t.Title, c.AreaSlug, c.Slug, t.CreatedAt.UTC().Format(time.RFC3339), len(posts), escape(t.Title), f.p.document(t, posts))
-	return []byte(doc), t.LastPostAt, nil
+	// Posts are checked when written; the file is cleaned again on the way
+	// out because members open it in a terminal.
+	return []byte(term.Sanitize(doc, true)), t.LastPostAt, nil
 }

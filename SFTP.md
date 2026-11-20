@@ -37,6 +37,11 @@ sftp -P <port> <username>@<host>
 - **Never allowed anywhere:** rename, symbolic or hard links, `readlink`.
   `chmod`, `chown` and setting times (`setstat`) are accepted and ignored, so
   clients that set times after an upload do not fail.
+- **Files are safe to open in a terminal.** Chat logs, conference threads
+  and messages are cleaned of terminal control characters (escape
+  sequences, bidirectional overrides, invisible characters) as they are
+  sent, even though the BBS already refuses them when text is written.
+  Export JSON escapes them.
 - **Paths:** `..` is resolved within the virtual tree and cannot leave it.
   Names containing `/`, `\`, control characters, `.` or `..` are never listed
   and cannot be uploaded.
