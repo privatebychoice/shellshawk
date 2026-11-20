@@ -55,6 +55,8 @@ func (notesPlugin) Manifest() plugin.Manifest {
 	}
 	return plugin.Manifest{
 		ID: "notes", Name: "Notes", Version: "1",
+		MenuItems: []plugin.MenuItem{{Key: "read", Label: "Read notes", WebPath: "/",
+			Run: func(context.Context, plugin.Session) error { return nil }}},
 		WebHome: func(r *http.Request, s plugin.WebSession) (template.HTML, error) {
 			return template.HTML(`<section class="notes-panel">Notes for you</section>`), nil
 		},
@@ -77,7 +79,7 @@ func (notesPlugin) Manifest() plugin.Manifest {
 				Options: []form.Option{{Value: "a", Label: "Alpha"}, {Value: "b", Label: "Beta"}}}, Default: "a"},
 		},
 		Web: []plugin.WebRoute{
-			{Path: "/", Nav: "Notes", Handle: page("Notes")},
+			{Path: "/", Handle: page("Notes")},
 			{Path: "/secret", AnyOf: []string{"notes.secret"}, Handle: page("Secret")},
 			{Path: "/boom", Handle: func(*http.Request, plugin.WebSession) (plugin.WebPage, error) { panic("plugin bug") }},
 			{Path: "/missing", Handle: func(*http.Request, plugin.WebSession) (plugin.WebPage, error) {
@@ -124,9 +126,13 @@ type env struct {
 type testItems struct{}
 
 func (testItems) MenuDefaults() []menu.Default {
-	return []menu.Default{{Target: menu.TargetAdmin, Label: "Administration"}, {Target: "notes:read", Label: "Read notes"}}
+	return []menu.Default{{Target: menu.TargetAdmin, Label: "Administration"}, {Target: "notes:read", Label: "Read notes"},
+		{Target: menu.TargetNotifications, Label: "Notifications"}}
 }
-func (testItems) ItemExists(t string) bool { return t == menu.TargetAdmin || t == "notes:read" }
+func (testItems) ItemExists(t string) bool {
+	_, ok := testItems{}.ItemLabel(t)
+	return ok
+}
 func (testItems) ItemLabel(t string) (string, bool) {
 	for _, d := range (testItems{}).MenuDefaults() {
 		if d.Target == t {
@@ -385,7 +391,7 @@ func TestPluginPagesAndLogout(t *testing.T) {
 	}
 	cookie := e.login(t, e.alice, "alice")
 	home := e.do(req{method: "GET", path: "/home", cookie: cookie}).Body.String()
-	if !strings.Contains(home, `<a href="/p/notes/">Notes</a>`) || !strings.Contains(home, "Log out alice") {
+	if !strings.Contains(home, `<a href="/p/notes/">Read notes</a>`) || !strings.Contains(home, "Log out alice") {
 		t.Errorf("dashboard nav missing: %s", home)
 	}
 	page := e.do(req{method: "GET", path: "/p/notes/", cookie: cookie})

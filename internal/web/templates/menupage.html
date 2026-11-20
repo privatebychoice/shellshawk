@@ -1,0 +1,6 @@
+{{define "menu-page"}}
+<ul class="links">
+{{range .Links}}<li><a href="{{.Href}}">{{.Label}}</a></li>
+{{end}}</ul>
+<p><a href="{{.BackHref}}">Back to {{.BackLabel}}</a></p>
+{{end}}

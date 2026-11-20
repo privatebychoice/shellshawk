@@ -179,7 +179,7 @@ func (p *Plugin) WebVote(r *http.Request, viewer, id int64) error {
 
 func (p *Plugin) webRoutes() []plugin.WebRoute {
 	return []plugin.WebRoute{
-		{Path: "/", Nav: "Polls", Handle: p.webList(true)},
+		{Path: "/", Handle: p.webList(true)},
 		{Path: "/closed", Handle: p.webList(false)},
 		{Path: "/{id}", Handle: p.webPoll},
 		{Path: "/{id}/vote", Method: http.MethodPost, AnyOf: []string{PermVote}, Handle: p.webVote},

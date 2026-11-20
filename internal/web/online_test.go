@@ -62,7 +62,7 @@ func TestWhoIsOnlinePage(t *testing.T) {
 
 	// The administrator sees both connections in an accessible table.
 	admin := e.login(t, e.admin, "admin1")
-	home := e.do(req{method: "GET", path: "/home", cookie: admin}).Body.String()
+	home := e.do(req{method: "GET", path: "/admin", cookie: admin}).Body.String()
 	if !strings.Contains(home, `<a href="/admin/online">Who is online</a>`) {
 		t.Errorf("admin nav missing the link:\n%s", home)
 	}

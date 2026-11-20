@@ -31,6 +31,10 @@ const (
 // admin menu. Logging out is not an entry: it is q in the main menu.
 const TargetAdmin = "core:admin"
 
+// TargetNotifications is the Notifications item. Its label shows how many
+// notifications are new, over SSH and on the web.
+const TargetNotifications = "core:notifications"
+
 // MaxLabelLen bounds menu labels.
 const MaxLabelLen = 40
 

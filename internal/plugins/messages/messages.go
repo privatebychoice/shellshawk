@@ -128,7 +128,7 @@ func (p *Plugin) Manifest() plugin.Manifest {
 				PRIMARY KEY (message_id, user_id)
 			) STRICT;
 			CREATE INDEX messages_recipients_user ON messages_recipients (user_id, deleted_at, read_at);`}},
-		MenuItems:     []plugin.MenuItem{{Key: "main", Label: "Messages", Help: "Your private messages", Run: p.run}},
+		MenuItems:     []plugin.MenuItem{{Key: "main", Label: "Messages", Help: "Your private messages", Run: p.run, WebPath: "/"}},
 		SFTP:          []sftpd.Mount{{Name: "messages", FS: &mailFS{p: p}}},
 		Export:        p.export,
 		Web:           p.webRoutes(),

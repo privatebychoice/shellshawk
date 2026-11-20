@@ -14,7 +14,7 @@ var wallTmpl = template.Must(template.New("wall").Parse(`{{if .Lines}}<ul class=
 <p class="meta">Lines disappear {{.Expiry}} after their last edit. Write or edit your line over SSH.</p>`))
 
 func (p *Plugin) webRoutes() []plugin.WebRoute {
-	return []plugin.WebRoute{{Path: "/", Nav: "Wall", Handle: p.webWall}}
+	return []plugin.WebRoute{{Path: "/", Handle: p.webWall}}
 }
 
 // webWall shows the wall (read-only).

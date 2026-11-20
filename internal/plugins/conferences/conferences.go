@@ -161,7 +161,7 @@ func (p *Plugin) Manifest() plugin.Manifest {
 				JOIN access_group_permissions gp ON gp.permission = c.permission
 				WHERE c.permission <> '';
 			ALTER TABLE conferences_conferences DROP COLUMN permission;`}},
-		MenuItems:     []plugin.MenuItem{{Key: "main", Label: "Conferences", Help: "Discussion areas and threads", AnyOf: []string{PermRead}, Run: p.run}},
+		MenuItems:     []plugin.MenuItem{{Key: "main", Label: "Conferences", Help: "Discussion areas and threads", AnyOf: []string{PermRead}, Run: p.run, WebPath: "/"}},
 		SFTP:          []sftpd.Mount{{Name: "conferences", AnyOf: []string{PermRead}, FS: &threadFS{p: p}}},
 		Export:        p.export,
 		Web:           p.webRoutes(),

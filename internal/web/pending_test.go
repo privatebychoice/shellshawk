@@ -60,7 +60,7 @@ func TestPendingAccounts(t *testing.T) {
 	}
 
 	mod := e.login(t, e.mod, "mod1")
-	if home := e.do(req{method: "GET", path: "/home", cookie: mod}).Body.String(); !strings.Contains(home, `<a href="/admin/pending">Approvals</a>`) {
+	if home := e.do(req{method: "GET", path: "/admin", cookie: mod}).Body.String(); !strings.Contains(home, `<a href="/admin/pending">Approvals</a>`) {
 		t.Error("moderator nav missing the link")
 	}
 	page := e.do(req{method: "GET", path: "/admin/pending", cookie: mod}).Body.String()

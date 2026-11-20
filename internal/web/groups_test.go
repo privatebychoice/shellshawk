@@ -25,7 +25,7 @@ func TestGroupsPages(t *testing.T) {
 	}
 
 	admin := e.login(t, e.admin, "admin1")
-	if home := e.do(req{method: "GET", path: "/home", cookie: admin}).Body.String(); !strings.Contains(home, `<a href="/admin/groups">Groups</a>`) {
+	if home := e.do(req{method: "GET", path: "/admin", cookie: admin}).Body.String(); !strings.Contains(home, `<a href="/admin/groups">Groups</a>`) {
 		t.Error("admin nav missing the link")
 	}
 	admins, _ := e.perms.GroupByName(ctx, perm.GroupAdmin)

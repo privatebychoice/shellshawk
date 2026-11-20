@@ -41,7 +41,7 @@ func TestMenuEditor(t *testing.T) {
 	}
 
 	admin := e.login(t, e.admin, "admin1")
-	if home := e.do(req{method: "GET", path: "/home", cookie: admin}).Body.String(); !strings.Contains(home, `<a href="/admin/menu">Menu editor</a>`) {
+	if home := e.do(req{method: "GET", path: "/admin", cookie: admin}).Body.String(); !strings.Contains(home, `<a href="/admin/menu">Menu editor</a>`) {
 		t.Error("admin nav missing the link")
 	}
 	page := e.do(req{method: "GET", path: "/admin/menu", cookie: admin}).Body.String()
@@ -93,7 +93,7 @@ func TestMenuEditor(t *testing.T) {
 			}
 		})
 	}
-	more := entries(0)[2]
+	more := entries(0)[3]
 	// An item in the submenu, named after the item when the label is empty.
 	if status, loc, _ := post("/admin/menu/add", url.Values{"kind": {"item"}, "target": {"notes:read"}, "parent": {id(more.ID)}}); status != 303 || loc != "/admin/menu?parent="+id(more.ID)+"&done=added" {
 		t.Fatalf("add to submenu = %d %q", status, loc)
@@ -116,7 +116,7 @@ func TestMenuEditor(t *testing.T) {
 	if status, loc, _ := post("/admin/menu/"+id(more.ID)+"/move", url.Values{"direction": {"up"}}); status != 303 || loc != "/admin/menu?done=moved#entry-"+id(more.ID) {
 		t.Errorf("move = %d %q", status, loc)
 	}
-	if got := labels(0); got != "Administration, More, Read notes" {
+	if got := labels(0); got != "Administration, Read notes, More, Notifications" {
 		t.Errorf("after moving up: %q", got)
 	}
 	if status, _, _ := post("/admin/menu/"+id(more.ID)+"/move", url.Values{"direction": {"sideways"}}); status != http.StatusBadRequest {
@@ -159,7 +159,7 @@ func TestMenuEditor(t *testing.T) {
 			}
 		})
 	}
-	if got := labels(0); got != "Admin, More" {
+	if got := labels(0); got != "Admin, More, Notifications" {
 		t.Errorf("after deleting: %q", got)
 	}
 
@@ -170,7 +170,7 @@ func TestMenuEditor(t *testing.T) {
 	if status, loc, _ := post("/admin/menu/reset", url.Values{"confirm": {"yes"}}); status != 303 || loc != "/admin/menu?done=reset" {
 		t.Errorf("reset = %d %q", status, loc)
 	}
-	if got := labels(0); got != "Administration, Read notes" {
+	if got := labels(0); got != "Administration, Read notes, Notifications" {
 		t.Errorf("after reset: %q", got)
 	}
 	if b := e.do(req{method: "GET", path: "/admin/menu?done=reset", cookie: admin}).Body.String(); !strings.Contains(b, "The default menu has been restored.") {

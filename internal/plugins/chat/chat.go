@@ -160,7 +160,7 @@ func (p *Plugin) Manifest() plugin.Manifest {
 				JOIN access_group_permissions gp ON gp.permission = c.permission
 				WHERE c.permission <> '' AND c.kind <> 'adhoc';
 			ALTER TABLE chat_channels DROP COLUMN permission;`}},
-		MenuItems:     []plugin.MenuItem{{Key: "main", Label: "Chat", Help: "Live chat channels", AnyOf: []string{PermUse}, Run: p.run}},
+		MenuItems:     []plugin.MenuItem{{Key: "main", Label: "Chat", Help: "Live chat channels", AnyOf: []string{PermUse}, Run: p.run, WebPath: "/"}},
 		Web:           p.webRoutes(),
 		SFTP:          []sftpd.Mount{{Name: "chat", AnyOf: []string{PermUse}, FS: &logFS{p: p}}},
 		Export:        p.export,

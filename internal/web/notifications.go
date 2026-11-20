@@ -72,12 +72,13 @@ func (s *Server) newNotifications(ctx context.Context, user int64) int {
 	return n
 }
 
-// notificationsLabel is the navigation label, with the count of new ones.
-func notificationsLabel(n int) string {
+// notificationsLabelFor adds the count of new notifications to the
+// Notifications entry's label, as over SSH.
+func notificationsLabelFor(label string, n int) string {
 	if n == 0 {
-		return "Notifications"
+		return label
 	}
-	return fmt.Sprintf("Notifications (%d new)", n)
+	return fmt.Sprintf("%s (%d new)", label, n)
 }
 
 // notificationPath returns the web page n is about, or "" if its plugin

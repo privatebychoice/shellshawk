@@ -145,7 +145,7 @@ core migration 7 removed the earlier *Log out* entry. Entries whose item no long
 flagged in the editor. Previously sketched as:
 `{key, label, target(plugin:item | submenu), required_permission, order}`. A
 default menu is seeded on first run. Users only see entries they are permitted
-to use.
+to use. The web navigation follows the same tree (§11).
 
 ---
 
@@ -682,6 +682,24 @@ from Sent too, which SSH does without asking). `/new` writes or replies
 the same `replyDraft` as SSH); sending goes through `Send` with its
 recipient, rate, length and privacy checks, and a refused message comes
 back with what was typed and the error at its field (status 422).
+
+Web navigation: the links in the page header are the main menu's entries
+(labels, order and extra permissions from `menu_entries`), worked out per
+page by `nav` in `internal/web/nav.go`; `/home` no longer repeats them.
+An item is shown when it can be opened on the web: `core:notifications`
+(`/notifications`, with the new count added to its label as over SSH),
+`core:admin` (`/admin`, a page of the staff pages the member may use; it
+is shown when there is at least one) and plugin items that declare
+`MenuItem.WebPath` (a path under `/p/<id>`, validated when the plugin is
+loaded; this replaced `WebRoute.Nav`) and that the member may use. Other
+core items are SSH-only and left out. A submenu is shown when something
+inside it would be, and links to `/menu/{id}`, which lists its entries
+with a link back to the menu above. That page answers 404 unless the
+submenu and every submenu above it pass their extra permissions and it
+has something for the web, so a hidden submenu cannot be opened by
+guessing its number. As over SSH, an extra permission on an entry hides
+it but does not guard the page it opens; the page checks its own
+permissions. Nesting is bounded at 8 levels.
 
 Web chat pages (after stage 10): `/p/chat/` lists every channel the member
 may enter, grouped as channels, private chats and thread chats, with a

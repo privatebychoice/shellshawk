@@ -42,7 +42,7 @@ func TestAuditLogPage(t *testing.T) {
 	}
 
 	admin := e.login(t, e.admin, "admin1")
-	if home := e.do(req{method: "GET", path: "/home", cookie: admin}).Body.String(); !strings.Contains(home, `<a href="/admin/audit">Audit log</a>`) {
+	if home := e.do(req{method: "GET", path: "/admin", cookie: admin}).Body.String(); !strings.Contains(home, `<a href="/admin/audit">Audit log</a>`) {
 		t.Error("admin nav missing the link")
 	}
 	// The admin's login above is not audited, so counts stay exact.

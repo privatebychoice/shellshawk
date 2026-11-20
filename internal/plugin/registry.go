@@ -114,6 +114,9 @@ func Validate(m Manifest) error {
 		if it.Label == "" || it.Run == nil {
 			return fmt.Errorf("plugin %s: menu item %q needs a label and Run", m.ID, it.Key)
 		}
+		if it.WebPath != "" && (!strings.HasPrefix(it.WebPath, "/") || strings.HasPrefix(it.WebPath, "//") || strings.ContainsAny(it.WebPath, " ?#\\")) {
+			return fmt.Errorf("plugin %s: menu item %q: invalid web path %q", m.ID, it.Key, it.WebPath)
+		}
 	}
 	seen = map[string]bool{}
 	for _, k := range m.Notifications {

@@ -41,9 +41,7 @@ type WebRoute struct {
 	Path string
 	// Method is "GET" (the default) or "POST".
 	Method string
-	// Nav, if set, adds the page to the site navigation under this label.
-	Nav   string
-	AnyOf []string
+	AnyOf  []string
 	// Handle returns the page. Body must be built with html/template so
 	// everything in it is escaped.
 	Handle func(r *http.Request, s WebSession) (WebPage, error)

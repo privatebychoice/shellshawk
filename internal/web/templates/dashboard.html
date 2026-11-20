@@ -1,8 +1,5 @@
 {{define "dashboard"}}
 <p>Welcome, {{.User}}.{{if .New}} <a href="/notifications">You have {{.New}} new notification{{if ne .New 1}}s{{end}}.</a>{{end}}</p>
 {{range .Panels}}{{.}}
-{{end}}{{if .Nav}}<ul class="links">
-{{range .Nav}}<li><a href="{{.Href}}">{{.Label}}</a></li>
-{{end}}</ul>{{end}}
-<p>The full BBS, including posting, chat and your settings, is available over SSH.</p>
+{{end}}<p>Use the links at the top of the page. Some things, such as your display settings and SSH keys, are only available over SSH.</p>
 {{end}}

@@ -7,13 +7,14 @@ import (
 	"strconv"
 
 	"go.privatebychoice.com/shellshawk/internal/form"
+	"go.privatebychoice.com/shellshawk/internal/menu"
 	"go.privatebychoice.com/shellshawk/internal/notify"
 	"go.privatebychoice.com/shellshawk/internal/tui"
 )
 
 // notificationsTarget is the Notifications menu item. Opening it shows no
 // new-notification screen: the member is about to see the list anyway.
-const notificationsTarget = "core:notifications"
+const notificationsTarget = menu.TargetNotifications
 
 // maxNotices is how many new notifications are listed between screens;
 // the rest are under Notifications.

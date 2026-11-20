@@ -134,6 +134,11 @@ type MenuItem struct {
 	// panics are caught, logged and reported to the member as a generic
 	// failure; they never end the session.
 	Run func(ctx context.Context, s Session) error
+	// WebPath, if set, is the item's page on the web, relative to the
+	// plugin's pages (e.g. "/"). The web navigation follows the member
+	// menu and links the item there; items without one are left out of it.
+	// The page must check permissions itself.
+	WebPath string
 }
 
 // Allowed reports whether a member with set may use the item.

@@ -32,7 +32,7 @@ func TestPluginSettingsPages(t *testing.T) {
 
 	// Moderators hold the permission by default.
 	mod := e.login(t, e.mod, "mod1")
-	if home := e.do(req{method: "GET", path: "/home", cookie: mod}).Body.String(); !strings.Contains(home, `<a href="/admin/plugins">Plugin settings</a>`) {
+	if home := e.do(req{method: "GET", path: "/admin", cookie: mod}).Body.String(); !strings.Contains(home, `<a href="/admin/plugins">Plugin settings</a>`) {
 		t.Error("moderator nav missing the link")
 	}
 	if list := e.do(req{method: "GET", path: "/admin/plugins", cookie: mod}).Body.String(); !strings.Contains(list, `<a href="/admin/plugins/notes">Notes</a>`) {

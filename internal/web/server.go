@@ -180,6 +180,10 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("POST /login", s.handleLogin)
 	mux.HandleFunc("POST /logout", s.handleLogout)
 	mux.HandleFunc("GET /home", s.handleDashboard)
+	mux.HandleFunc("GET /admin", s.handleAdmin)
+	if s.cfg.Menu != nil {
+		mux.HandleFunc("GET /menu/{id}", s.handleSubmenu)
+	}
 	if s.cfg.Notify != nil {
 		mux.HandleFunc("GET /notifications", s.handleNotifications)
 		mux.HandleFunc("GET /notifications/settings", s.handleNotificationSettings)
@@ -454,60 +458,6 @@ func (s *Server) layout(r *http.Request, title string, body template.HTML) layou
 
 func (s *Server) menuEnabled() bool { return s.cfg.Menu != nil && s.cfg.MenuItems != nil }
 
-// nav lists the pages the member may open: notifications, plugin pages,
-// then staff pages.
-func (s *Server) nav(ctx context.Context, user int64) []navItem {
-	set, err := s.cfg.Perms.Permissions(ctx, user)
-	if err != nil {
-		return nil
-	}
-	var out []navItem
-	if s.cfg.Notify != nil {
-		out = append(out, navItem{Label: notificationsLabel(s.newNotifications(ctx, user)), Href: "/notifications"})
-	}
-	if s.cfg.Plugins != nil {
-		for _, p := range s.cfg.Plugins.Plugins() {
-			for _, r := range p.Manifest.Web {
-				if r.Nav != "" && allowed(set, r.AnyOf) {
-					out = append(out, navItem{Label: r.Nav, Href: "/p/" + p.Manifest.ID + r.Path})
-				}
-			}
-		}
-	}
-	if set.Has(perm.UsersManage) || set.Has(perm.GroupsManage) {
-		out = append(out, navItem{Label: "Users", Href: "/admin/users"})
-	}
-	if set.Has(perm.GroupsManage) {
-		out = append(out, navItem{Label: "Groups", Href: "/admin/groups"})
-	}
-	if set.Has(perm.UsersApprove) {
-		out = append(out, navItem{Label: "Approvals", Href: "/admin/pending"})
-	}
-	if set.Has(perm.InviteCreate) || set.Has(perm.InviteManage) {
-		out = append(out, navItem{Label: "Invites", Href: "/admin/invites"})
-	}
-	if s.cfg.Connections != nil && set.Has(perm.SessionsManage) {
-		out = append(out, navItem{Label: "Who is online", Href: "/admin/online"})
-	}
-	if set.Has(perm.AuditView) {
-		out = append(out, navItem{Label: "Audit log", Href: "/admin/audit"})
-	}
-	if s.menuEnabled() && set.Has(perm.MenuManage) {
-		out = append(out, navItem{Label: "Menu editor", Href: "/admin/menu"})
-	}
-	if s.transitionsEnabled() && set.Has(perm.TransitionsManage) {
-		out = append(out, navItem{Label: "Transitions", Href: "/admin/transitions"})
-	}
-	if len(s.configurable()) > 0 && set.Has(perm.PluginSettings) {
-		out = append(out, navItem{Label: "Plugin settings", Href: "/admin/plugins"})
-	}
-	if s.cfg.Settings != nil && set.Has(perm.SettingsManage) {
-		out = append(out, navItem{Label: "Connection limits", Href: "/admin/limits"},
-			navItem{Label: "Branding", Href: "/admin/branding"})
-	}
-	return out
-}
-
 func allowed(set perm.Set, anyOf []string) bool {
 	if len(anyOf) == 0 {
 		return true
@@ -694,7 +644,7 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	d := s.layout(r, "Home", "")
-	s.render(w, r, http.StatusOK, "Home", "dashboard", map[string]any{"User": d.User, "Nav": d.Nav, "Panels": s.homePanels(r, sess),
+	s.render(w, r, http.StatusOK, "Home", "dashboard", map[string]any{"User": d.User, "Panels": s.homePanels(r, sess),
 		"New": s.newNotifications(r.Context(), sess.UserID)})
 }
 

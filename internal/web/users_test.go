@@ -34,7 +34,7 @@ func TestUsersPages(t *testing.T) {
 	}
 
 	admin := e.login(t, e.admin, "admin1")
-	if home := e.do(req{method: "GET", path: "/home", cookie: admin}).Body.String(); !strings.Contains(home, `<a href="/admin/users">Users</a>`) {
+	if home := e.do(req{method: "GET", path: "/admin", cookie: admin}).Body.String(); !strings.Contains(home, `<a href="/admin/users">Users</a>`) {
 		t.Error("admin nav missing the link")
 	}
 	if b := e.do(req{method: "GET", path: "/admin/users", cookie: admin}).Body.String(); strings.Contains(b, "<table") || !strings.Contains(b, `<input type="search" id="q" name="q"`) {

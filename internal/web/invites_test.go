@@ -36,7 +36,7 @@ func TestInvites(t *testing.T) {
 
 	// A moderator creates invites and sees only their own.
 	mod := e.login(t, e.mod, "mod1")
-	if home := e.do(req{method: "GET", path: "/home", cookie: mod}).Body.String(); !strings.Contains(home, `<a href="/admin/invites">Invites</a>`) {
+	if home := e.do(req{method: "GET", path: "/admin", cookie: mod}).Body.String(); !strings.Contains(home, `<a href="/admin/invites">Invites</a>`) {
 		t.Error("moderator nav missing the link")
 	}
 	form := e.do(req{method: "GET", path: "/admin/invites/new", cookie: mod}).Body.String()

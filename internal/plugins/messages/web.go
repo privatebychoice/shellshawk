@@ -92,7 +92,7 @@ func execTmpl(name string, data any) (template.HTML, error) {
 func (p *Plugin) webRoutes() []plugin.WebRoute {
 	send := []string{PermSend}
 	return []plugin.WebRoute{
-		{Path: "/", Nav: "Messages", Handle: p.webFolder(Inbox)},
+		{Path: "/", Handle: p.webFolder(Inbox)},
 		{Path: "/sent", Handle: p.webFolder(Sent)},
 		{Path: "/deleted", Handle: p.webFolder(Deleted)},
 		{Path: "/deleted/empty", Method: http.MethodPost, Handle: p.webEmpty},

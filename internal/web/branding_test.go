@@ -26,7 +26,7 @@ func TestBrandingPage(t *testing.T) {
 	}
 
 	admin := e.login(t, e.admin, "admin1")
-	if home := e.do(req{method: "GET", path: "/home", cookie: admin}).Body.String(); !strings.Contains(home, `<a href="/admin/branding">Branding</a>`) {
+	if home := e.do(req{method: "GET", path: "/admin", cookie: admin}).Body.String(); !strings.Contains(home, `<a href="/admin/branding">Branding</a>`) {
 		t.Error("admin nav missing the link")
 	}
 	page := e.do(req{method: "GET", path: "/admin/branding", cookie: admin}).Body.String()

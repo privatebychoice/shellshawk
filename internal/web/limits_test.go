@@ -30,7 +30,7 @@ func TestConnectionLimitsPage(t *testing.T) {
 	}
 
 	admin := e.login(t, e.admin, "admin1")
-	home := e.do(req{method: "GET", path: "/home", cookie: admin}).Body.String()
+	home := e.do(req{method: "GET", path: "/admin", cookie: admin}).Body.String()
 	if !strings.Contains(home, `<a href="/admin/limits">Connection limits</a>`) {
 		t.Error("admin nav missing the link")
 	}

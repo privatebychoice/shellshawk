@@ -80,7 +80,7 @@ func (p *Plugin) Manifest() plugin.Manifest {
 				updated_at TEXT    NOT NULL
 			) STRICT;
 			CREATE INDEX wall_entries_updated ON wall_entries (updated_at);`}},
-		MenuItems: []plugin.MenuItem{{Key: "main", Label: "Wall", Help: "One line from each member", Run: p.run}},
+		MenuItems: []plugin.MenuItem{{Key: "main", Label: "Wall", Help: "One line from each member", Run: p.run, WebPath: "/"}},
 		Web:       p.webRoutes(),
 		Export:    p.export,
 	}

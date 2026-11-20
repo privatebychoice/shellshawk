@@ -50,7 +50,7 @@ func webErr(err error) error {
 
 func (p *Plugin) webRoutes() []plugin.WebRoute {
 	return []plugin.WebRoute{
-		{Path: "/", Nav: "Conferences", AnyOf: []string{PermRead}, Handle: p.webAreas},
+		{Path: "/", AnyOf: []string{PermRead}, Handle: p.webAreas},
 		{Path: "/c/{id}", AnyOf: []string{PermRead}, Handle: p.webConference},
 		{Path: "/t/{id}", AnyOf: []string{PermRead}, Handle: p.webThread},
 		{Path: "/t/{id}/poll/{poll}", Method: http.MethodPost, AnyOf: []string{PermRead}, Handle: p.webVote},

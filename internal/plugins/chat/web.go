@@ -40,7 +40,7 @@ var panelTmpl = template.Must(template.New("panel").Parse(`<section class="live"
 func (p *Plugin) webRoutes() []plugin.WebRoute {
 	use, create := []string{PermUse}, []string{PermCreate}
 	return []plugin.WebRoute{
-		{Path: "/", Nav: "Chat", AnyOf: use, Handle: p.webList},
+		{Path: "/", AnyOf: use, Handle: p.webList},
 		{Path: "/find", AnyOf: use, Handle: p.webFind},
 		{Path: "/new", AnyOf: create, Handle: p.webNew},
 		{Path: "/new", Method: http.MethodPost, AnyOf: create, Handle: p.webCreate},
