@@ -208,6 +208,30 @@ func (s *Service) Reject(ctx context.Context, actor, userID int64) error {
 	return err
 }
 
+// Login-block scopes and methods for AuditLoginBlocked.
+const (
+	BlockedAccount = "user"    // an account's failure limit
+	BlockedAddress = "address" // an address's (never recorded)
+)
+
+// AuditLoginBlocked records, once per block, that repeated failed logins
+// have blocked an account or an address for the rest of the window.
+// userID is the account for BlockedAccount (0 if the name typed is not an
+// account; the name itself is not recorded). Addresses are never written to
+// the audit log. via says which login: "ssh password", "ssh invite" or
+// "web code". Failures to record are logged, never returned: a login must
+// not fail because the audit write did.
+func (s *Service) AuditLoginBlocked(ctx context.Context, scope string, userID int64, via string) {
+	e := audit.Entry{Actor: audit.SystemActor, Action: audit.LoginBlocked, TargetType: scope, Detail: via}
+	if scope == BlockedAccount {
+		e.TargetID = userID
+	}
+	if err := audit.Record(ctx, s.db, s.now(), e); err != nil {
+		s.log.Error("audit login block", "err", err)
+	}
+	s.log.Warn("logins blocked after repeated failures", "scope", scope, "user_id", e.TargetID, "via", via)
+}
+
 // SetLocked locks or unlocks an active account. Locked accounts cannot log
 // in by key or password. The last active administrator cannot be locked.
 func (s *Service) SetLocked(ctx context.Context, actor, userID int64, locked bool) error {

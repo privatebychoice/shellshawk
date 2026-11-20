@@ -6,6 +6,8 @@ import (
 	"net/http/httptest"
 	"net/netip"
 	"net/url"
+	"strconv"
+	"strings"
 	"testing"
 )
 
@@ -87,5 +89,35 @@ func TestLoginLimitBehindProxy(t *testing.T) {
 	try("198.51.100.30", "nobodyz", "AAAA-AAAA")
 	if got := try("198.51.100.30", "alice", code(e.alice)); got != http.StatusTooManyRequests {
 		t.Errorf("after the limit = %d, want 429 (the login reset the count)", got)
+	}
+}
+
+// TestWebLoginBlocksAudited: the web login writes one audit row when an
+// account or an address reaches its failure limit, and no address.
+func TestWebLoginBlocksAudited(t *testing.T) {
+	e := setup(t, false)
+	try := func(remote, user string) {
+		e.do(req{method: "POST", path: "/login", origin: origin, remote: remote, form: url.Values{"username": {user}, "code": {"AAAA-AAAA"}}})
+	}
+	for i := range 2 * loginUserFailures {
+		try("192.0.2."+strconv.Itoa(10+i)+":1000", "alice")
+	}
+	for i := range 2 * loginIPFailures {
+		try("198.51.100.9:1000", "ghost"+strconv.Itoa(i))
+	}
+	rows, err := e.srv.cfg.Auth.DB().QueryContext(context.Background(), `SELECT target_type || ':' || target_id || ':' || detail FROM audit_log WHERE action = 'login.blocked' ORDER BY id`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	var got []string
+	for rows.Next() {
+		var s string
+		rows.Scan(&s)
+		got = append(got, s)
+	}
+	want := []string{"user:" + strconv.FormatInt(e.alice, 10) + ":web code", "address::web code"}
+	if strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Errorf("audit rows = %q, want %q", got, want)
 	}
 }

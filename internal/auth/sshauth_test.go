@@ -8,6 +8,7 @@ import (
 
 	"golang.org/x/crypto/ssh"
 
+	"go.privatebychoice.com/shellshawk/internal/audit"
 	"go.privatebychoice.com/shellshawk/internal/sshd"
 )
 
@@ -171,13 +172,20 @@ func TestLimiter(t *testing.T) {
 	if l.Blocked("k") {
 		t.Fatal("blocked before any failure")
 	}
-	l.Fail("k")
+	if l.Fail("k") {
+		t.Fatal("first failure reported as the start of a block")
+	}
 	if l.Blocked("k") {
 		t.Fatal("blocked after 1 of 2")
 	}
-	l.Fail("k")
+	if !l.Fail("k") {
+		t.Fatal("reaching the limit not reported")
+	}
 	if !l.Blocked("k") {
 		t.Fatal("not blocked at limit")
+	}
+	if l.Fail("k") {
+		t.Fatal("a failure while blocked reported as a new block")
 	}
 	if l.Blocked("other") {
 		t.Fatal("keys not independent")
@@ -250,5 +258,57 @@ func TestIPLimitKey(t *testing.T) {
 		if got := IPLimitKey(netip.MustParseAddr(tt.ip)); got != tt.want {
 			t.Errorf("IPLimitKey(%s) = %q, want %q", tt.ip, got, tt.want)
 		}
+	}
+}
+
+// TestLoginBlocksAudited: reaching a login failure limit writes one audit
+// row per block (not per attempt), naming the account but never an
+// address.
+func TestLoginBlocksAudited(t *testing.T) {
+	f := newFixture(t)
+	a := NewSSHAuthenticator(f.svc)
+	alice := f.user("alice")
+	rows := func() []audit.Entry {
+		t.Helper()
+		r, err := f.db.QueryContext(f.ctx, `SELECT target_type, target_id, detail FROM audit_log WHERE action = ? ORDER BY id`, audit.LoginBlocked)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer r.Close()
+		var out []audit.Entry
+		for r.Next() {
+			var e audit.Entry
+			var target string
+			r.Scan(&e.TargetType, &target, &e.Detail)
+			e.TargetID, _ = strconv.ParseInt(target, 10, 64)
+			out = append(out, e)
+		}
+		return out
+	}
+	// Twice the account limit, from addresses that never reach theirs.
+	for i := range 2 * userFailLimit {
+		a.Password(conn("alice", "192.0.2."+strconv.Itoa(10+i)), []byte("wrong password here"))
+	}
+	// Twice the address limit from one address, against unknown names.
+	for i := range 2 * ipFailLimit {
+		a.Password(conn("ghost"+strconv.Itoa(i), "198.51.100.9"), []byte("wrong password here"))
+	}
+	want := []audit.Entry{
+		{TargetType: BlockedAccount, TargetID: alice, Detail: "ssh password"},
+		{TargetType: BlockedAddress, Detail: "ssh password"},
+	}
+	got := rows()
+	if len(got) != len(want) {
+		t.Fatalf("audit rows = %+v, want %+v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("row %d = %+v, want %+v", i, got[i], want[i])
+		}
+	}
+	var leaked int
+	f.db.QueryRowContext(f.ctx, `SELECT count(*) FROM audit_log WHERE detail LIKE '%198.51.100%' OR target_id LIKE '%198.51.100%' OR detail LIKE '%ghost%'`).Scan(&leaked)
+	if leaked != 0 {
+		t.Error("an address or a typed name reached the audit log")
 	}
 }

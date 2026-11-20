@@ -109,7 +109,9 @@ func (a *SSHAuthenticator) Password(c sshd.ConnInfo, password []byte) (sshd.Iden
 	if username == a.svc.inviteUser {
 		code := string(password)
 		if _, err := a.svc.CheckInvite(ctx, code); err != nil {
-			a.ipLim.Fail(ipKey)
+			if a.ipLim.Fail(ipKey) {
+				a.svc.AuditLoginBlocked(ctx, BlockedAddress, 0, "ssh invite")
+			}
 			a.log.Info("invite login refused", "conn_id", c.ConnID)
 			return sshd.Identity{}, sshd.ErrDenied
 		}
@@ -141,8 +143,16 @@ func (a *SSHAuthenticator) Password(c sshd.ConnInfo, password []byte) (sshd.Iden
 		ok = false
 	}
 	if !ok || !exists {
-		a.ipLim.Fail(ipKey)
-		a.usrLim.Fail(userKey)
+		if a.ipLim.Fail(ipKey) {
+			a.svc.AuditLoginBlocked(ctx, BlockedAddress, 0, "ssh password")
+		}
+		if a.usrLim.Fail(userKey) {
+			var id int64
+			if exists {
+				id = userID
+			}
+			a.svc.AuditLoginBlocked(ctx, BlockedAccount, id, "ssh password")
+		}
 		a.log.Info("password login refused", "conn_id", c.ConnID)
 		return sshd.Identity{}, sshd.ErrDenied
 	}

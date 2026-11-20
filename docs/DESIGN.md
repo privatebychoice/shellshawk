@@ -70,7 +70,11 @@ These are invariants, enforced in code and covered by tests:
      detail.
    - Max **3** public keys per user.
    - Rate limiting and lockout on failed attempts per IP and per account, kept
-     in memory plus an audit row. IPv6 clients are counted per /64
+     in memory, with one `login.blocked` audit row each time an account or
+     an address reaches its limit (target `user` with the account ID, or 0
+     for a name that is no account; or `address`, never the address
+     itself; detail `ssh password`, `ssh invite` or `web code`). Once per
+     block rather than per attempt, so guessing cannot fill the audit log. IPv6 clients are counted per /64
      (`auth.IPLimitKey`). A successful password or invite login clears the
      account's count but never the IP's, so one address cannot alternate
      guesses with logins to an account of its own.

@@ -643,8 +643,16 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	uid, err := s.cfg.Sessions.Redeem(r.Context(), username, code)
 	if err != nil {
-		s.ipLim.Fail(ipKey)
-		s.userLim.Fail(userKey)
+		if s.ipLim.Fail(ipKey) {
+			s.cfg.Auth.AuditLoginBlocked(r.Context(), auth.BlockedAddress, 0, "web code")
+		}
+		if s.userLim.Fail(userKey) {
+			var id int64
+			if u, err := s.cfg.Auth.UserByUsername(r.Context(), username); err == nil {
+				id = u.ID
+			}
+			s.cfg.Auth.AuditLoginBlocked(r.Context(), auth.BlockedAccount, id, "web code")
+		}
 		LoggerFrom(r.Context()).Info("web login refused")
 		fail(http.StatusUnauthorized, "That username and code did not work. Codes work once and expire after five minutes.")
 		return

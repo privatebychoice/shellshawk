@@ -48,8 +48,10 @@ func (l *Limiter) Blocked(key string) bool {
 	return e.failures >= l.max
 }
 
-// Fail records a failure for key.
-func (l *Limiter) Fail(key string) {
+// Fail records a failure for key. It reports true when this failure
+// reaches the limit, that is when key starts being blocked, so the caller
+// can record it once per block rather than once per attempt.
+func (l *Limiter) Fail(key string) (blockedNow bool) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	now := l.now()
@@ -59,9 +61,10 @@ func (l *Limiter) Fail(key string) {
 			l.prune(now)
 		}
 		l.entries[key] = &limitEntry{failures: 1, start: now}
-		return
+		return l.max == 1
 	}
 	e.failures++
+	return e.failures == l.max
 }
 
 // Reset clears key, e.g. after a successful login.
